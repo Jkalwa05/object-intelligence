@@ -24,6 +24,11 @@ export class SpeechGate {
   private spoken = new Map<number, Set<string>>();
   private lastHintAt = Number.NEGATIVE_INFINITY;
 
+  reset(): void {
+    this.spoken.clear();
+    this.lastHintAt = Number.NEGATIVE_INFINITY;
+  }
+
   // Returns the line to speak now, or null.
   consider(event: SpeechEvent, now: number, focusId: number | null, muted: boolean): string | null {
     if (muted || !event.line || event.trackId !== focusId) return null;

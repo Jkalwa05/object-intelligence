@@ -27,3 +27,11 @@ test("hints at most every 5 s", () => {
   expect(gate.consider(hint, 4000, 1, false)).toBeNull();
   expect(gate.consider(hint, 5000, 1, false)).toBe("Halt es bitte ruhig.");
 });
+
+test("reset forgets what was spoken, for a fresh connection", () => {
+  const gate = new SpeechGate();
+  const line = { trackId: 1, line: "Das ist X.", kind: "result" as const };
+  expect(gate.consider(line, 0, 1, false)).toBe("Das ist X.");
+  gate.reset();
+  expect(gate.consider(line, 1, 1, false)).toBe("Das ist X.");
+});

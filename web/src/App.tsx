@@ -31,6 +31,7 @@ function useVoice() {
       const focusId = s.tracks?.focus_id ?? null;
       const lang: Lang = s.telemetry?.language ?? "de";
       const now = performance.now();
+      if (s.connection === "open" && prev.connection !== "open") gate.reset(); // fresh pipeline, IDs start at 1
       if (focusId !== focus || (s.muted && !prev.muted)) synth?.cancel();
       focus = focusId;
       if (focusId === null) return;

@@ -23,3 +23,23 @@ test("reducer: tracks replace, identities per track, three newest notices", () =
   expect(s.notices.map((n) => n.text)).toEqual(["2", "3", "4"]);
   expect(initialState.tracks).toBeNull(); // pure: the initial state is untouched
 });
+
+test("closing clears the boxes; reopening forgets old identities and notices", async () => {
+  const { applyConnection } = await import("./store");
+  let s = applyServerMessage(initialState, tracks(1));
+  s = applyServerMessage(s, identity(1, "Das ist Apple iPhone 14."));
+  s = applyServerMessage(s, notice("alt"));
+  s = applyConnection(s, "closed");
+  expect(s.tracks).toBeNull();
+  expect(s.connection).toBe("closed");
+  s = applyConnection(s, "open");
+  expect(s.identities).toEqual({});
+  expect(s.notices).toEqual([]);
+  expect(s.connection).toBe("open");
+});
+
+test("the focus hint is shown on screen too", async () => {
+  const { focusHint } = await import("./store");
+  expect(focusHint(initialState)).toBeNull();
+  expect(focusHint(applyServerMessage(initialState, { ...tracks(1), hint: "Halt es bitte ruhig." }))).toBe("Halt es bitte ruhig.");
+});

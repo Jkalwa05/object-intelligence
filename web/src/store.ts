@@ -41,6 +41,18 @@ export function applyServerMessage(s: HudState, m: ServerMsg): HudState {
   }
 }
 
+// A new connection means a fresh server pipeline whose track IDs start again at 1: old identities must not stick
+// to new objects, and boxes of a closed connection must not stay frozen on screen.
+export function applyConnection(s: HudState, connection: ConnectionStatus): HudState {
+  if (connection === "open") return { ...s, connection, identities: {}, notices: [] };
+  return { ...s, connection, tracks: null };
+}
+
+// The hint for the focus object, shown as a banner as well as spoken (the voice may be muted).
+export function focusHint(s: HudState): string | null {
+  return s.tracks?.hint ?? null;
+}
+
 interface HudActions {
   receive(m: ServerMsg): void;
   toggleMirror(): void;
@@ -56,6 +68,6 @@ export const useHud = create<HudState & HudActions>()((set) => ({
   toggleMirror: () => set((s) => ({ mirrored: !s.mirrored })),
   toggleMute: () => set((s) => ({ muted: !s.muted })),
   toggleTelemetry: () => set((s) => ({ showTelemetry: !s.showTelemetry })),
-  setConnection: (connection) => set({ connection }),
+  setConnection: (connection) => set((s) => applyConnection(s, connection)),
   setCameraError: (cameraError) => set({ cameraError }),
 }));
