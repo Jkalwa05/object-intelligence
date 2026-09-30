@@ -5,7 +5,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from oi.contracts import Track
+from oi.contracts import Candidate, NextView, Observation, Track
 
 Box = tuple[int, int, int, int]
 
@@ -42,3 +42,15 @@ def gradient_image() -> np.ndarray:
 def trk(id: int, box: tuple[float, float, float, float], label: str = "cup", score: float = 0.9, age: int = 10,
         first_seen: float = 0.0) -> Track:
     return Track(id=id, box=box, polygon=[], label=label, score=score, age_frames=age, first_seen_ts=first_seen)
+
+
+def cand(brand: str | None, model: str | None, depth: str = "model", variant: str | None = None,
+         ev: tuple[str, ...] = ()) -> Candidate:
+    return Candidate(brand=brand, model_name=model, variant=variant, depth=depth, evidence=list(ev))
+
+
+def obs(*cands: Candidate, readable: tuple[str, ...] = (), dist: bool = True, view: str | None = None,
+        reason: str = "", sa: str = "medium", cat: str = "Smartphone", desc: str | None = None) -> Observation:
+    return Observation(category=cat, candidates=list(cands), readable_text=list(readable), distinguishable=dist,
+                       next_view=NextView(view=view, reason=reason) if view else None, self_assessment=sa,
+                       generic_description=desc)
