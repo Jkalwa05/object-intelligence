@@ -1,0 +1,103 @@
+import cv2
+import numpy as np
+import pytest
+
+from oi.config import Settings
+from oi.views import (ViewCollector, crop_box, dhash, encode_for_claude, hamming, quality_q, sharpness)
+from tests.helpers import blurry_image, gradient_image, sharp_image, trk
+
+BOX = (400, 200, 700, 500)
+
+
+def gray(image: np.ndarray) -> np.ndarray:
+    return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+
+def test_sharpness_separates_sharp_from_blurred():
+    full = ((0, 0, 256, 256),)
+    assert sharpness(gray(sharp_image((256, 256), full))) > 60 > sharpness(gray(blurry_image((256, 256), full)))
+
+
+def test_dhash_identical_zero_mirrored_far():
+    g = gradient_image()
+    assert hamming(dhash(g), dhash(g)) == 0
+    assert hamming(dhash(g), dhash(np.fliplr(g))) >= 14
+
+
+def test_crop_margin_and_clamp():
+    image = sharp_image()
+    assert crop_box(image, (100, 100, 200, 200), 0.12).shape[:2] == (124, 124)
+    corner = crop_box(image, (0, 0, 50, 50), 0.12)
+    assert corner.shape[:2] == (56, 56)  # clamped at 0 on the top/left, margin kept on the bottom/right
+
+
+def test_encode_limits_long_edge():
+    jpeg = encode_for_claude(np.zeros((1000, 2000, 3), np.uint8), long_edge=1024, quality=90)
+    decoded = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+    assert max(decoded.shape[:2]) == 1024
+
+
+@pytest.mark.parametrize("box,reason", [((2, 100, 300, 400), "cut"), ((500, 300, 560, 360), "small")])
+def test_gate_reasons(box, reason):
+    result = ViewCollector(Settings()).offer(trk(1, box), sharp_image(boxes=(box,)), steady=1.0, now=0.0)
+    assert result.failing == reason and result.ready is None
+
+
+def test_gate_blurry_and_unsteady():
+    blurry = ViewCollector(Settings()).offer(trk(1, BOX), blurry_image(boxes=(BOX,)), steady=1.0, now=0.0)
+    assert blurry.failing == "blurry"
+    shaky = ViewCollector(Settings()).offer(trk(1, BOX), sharp_image(boxes=(BOX,)), steady=0.3, now=0.0)
+    assert shaky.failing == "unsteady"
+
+
+def offer_series(collector, image, start, end, steady=1.0):
+    results, i = [], 0
+    while (t := start + i * 0.1) <= end + 1e-9:
+        results.append((t, collector.offer(trk(1, BOX), image, steady=steady, now=t)))
+        i += 1
+    return results
+
+
+def test_releases_once_after_hold_and_window():
+    results = offer_series(ViewCollector(Settings()), sharp_image(boxes=(BOX,)), 0.0, 2.0)
+    released = [t for t, r in results if r.ready is not None]
+    assert len(released) == 1 and 0.9 - 1e-9 <= released[0] <= 1.0 + 1e-9
+
+
+def test_release_is_the_sharpest_of_its_window():
+    collector, seen = ViewCollector(Settings()), []
+    for i in range(10):
+        image = sharp_image(boxes=(BOX,), cell=4 if i % 2 else 8)
+        result = collector.offer(trk(1, BOX), image, steady=1.0, now=i * 0.1)
+        if i >= 5 and result.sharpness is not None:
+            seen.append(result.sharpness)
+        if result.ready is not None:
+            assert result.ready.sharpness == max(seen)
+            return
+    pytest.fail("no crop released")
+
+
+def test_new_view_after_turning():
+    collector = ViewCollector(Settings())
+    first = next(r.ready for _, r in offer_series(collector, sharp_image(boxes=(BOX,)), 0.0, 1.0) if r.ready)
+    assert (first.is_new_view, first.view_id) == (True, 1)
+    collector.mark_sent(first)
+    turned = next(r.ready for _, r in offer_series(collector, sharp_image(boxes=(BOX,), mirrored=True), 1.1, 2.0)
+                  if r.ready)
+    assert (turned.is_new_view, turned.view_id) == (True, 2)
+    collector.mark_sent(turned)
+    collector.force_next()
+    again = next(r.ready for _, r in offer_series(collector, sharp_image(boxes=(BOX,)), 2.1, 3.0) if r.ready)
+    assert (again.is_new_view, again.view_id) == (False, 1)
+
+
+def test_hint_after_two_seconds():
+    by_step = [r for _, r in offer_series(ViewCollector(Settings()), blurry_image(boxes=(BOX,)), 0.0, 2.0)]
+    assert by_step[19].hint is None
+    assert by_step[20].hint == "blurry"
+
+
+def test_quality_q_mapping():
+    assert quality_q(60, 60) == 0.5
+    assert quality_q(300, 60) == 1.0
+    assert quality_q(1000, 60) == 1.0
