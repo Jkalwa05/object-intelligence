@@ -27,6 +27,28 @@ def _overlap(a: Box, b: Box) -> float:
     return _area((max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])))
 
 
+BODY_WIDEN = 1.0  # shoulders: the body zone is the face box widened by one face width per side
+ON_BODY_SHARE = 0.50  # half of a box lies on the body: worn (shirt, necklace), not something in the background
+
+
+def on_person(track: Track, people: list[Track], frame_h: float) -> bool:
+    """True if the track lies mostly on a person: inside a person box, or in the body zone below a face
+    (the face box widened to the shoulders, from the hairline down to the bottom of the frame)."""
+    area = _area(track.box)
+    if not area:
+        return False
+    for other in people:
+        x1, y1, x2, y2 = other.box
+        if other.label.lower() == "face":
+            w, h = x2 - x1, y2 - y1
+            zone = (x1 - BODY_WIDEN * w, y1 - FACE_WIDEN * h, x2 + BODY_WIDEN * w, frame_h)
+        else:
+            zone = other.box
+        if _overlap(track.box, zone) >= ON_BODY_SHARE * area:
+            return True
+    return False
+
+
 def privacy_veto(focus: Track, tracks: list[Track], s: Settings, head_zone: bool = True) -> bool:
     """True if the focus crop could show a person or a face. `tracks` are all raw detections of the frame.
 

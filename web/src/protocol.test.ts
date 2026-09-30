@@ -5,7 +5,7 @@ import { isServerMsg } from "./protocol";
 test("fixture messages are valid", () => {
   const url = new URL("../../tests/fixtures/protocol-examples.json", import.meta.url);
   const messages: unknown[] = JSON.parse(readFileSync(url, "utf8"));
-  expect(messages.length).toBe(4);
+  expect(messages.length).toBe(5);
   for (const message of messages) expect(isServerMsg(message)).toBe(true);
 });
 

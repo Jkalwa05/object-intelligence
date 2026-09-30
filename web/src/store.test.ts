@@ -43,3 +43,13 @@ test("the focus hint is shown on screen too", async () => {
   expect(focusHint(initialState)).toBeNull();
   expect(focusHint(applyServerMessage(initialState, { ...tracks(1), hint: "Halt es bitte ruhig." }))).toBe("Halt es bitte ruhig.");
 });
+
+test("the frozen scene is kept until a new connection calibrates again", async () => {
+  const { applyConnection } = await import("./store");
+  const scene = { type: "scene" as const, ts: 0, seq: 1, calibrating: false,
+    items: [{ label: "lamp", box: [0.4, 0.02, 0.55, 0.25] as [number, number, number, number] }] };
+  let s = applyServerMessage(initialState, scene);
+  expect(s.scene?.items[0].label).toBe("lamp");
+  s = applyConnection(s, "open");
+  expect(s.scene).toBeNull();
+});

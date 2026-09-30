@@ -78,7 +78,20 @@ export interface NoticeMsg {
   text: string;
 }
 
-export type ServerMsg = TracksMsg | IdentityMsg | TelemetryMsg | NoticeMsg;
+export interface SceneItem {
+  label: string;
+  box: Box; // normalized, frozen after the calibration
+}
+
+export interface SceneMsg {
+  type: "scene";
+  ts: number;
+  seq: number;
+  calibrating: boolean;
+  items: SceneItem[];
+}
+
+export type ServerMsg = TracksMsg | IdentityMsg | TelemetryMsg | NoticeMsg | SceneMsg;
 
 export interface FocusMsg {
   type: "focus";
@@ -90,6 +103,10 @@ export interface RecheckMsg {
   track_id: number;
 }
 
+export interface RecalibrateMsg {
+  type: "recalibrate";
+}
+
 const REQUIRED: Record<ServerMsg["type"], string[]> = {
   tracks: ["frame_id", "w", "h", "focus_id", "tracks", "hint", "faces"],
   identity: ["track_id", "status", "level", "display_name", "candidates", "evidence", "view_request", "final",
@@ -97,6 +114,7 @@ const REQUIRED: Record<ServerMsg["type"], string[]> = {
   telemetry: ["fps_processed", "frames_dropped", "det_ms", "id_ms_last", "sharpness_focus", "calls_session",
     "cost_session_usd", "model", "gate_focus", "mode", "language"],
   notice: ["level", "text"],
+  scene: ["calibrating", "items"],
 };
 
 export function isServerMsg(x: unknown): x is ServerMsg {

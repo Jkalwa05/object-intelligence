@@ -86,5 +86,22 @@
     "type": "notice",
     "level": "warn",
     "text": "Kein API-Key: nur lokale Erkennung."
+  },
+  {
+    "ts": 1.4,
+    "seq": 5,
+    "type": "scene",
+    "calibrating": false,
+    "items": [
+      {
+        "label": "lamp",
+        "box": [
+          0.4,
+          0.02,
+          0.55,
+          0.25
+        ]
+      }
+    ]
   }
 ]

@@ -15,15 +15,16 @@ from dataclasses import dataclass
 from oi import lines
 from oi.belief import Belief
 from oi.config import Settings
-from oi.contracts import (BeliefState, FocusMsg, IdentityMsg, Level, NoticeMsg, RecheckMsg, ServerMsg, Status, Track,
-                          TracksMsg, WireTrack)
+from oi.contracts import (BeliefState, FocusMsg, IdentityMsg, Level, NoticeMsg, RecalibrateMsg, RecheckMsg,
+                          SceneItemWire, SceneMsg, ServerMsg, Status, Track, TracksMsg, WireTrack)
 from oi.faces import FaceFinder
 from oi.hands import HandFinder
 from oi.focus import FocusSelector, split_tracks
 from oi.identify import Identifier, IdentifyError, IdentifyRequest, IdentifyResult, format_history, request_text
 from oi.ingest import Frame, FrameFormatError, FrameSlot, decode_frame
 from oi.perception import Detector
-from oi.privacy import privacy_veto
+from oi.privacy import on_person, privacy_veto
+from oi.scene import SceneMap
 from oi.telemetry import CallLog, CallRecord, Telemetry
 from oi.trigger import Decision, TriggerInput, decide
 from oi.views import ReadyCrop, ViewCollector
@@ -61,6 +62,8 @@ class Pipeline:
         self._head_zone = faces is None  # with real face boxes the coarse head-zone rule is not needed
         self._focus = FocusSelector(settings, head_zone=self._head_zone)
         self._states: dict[int, _TrackState] = {}
+        self._scene = SceneMap()
+        self._scene_announced = False
         self._tasks: set[asyncio.Task[None]] = set()
         self._in_flight = 0
         self._calls_logged = 0
@@ -70,6 +73,7 @@ class Pipeline:
         tracks = await asyncio.to_thread(self._detector.detect, frame.image, frame.t)
         self._telemetry.frame_processed((time.perf_counter() - started) * 1000.0)
         h, w = frame.image.shape[:2]
+        self._frame_w = w
         visible, hands = split_tracks(tracks, self._s)
         if self._hands is not None:
             hands += await asyncio.to_thread(self._hands.find, frame.image)
@@ -78,9 +82,7 @@ class Pipeline:
         faces = await asyncio.to_thread(self._faces.find, frame.image) if self._faces is not None else []
         people += faces
         focus_id = self._focus.update(visible, hands, w, h, frame.t, people=people)
-        # regions on a person's body or face ("flag", "night sky" on a shirt or a face) get no brackets either
-        visible = [t for t in visible if t.id == focus_id or self._focus.held(t.id, frame.t)
-                   or not privacy_veto(t, people, self._s, self._head_zone)]
+        await self._calibrate_scene(visible, people, focus_id, h, frame.t)
         for track in visible:
             self._remember(track, frame.t)
 
@@ -104,11 +106,15 @@ class Pipeline:
 
         self._forget(frame.t)
         await self._emit(TracksMsg(frame_id=frame.frame_id, w=w, h=h, focus_id=focus_id,
-                                   tracks=[WireTrack.from_track(t, w, h) for t in visible], hint=hint,
+                                   tracks=[WireTrack.from_track(t, w, h) for t in visible if t.id == focus_id],
+                                   hint=hint,
                                    faces=[WireTrack.from_track(f, w, h).box for f in faces]))
 
-    async def on_client_message(self, message: FocusMsg | RecheckMsg) -> None:
-        if isinstance(message, FocusMsg):
+    async def on_client_message(self, message: FocusMsg | RecheckMsg | RecalibrateMsg) -> None:
+        if isinstance(message, RecalibrateMsg):
+            self._scene.reset()
+            self._scene_announced = False
+        elif isinstance(message, FocusMsg):
             self._focus.pin(message.track_id)
         elif (state := self._states.get(message.track_id)) is not None:
             state.forced = True
@@ -137,6 +143,23 @@ class Pipeline:
         for task in list(self._tasks):
             task.cancel()
         await asyncio.gather(*list(self._tasks), return_exceptions=True)
+
+    async def _calibrate_scene(self, visible: list[Track], people: list[Track], focus_id: int | None, frame_h: int,
+                               now: float) -> None:
+        """Collect the background during calibration: never the person, nothing worn, nothing held."""
+        if not self._scene.calibrating:
+            return
+        if not self._scene_announced:
+            self._scene_announced = True
+            await self._emit(SceneMsg(calibrating=True, items=[]))
+        background = [t for t in visible if t.id != focus_id and not self._focus.held(t.id, now)
+                      and not on_person(t, people, frame_h) and not privacy_veto(t, people, self._s, self._head_zone)]
+        if self._scene.observe(background, now):
+            w = self._frame_w
+            items = [SceneItemWire(label=i.label, box=(round(i.box[0] / w, 4), round(i.box[1] / frame_h, 4),
+                                                       round(i.box[2] / w, 4), round(i.box[3] / frame_h, 4)))
+                     for i in self._scene.items]
+            await self._emit(SceneMsg(calibrating=False, items=items))
 
     # --- identification -----------------------------------------------------------------------------------------
 

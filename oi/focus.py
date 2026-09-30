@@ -68,8 +68,8 @@ class FocusSelector:
                people: list[Track] = ()) -> int | None:
         """`people`: raw person and face detections, so regions on a person's body or face never get focus.
 
-        Only held objects become the focus automatically (the product is "hold something up"); a focus keeps its
-        place while it stays in view. Everything else can be chosen with a click (`pin`)."""
+        Only held objects are the focus, and only while a hand was on them within the last 2 s; regions on a face
+        never are. `pin` (not used by the browser any more) overrides both."""
         diag = math.hypot(frame_w, frame_h)
         ids = {t.id for t in visible}
         for t in visible:
@@ -90,8 +90,8 @@ class FocusSelector:
         frame_area = frame_w * frame_h
         scores = {t.id: self._score(t, hands, frame_w, frame_h, diag, now) for t in visible
                   if self._eligible(t, frame_area)
-                  and (t.id == self._focus or self.held(t.id, now))
-                  and (self.held(t.id, now) or not privacy_veto(t, list(people), self._s, self._head_zone))}
+                  and self.held(t.id, now)
+                  and not privacy_veto(t, list(people), self._s, self._head_zone)}
         if not scores:
             self._focus, self._challenger = None, None
             return None

@@ -42,3 +42,10 @@ def test_parse_client_message():
 def test_protocol_examples_fixture_is_current():
     fixture = Path(__file__).parent / "fixtures" / "protocol-examples.json"
     assert json.loads(fixture.read_text()) == protocol_examples()
+
+
+def test_scene_and_recalibrate_messages():
+    from oi.contracts import RecalibrateMsg, SceneItemWire, SceneMsg
+    message = SceneMsg(calibrating=False, items=[SceneItemWire(label="lamp", box=(0.1, 0.1, 0.2, 0.2))])
+    assert message.model_dump(mode="json")["type"] == "scene"
+    assert parse_client_message('{"type":"recalibrate"}') == RecalibrateMsg()

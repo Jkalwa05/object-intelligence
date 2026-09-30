@@ -100,16 +100,26 @@ def test_face_region_never_gets_automatic_focus():
         assert fs.update([FACE_REGION], [], W, H, t, people=[PERSON]) is None
 
 
-def test_held_object_in_front_of_the_face_is_allowed():
-    phone = trk(22, (520, 40, 700, 230), label="cell phone")
-    hand = trk(9, (560, 180, 660, 300), label="hand")
-    assert FocusSelector(Settings()).update([phone], [hand], W, H, 0.0, people=[PERSON]) == phone.id
+def test_held_object_on_the_face_never_gets_focus():
+    phone = trk(22, (560, 80, 700, 220), label="cell phone")
+    hand = trk(9, (600, 180, 700, 300), label="hand")
+    face = trk(-1, (560, 60, 720, 220), label="face")
+    assert FocusSelector(Settings(), head_zone=False).update([phone], [hand], W, H, 0.0, people=[PERSON, face]) is None
 
 
-def test_held_object_keeps_focus_after_the_hand_is_gone():
+def test_held_object_beside_the_face_gets_focus_when_faces_are_known():
+    phone = trk(22, (740, 40, 900, 230), label="cell phone")
+    hand = trk(9, (780, 180, 880, 300), label="hand")
+    face = trk(-1, (560, 60, 720, 220), label="face")
+    fs = FocusSelector(Settings(), head_zone=False)
+    assert fs.update([phone], [hand], W, H, 0.0, people=[PERSON, face]) == phone.id
+
+
+def test_focus_ends_two_seconds_after_the_hand_is_gone():
     fs = FocusSelector(Settings())
     assert fs.update([CUP, STAIRS], [HAND_ON_CUP], W, H, 0.0) == CUP.id
-    assert all(fs.update([CUP, STAIRS], [], W, H, t) == CUP.id for t in times(0.1, 60))
+    assert fs.update([CUP, STAIRS], [], W, H, 1.9) == CUP.id
+    assert fs.update([CUP, STAIRS], [], W, H, 2.2) is None
 
 
 def test_big_background_is_not_held_by_a_nearby_hand():

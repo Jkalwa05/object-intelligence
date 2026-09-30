@@ -5,7 +5,7 @@ import InfoCard from "./hud/InfoCard";
 import Overlay from "./hud/Overlay";
 import Telemetry from "./hud/Telemetry";
 import { connect, type Connection } from "./net/socket";
-import type { FocusMsg, Lang, RecheckMsg } from "./protocol";
+import type { Lang, RecalibrateMsg, RecheckMsg } from "./protocol";
 import { useHud } from "./store";
 import { SpeechGate, pickVoice } from "./voice/speech";
 import "./styles.css";
@@ -88,6 +88,7 @@ export default function App() {
       if (event.key === "m") s.toggleMute();
       else if (event.key === "d") s.toggleTelemetry();
       else if (event.key === "s") s.toggleMirror();
+      else if (event.key === "r") connection.current?.send(JSON.stringify({ type: "recalibrate" } satisfies RecalibrateMsg));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -95,12 +96,12 @@ export default function App() {
 
   useVoice();
 
-  const send = (message: FocusMsg | RecheckMsg) => connection.current?.send(JSON.stringify(message));
+  const send = (message: RecheckMsg) => connection.current?.send(JSON.stringify(message));
 
   return (
     <main className="stage">
       <video ref={video} className={mirrored ? "video mirrored" : "video"} autoPlay playsInline muted />
-      <Overlay video={video} card={card} onFocus={(trackId) => send({ type: "focus", track_id: trackId })} />
+      <Overlay video={video} card={card} />
       <InfoCard cardRef={card} onRecheck={(trackId) => send({ type: "recheck", track_id: trackId })} />
       <Telemetry video={video} />
       <Banner onRetryCamera={() => setCameraAttempt((n) => n + 1)} />

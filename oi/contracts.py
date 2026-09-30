@@ -177,7 +177,20 @@ class NoticeMsg(_ServerMsg):
     text: str
 
 
-ServerMsg = Annotated[TracksMsg | IdentityMsg | TelemetryMsg | NoticeMsg, Field(discriminator="type")]
+class SceneItemWire(_Model):
+    label: str
+    box: tuple[float, float, float, float]  # normalized
+
+
+class SceneMsg(_ServerMsg):
+    """The frozen background: sent with calibrating=True when a calibration starts and once more when it ends."""
+
+    type: Literal["scene"] = "scene"
+    calibrating: bool
+    items: list[SceneItemWire]
+
+
+ServerMsg = Annotated[TracksMsg | IdentityMsg | TelemetryMsg | NoticeMsg | SceneMsg, Field(discriminator="type")]
 
 
 class FocusMsg(_Model):
@@ -190,11 +203,15 @@ class RecheckMsg(_Model):
     track_id: int
 
 
-ClientMsg = Annotated[FocusMsg | RecheckMsg, Field(discriminator="type")]
-_client_messages: TypeAdapter[FocusMsg | RecheckMsg] = TypeAdapter(ClientMsg)
+class RecalibrateMsg(_Model):
+    type: Literal["recalibrate"] = "recalibrate"
 
 
-def parse_client_message(text: str) -> FocusMsg | RecheckMsg | None:
+ClientMsg = Annotated[FocusMsg | RecheckMsg | RecalibrateMsg, Field(discriminator="type")]
+_client_messages: TypeAdapter[FocusMsg | RecheckMsg | RecalibrateMsg] = TypeAdapter(ClientMsg)
+
+
+def parse_client_message(text: str) -> FocusMsg | RecheckMsg | RecalibrateMsg | None:
     """A browser message, or None for anything malformed or unknown."""
     try:
         return _client_messages.validate_json(text)
@@ -217,5 +234,6 @@ def protocol_examples() -> list[dict]:
                      sharpness_focus=142.0, calls_session=1, cost_session_usd=0.02, model="claude-opus-5-5",
                      mode="hybrid", language="de"),
         NoticeMsg(ts=1.3, seq=4, level="warn", text="Kein API-Key: nur lokale Erkennung."),
+        SceneMsg(ts=1.4, seq=5, calibrating=False, items=[SceneItemWire(label="lamp", box=(0.4, 0.02, 0.55, 0.25))]),
     ]
     return [m.model_dump(mode="json") for m in messages]

@@ -1,9 +1,10 @@
 import { create } from "zustand";
 import type { ConnectionStatus } from "./net/socket";
-import type { IdentityMsg, NoticeMsg, ServerMsg, TelemetryMsg, TracksMsg } from "./protocol";
+import type { IdentityMsg, NoticeMsg, SceneMsg, ServerMsg, TelemetryMsg, TracksMsg } from "./protocol";
 
 export interface HudState {
   tracks: TracksMsg | null;
+  scene: SceneMsg | null;
   identities: Record<number, IdentityMsg>;
   telemetry: TelemetryMsg | null;
   notices: NoticeMsg[];
@@ -16,6 +17,7 @@ export interface HudState {
 
 export const initialState: HudState = {
   tracks: null,
+  scene: null,
   identities: {},
   telemetry: null,
   notices: [],
@@ -38,13 +40,15 @@ export function applyServerMessage(s: HudState, m: ServerMsg): HudState {
       return { ...s, telemetry: m };
     case "notice":
       return { ...s, notices: [...s.notices, m].slice(-MAX_NOTICES) };
+    case "scene":
+      return { ...s, scene: m };
   }
 }
 
 // A new connection means a fresh server pipeline whose track IDs start again at 1: old identities must not stick
 // to new objects, and boxes of a closed connection must not stay frozen on screen.
 export function applyConnection(s: HudState, connection: ConnectionStatus): HudState {
-  if (connection === "open") return { ...s, connection, identities: {}, notices: [] };
+  if (connection === "open") return { ...s, connection, identities: {}, notices: [], scene: null };
   return { ...s, connection, tracks: null };
 }
 

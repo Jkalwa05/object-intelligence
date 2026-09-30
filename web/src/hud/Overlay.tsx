@@ -1,9 +1,9 @@
 // The canvas over the video: corner brackets, focus outline, scan line and the line to the info card (spec §3).
 // Drawn every animation frame from the store, without React re-rendering.
 
-import { useEffect, useRef, type MouseEvent, type RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { useHud } from "../store";
-import { hitTest, toScreen, toScreenPoints, videoContentRect, type Rect } from "./geometry";
+import { toScreen, toScreenPoints, videoContentRect, type Rect } from "./geometry";
 import { CardPlacer, type Side } from "./placement";
 import { smoothRect } from "./smoothing";
 
@@ -78,10 +78,9 @@ function drawLeader(ctx: CanvasRenderingContext2D, box: Rect, card: Rect, side: 
 interface Props {
   video: RefObject<HTMLVideoElement | null>;
   card: RefObject<HTMLDivElement | null>;
-  onFocus(trackId: number | null): void;
 }
 
-export default function Overlay({ video, card, onFocus }: Props) {
+export default function Overlay({ video, card }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const rects = useRef(new Map<number, Rect>());
 
@@ -116,18 +115,19 @@ export default function Overlay({ video, card, onFocus }: Props) {
         focusId = msg.focus_id;
         focusSince = now;
       }
+      // the frozen background: static, never smoothed, never updated until the next calibration
+      for (const item of s.scene?.calibrating ? [] : s.scene?.items ?? []) {
+        const r = toScreen(item.box, content, s.mirrored);
+        drawBrackets(ctx, r, 0, 0.35);
+        drawLabel(ctx, item.label, r);
+      }
       const seen = new Set<number>();
       let focusRect: Rect | null = null;
-      for (const t of msg.tracks) {
+      for (const t of msg.tracks) { // the server sends only the object in your hand
         seen.add(t.id);
         const target = toScreen(t.box, content, s.mirrored);
         const r = smoothRect(rects.current.get(t.id) ?? target, target, dt);
         rects.current.set(t.id, r);
-        if (t.id !== msg.focus_id) {
-          drawBrackets(ctx, r, 0, 0.35);
-          drawLabel(ctx, `#${t.id} ${t.label}`, r);
-          continue;
-        }
         focusRect = r;
         drawBrackets(ctx, r, SNAP_PX * (1 - Math.min(1, (now - focusSince) / SNAP_MS)), 1);
         if (t.polygon.length > 2) {
@@ -150,11 +150,5 @@ export default function Overlay({ video, card, onFocus }: Props) {
     return () => cancelAnimationFrame(raf);
   }, [video, card]);
 
-  const onClick = (event: MouseEvent<HTMLCanvasElement>) => {
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const point = { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
-    onFocus(hitTest(point, [...rects.current].map(([id, rect]) => ({ id, rect }))));
-  };
-
-  return <canvas ref={canvas} className="overlay" onClick={onClick} />;
+  return <canvas ref={canvas} className="overlay" />;
 }

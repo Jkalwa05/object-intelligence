@@ -42,10 +42,6 @@ body {
   transform: scaleX(-1);
 }
 
-.overlay {
-  cursor: crosshair;
-}
-
 .glass {
   background: var(--glass-bg);
   -webkit-backdrop-filter: blur(var(--glass-blur));

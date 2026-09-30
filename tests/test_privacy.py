@@ -59,3 +59,20 @@ def test_head_zone_rule_can_be_switched_off_when_faces_are_known():
     assert not privacy_veto(beside, [PERSON, beside], Settings(), head_zone=False)
     on_face = trk(7, (580, 100, 700, 200), label="glasses")
     assert privacy_veto(on_face, [PERSON, FACE, on_face], Settings(), head_zone=False)
+
+
+def test_things_on_the_body_are_on_the_person():
+    from oi.privacy import on_person
+    face = trk(-1, (560, 100, 720, 300), label="face")
+    necklace = trk(7, (580, 380, 700, 460), label="necklace")
+    shirt = trk(8, (440, 350, 840, 720), label="t-shirt")
+    lamp = trk(9, (1000, 20, 1200, 180), label="lamp")
+    assert on_person(necklace, [face], frame_h=720)
+    assert on_person(shirt, [face], frame_h=720)
+    assert not on_person(lamp, [face], frame_h=720)
+
+
+def test_inside_a_person_box_is_on_the_person():
+    from oi.privacy import on_person
+    chain = trk(7, (560, 400, 700, 480), label="necklace")
+    assert on_person(chain, [PERSON], frame_h=720)

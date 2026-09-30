@@ -19,6 +19,7 @@ const TEXTS = {
   replaced: { de: "In einem anderen Tab geöffnet. Lade diese Seite neu, um hier weiterzumachen.",
     en: "Opened in another tab. Reload this page to continue here." },
   muted: { de: "Stimme aus (M)", en: "Voice off (M)" },
+  calibrating: { de: "Szene wird eingemessen …", en: "Calibrating the scene …" },
   "tel.fpsVideo": { de: "Video", en: "Video" },
   "tel.fpsProcessed": { de: "Verarbeitet", en: "Processed" },
   "tel.detMs": { de: "Detektor", en: "Detector" },

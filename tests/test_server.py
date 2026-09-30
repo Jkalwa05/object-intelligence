@@ -35,6 +35,13 @@ def app_with(identifier_result, detector=None, static_dir: Path = Path("/nonexis
     return create_app(settings or Settings(log_calls=False), detector, factory, static_dir), detector
 
 
+def next_of(ws, kind):
+    """The next message of one type; the scene calibration message comes first on every connection."""
+    while (message := ws.receive_json())["type"] != kind:
+        pass
+    return message
+
+
 def drive(ws, image, n):
     """Send n frames 0.1 s apart, each only after the previous one was processed; return every message seen."""
     seen = []
@@ -57,8 +64,10 @@ def test_ws_frame_produces_tracks_with_seq():
     app, _ = app_with((FakeIdentifier(), None, "hybrid"))
     with TestClient(app) as client, client.websocket_connect("/ws") as ws:
         ws.send_bytes(frame_message())
+        scene = ws.receive_json()
+        assert (scene["type"], scene["seq"], scene["calibrating"]) == ("scene", 1, True)
         message = ws.receive_json()
-        assert (message["type"], message["seq"], message["focus_id"]) == ("tracks", 1, CUP.id)
+        assert (message["type"], message["seq"], message["focus_id"]) == ("tracks", 2, CUP.id)
         assert message["ts"] > 0
 
 
@@ -77,7 +86,7 @@ def test_malformed_messages_are_ignored():
         ws.send_text('{"type":"nope"}')
         ws.send_text("kaputt")
         ws.send_bytes(frame_message())
-        assert ws.receive_json()["type"] == "tracks"
+        assert next_of(ws, "tracks")["type"] == "tracks"
 
 
 def test_focus_message_pins_track():
@@ -85,7 +94,7 @@ def test_focus_message_pins_track():
     with TestClient(app) as client, client.websocket_connect("/ws") as ws:
         ws.send_text(json.dumps({"type": "focus", "track_id": BOOK.id}))
         ws.send_bytes(frame_message(sharp_image(boxes=(BOX, (1000, 100, 1200, 300)))))
-        assert ws.receive_json()["focus_id"] == BOOK.id
+        assert next_of(ws, "tracks")["focus_id"] == BOOK.id
 
 
 def test_second_connection_replaces_first():
@@ -97,7 +106,7 @@ def test_second_connection_replaces_first():
                     first.receive_json()
                 assert closed.value.code == 4000
                 second.send_bytes(frame_message())
-                assert second.receive_json()["type"] == "tracks"
+                assert next_of(second, "tracks")["type"] == "tracks"
     assert detector.reset_calls == 2
 
 
@@ -137,4 +146,4 @@ def test_foreign_origin_is_rejected():
         assert closed.value.code == 1008
         with client.websocket_connect("/ws", headers={"origin": "http://127.0.0.1:8766"}) as ws:
             ws.send_bytes(frame_message())
-            assert ws.receive_json()["type"] == "tracks"
+            assert next_of(ws, "tracks")["type"] == "tracks"

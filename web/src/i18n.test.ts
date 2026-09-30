@@ -17,3 +17,5 @@ test("every quality check has a readable name", () => {
   }
   expect(t("gate.unsteady", "de")).toBe("zu wackelig");
 });
+
+test("calibration text", () => expect(t("calibrating", "de")).toBe("Szene wird eingemessen …"));

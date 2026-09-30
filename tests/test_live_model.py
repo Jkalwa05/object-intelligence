@@ -53,4 +53,5 @@ def test_server_with_real_detector_sees_bus(detector):
         message = ws.receive_json()
         while message["type"] != "tracks":
             message = ws.receive_json()
-    assert len(message["tracks"]) >= 1
+    # nothing is held on the bus photo: the real detector ran, and no box goes to the HUD
+    assert (message["frame_id"], message["focus_id"], message["tracks"]) == (1, None, [])

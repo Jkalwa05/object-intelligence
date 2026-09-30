@@ -62,7 +62,7 @@ async def test_holding_still_triggers_one_identification():
 async def test_no_identifier_means_tracks_only():
     pipeline, rec, _ = make([[CUP, HAND]], None)
     await feed(pipeline, sharp_image(boxes=(BOX,)), 13)
-    assert {m.type for m in rec.messages} == {"tracks"}
+    assert {m.type for m in rec.messages} == {"tracks", "scene"}
 
 
 async def test_result_stays_with_original_track_after_focus_switch():
@@ -173,7 +173,7 @@ async def test_clicked_person_region_is_never_sent():
     assert rec.of("tracks")[20].hint == "Personen und Gesichter identifiziere ich nicht."
 
 
-async def test_held_object_in_front_of_the_face_is_not_sent_but_explained():
+async def test_held_object_in_front_of_the_face_is_never_marked_or_sent():
     person = trk(10, (300, 0, 980, 720), label="man")
     phone = trk(3, (520, 40, 700, 230), label="cell phone")
     hand = trk(99, (560, 180, 660, 300), label="hand")
@@ -182,8 +182,7 @@ async def test_held_object_in_front_of_the_face_is_not_sent_but_explained():
     await feed(pipeline, sharp_image(boxes=((520, 40, 700, 230),)), 22)
     await pipeline.wait_idle()
     assert identifier.requests == []
-    assert rec.of("tracks")[0].focus_id == phone.id
-    assert rec.of("tracks")[20].hint == "Halt es bitte tiefer, nicht vors Gesicht."
+    assert all(m.focus_id is None and m.tracks == [] for m in rec.of("tracks"))
 
 
 async def test_view_shown_during_call_is_sent_afterwards():
@@ -298,3 +297,34 @@ async def test_tracks_carry_face_boxes_for_the_card():
                         faces=FakeFaces([(128, 72, 256, 216)]))
     await feed(pipeline, sharp_image(boxes=(BOX,)), 1)
     assert rec.of("tracks")[0].faces == [(0.1, 0.1, 0.2, 0.3)]
+
+
+async def test_hud_shows_only_the_held_object_and_a_frozen_scene():
+    from oi.contracts import SceneMsg
+    lamp = trk(20, (1000, 20, 1200, 180), label="lamp")
+    necklace = trk(21, (930, 470, 1010, 540), label="necklace")  # on the person, below the face
+    settings = Settings()
+    rec = Recorder()
+    pipeline = Pipeline(settings, FakeDetector([[CUP, HAND, lamp, necklace]]), None,
+                        Telemetry(settings, "lokal", "–"), None, rec, faces=FakeFaces([(900, 250, 1040, 420)]))
+    image = sharp_image(boxes=(BOX,))
+    for i in range(12):
+        await pipeline.handle_frame(Frame(frame_id=i, t=i * 0.5, image=image))
+    scenes = [m for m in rec.messages if isinstance(m, SceneMsg)]
+    assert scenes[0].calibrating and scenes[0].items == []
+    assert not scenes[-1].calibrating and [i.label for i in scenes[-1].items] == ["lamp"]
+    assert all([t.id for t in m.tracks] == [CUP.id] for m in rec.of("tracks"))
+
+
+async def test_recalibrate_starts_a_new_scene():
+    from oi.contracts import RecalibrateMsg, SceneMsg
+    settings = Settings()
+    rec = Recorder()
+    lamp = trk(20, (1000, 20, 1200, 180), label="lamp")
+    pipeline = Pipeline(settings, FakeDetector([[lamp]]), None, Telemetry(settings, "lokal", "–"), None, rec)
+    for i in range(11):
+        await pipeline.handle_frame(Frame(frame_id=i, t=i * 0.5, image=sharp_image()))
+    await pipeline.on_client_message(RecalibrateMsg())
+    await pipeline.handle_frame(Frame(frame_id=20, t=10.0, image=sharp_image()))
+    scenes = [m for m in rec.messages if isinstance(m, SceneMsg)]
+    assert [s.calibrating for s in scenes] == [True, False, True]
