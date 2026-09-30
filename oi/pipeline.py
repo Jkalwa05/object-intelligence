@@ -18,6 +18,7 @@ from oi.config import Settings
 from oi.contracts import (BeliefState, FocusMsg, IdentityMsg, Level, NoticeMsg, RecheckMsg, ServerMsg, Status, Track,
                           TracksMsg, WireTrack)
 from oi.faces import FaceFinder
+from oi.hands import HandFinder
 from oi.focus import FocusSelector, split_tracks
 from oi.identify import Identifier, IdentifyError, IdentifyRequest, IdentifyResult, format_history, request_text
 from oi.ingest import Frame, FrameFormatError, FrameSlot, decode_frame
@@ -47,7 +48,8 @@ class _TrackState:
 
 class Pipeline:
     def __init__(self, settings: Settings, detector: Detector, identifier: Identifier | None, telemetry: Telemetry,
-                 call_log: CallLog | None, emit: Emit, faces: FaceFinder | None = None) -> None:
+                 call_log: CallLog | None, emit: Emit, faces: FaceFinder | None = None,
+                 hands: HandFinder | None = None) -> None:
         self._s = settings
         self._detector = detector
         self._identifier = identifier
@@ -55,6 +57,7 @@ class Pipeline:
         self._call_log = call_log
         self._emit = emit
         self._faces = faces
+        self._hands = hands
         self._focus = FocusSelector(settings)
         self._states: dict[int, _TrackState] = {}
         self._tasks: set[asyncio.Task[None]] = set()
@@ -67,6 +70,8 @@ class Pipeline:
         self._telemetry.frame_processed((time.perf_counter() - started) * 1000.0)
         h, w = frame.image.shape[:2]
         visible, hands = split_tracks(tracks, self._s)
+        if self._hands is not None:
+            hands += await asyncio.to_thread(self._hands.find, frame.image)
         people_labels = set(self._s.person_labels) | set(self._s.face_labels)
         people = [t for t in tracks if t.label.lower() in people_labels]
         if self._faces is not None:

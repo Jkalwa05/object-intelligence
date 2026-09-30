@@ -244,3 +244,17 @@ async def test_face_finder_keeps_glasses_on_the_face_private():
     await feed(pipeline, sharp_image(boxes=((740, 300, 990, 400),)), 22)
     await pipeline.wait_idle()
     assert identifier.requests == []
+
+
+async def test_hand_finder_makes_the_held_phone_the_focus():
+    phone = trk(5, BOX, label="gadget")  # YOLOE names no hand at all
+    hands = FakeFaces([(450, 400, 650, 520)])  # same shape of result: boxes from a dedicated detector
+    for t in hands._faces:
+        t.label = "hand"
+    identifier = FakeIdentifier(script=[obs(I14)])
+    settings = Settings()
+    pipeline = Pipeline(settings, FakeDetector([[phone]]), identifier, Telemetry(settings, "hybrid", "fake"), None,
+                        Recorder(), hands=hands)
+    await feed(pipeline, sharp_image(boxes=(BOX,)), 13)
+    await pipeline.wait_idle()
+    assert len(identifier.requests) == 1

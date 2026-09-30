@@ -14,6 +14,7 @@ STILL_LIMIT = 0.5  # frame diagonals per second at which the steady factor reach
 NEW_FULL_S, NEW_ZERO_S = 2.0, 6.0
 EMA_ALPHA = 0.5
 HELD_MEMORY_S = 2.0  # a hand that was seen on the object within 2 s still counts (hand detection flickers)
+MAX_HELD_RATIO = 8.0  # a held object is at most 8 times the size of the hand box (not the stairs behind the hand)
 
 
 def split_tracks(tracks: list[Track], s: Settings) -> tuple[list[Track], list[Track]]:
@@ -124,7 +125,8 @@ class FocusSelector:
     @staticmethod
     def _touches_hand(t: Track, hands: list[Track]) -> bool:
         area = _area(t.box)
-        return any(_overlap(t.box, h.box) > 0.10 * min(area, _area(h.box)) for h in hands)
+        return any(_overlap(t.box, h.box) > 0.10 * min(area, _area(h.box)) and area <= MAX_HELD_RATIO * _area(h.box)
+                   for h in hands)
 
     def _track_motion(self, t: Track, diag: float, now: float) -> None:
         cx, cy = _center(t.box)

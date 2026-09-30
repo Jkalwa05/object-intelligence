@@ -110,3 +110,9 @@ def test_held_object_keeps_focus_after_the_hand_is_gone():
     fs = FocusSelector(Settings())
     assert fs.update([CUP, STAIRS], [HAND_ON_CUP], W, H, 0.0) == CUP.id
     assert all(fs.update([CUP, STAIRS], [], W, H, t) == CUP.id for t in times(0.1, 60))
+
+
+def test_big_background_is_not_held_by_a_nearby_hand():
+    hand_in_front_of_stairs = trk(9, (900, 300, 1050, 450), label="hand")
+    fs = FocusSelector(Settings())
+    assert all(fs.update([STAIRS], [hand_in_front_of_stairs], W, H, t) is None for t in times(0.0, 10))

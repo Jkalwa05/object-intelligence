@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 
 from oi.config import Settings
 from oi.faces import FaceFinder, ensure_model
+from oi.hands import HandFinder
 from oi.identify import choose_identifier
 from oi.perception import YoloeDetector
 from oi.server import create_app
@@ -63,7 +64,8 @@ def main(argv: list[str] | None = None) -> None:
 
     detector = YoloeDetector(settings)
     faces = FaceFinder(ensure_model())  # the privacy veto needs it; no face model, no start
-    app = create_app(settings, detector, lambda: choose_identifier(settings, args.fake_claude), faces=faces)
+    app = create_app(settings, detector, lambda: choose_identifier(settings, args.fake_claude), faces=faces,
+                     hands=HandFinder())
     url = f"http://127.0.0.1:{port}"
     print(f"Object Intelligence: {url}  (Detektor {detector.model_name}, Modell "
           f"{'fake' if args.fake_claude else settings.model})")
