@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -68,10 +69,17 @@ def tracks_from_result(result: Any, t: float, ages: TrackAges) -> list[Track]:
 
 
 class YoloeDetector:
-    def __init__(self, settings: Settings) -> None:
+    """Thread-safe: `detect` runs in worker threads, and a reconnect may `reset` while an old frame is still running."""
+
+    def __init__(self, settings: Settings, model: Any = None) -> None:
+        self._s = settings
+        self._lock = threading.Lock()
+        self._ages = TrackAges()
+        if model is not None:  # tests inject a stand-in
+            self._model, self.model_name = model, "injected"
+            return
         from ultralytics import YOLOE  # heavy import, only when the real detector is needed
 
-        self._s = settings
         try:
             self._model = YOLOE(settings.detector)
             self.model_name = settings.detector
@@ -80,17 +88,18 @@ class YoloeDetector:
                         exc_info=True)
             self._model = YOLOE(settings.detector_fallback)
             self.model_name = settings.detector_fallback
-        self._ages = TrackAges()
 
     def detect(self, image: np.ndarray, t: float) -> list[Track]:
-        result = self._model.track(image, persist=True, tracker=str(TRACKER_CONFIG), imgsz=self._s.imgsz,
-                                   device=self._s.device, conf=self._s.conf, verbose=False)[0]
-        return tracks_from_result(result, t, self._ages)
+        with self._lock:
+            result = self._model.track(image, persist=True, tracker=str(TRACKER_CONFIG), imgsz=self._s.imgsz,
+                                       device=self._s.device, conf=self._s.conf, verbose=False)[0]
+            return tracks_from_result(result, t, self._ages)
 
     def reset(self) -> None:
         """Forget all tracks: the next call builds a fresh predictor and tracker, so IDs start again at 1."""
-        self._model.predictor = None
-        self._ages = TrackAges()
+        with self._lock:
+            self._model.predictor = None
+            self._ages = TrackAges()
 
 
 class FakeDetector:

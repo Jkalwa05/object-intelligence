@@ -47,3 +47,33 @@ def test_fake_detector_repeats_last():
     assert [detector.detect(frame, t) for t in (0.0, 0.1, 0.2)] == [[a], [b], [b]]
     detector.reset()
     assert detector.reset_calls == 1
+
+
+def test_yoloe_detector_serializes_model_access():
+    import threading
+    import time
+
+    from oi.config import Settings
+    from oi.perception import YoloeDetector
+
+    class SlowModel:
+        def __init__(self) -> None:
+            self.active, self.max_active, self.predictor = 0, 0, object()
+
+        def track(self, image, **kwargs):
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            time.sleep(0.05)
+            self.active -= 1
+            return [fake_result(None, [[0, 0, 1, 1]], [0], [0.5])]
+
+    model = SlowModel()
+    detector = YoloeDetector(Settings(), model=model)
+    frame = np.zeros((4, 4, 3), np.uint8)
+    threads = [threading.Thread(target=detector.detect, args=(frame, 0.0)) for _ in range(3)]
+    threads.append(threading.Thread(target=detector.reset))
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert model.max_active == 1 and model.predictor is None

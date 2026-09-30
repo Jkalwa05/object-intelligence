@@ -30,3 +30,27 @@ def test_reset_restarts_track_ids(detector):
     detector.reset()
     tracks = detector.detect(image, 0.2)
     assert min(t.id for t in tracks) == 1
+
+
+@pytest.mark.model
+def test_server_with_real_detector_sees_bus(detector):
+    import json
+    import struct
+
+    from fastapi.testclient import TestClient
+
+    from oi.server import create_app
+
+    async def local_only():
+        return None, None, "lokal"
+
+    image = cv2.imread(str(ASSETS / "bus.jpg"))
+    ok, jpeg = cv2.imencode(".jpg", image)
+    header = json.dumps({"frame_id": 1, "t_capture_ms": 0.0, "w": image.shape[1], "h": image.shape[0]}).encode()
+    app = create_app(Settings(log_calls=False), detector, local_only)
+    with TestClient(app) as client, client.websocket_connect("/ws") as ws:
+        ws.send_bytes(struct.pack(">I", len(header)) + header + jpeg.tobytes())
+        message = ws.receive_json()
+        while message["type"] != "tracks":
+            message = ws.receive_json()
+    assert len(message["tracks"]) >= 1
