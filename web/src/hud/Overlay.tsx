@@ -112,6 +112,7 @@ export default function Overlay({ video, card }: Props) {
     let last = performance.now();
     let focusId: number | null = null;
     let focusSince = 0;
+    let lastFocus: { id: number; rect: Rect } | null = null; // survives a moment without focus
 
     const draw = (now: number) => {
       raf = requestAnimationFrame(draw);
@@ -134,8 +135,13 @@ export default function Overlay({ video, card }: Props) {
       if (!msg) return;
       const content = videoContentRect({ w: vw, h: vh }, { w: msg.w, h: msg.h });
       if (msg.focus_id !== focusId) {
+        // the tracker renumbered the same object: its box glides on instead of snapping in again
+        if (msg.focus_id !== null && lastFocus && s.identities[msg.focus_id]?.previous_id === lastFocus.id) {
+          rects.current.set(msg.focus_id, lastFocus.rect);
+        } else if (msg.focus_id !== null) {
+          focusSince = now;
+        }
         focusId = msg.focus_id;
-        focusSince = now;
       }
       // the frozen background: static, never smoothed, never updated until the next calibration
       for (const item of s.scene?.calibrating ? [] : s.scene?.items ?? []) {
@@ -165,6 +171,7 @@ export default function Overlay({ video, card }: Props) {
         if (s.identities[t.id]?.status === "analysing") drawScan(ctx, r, now);
       }
       for (const id of [...rects.current.keys()]) if (!seen.has(id)) rects.current.delete(id);
+      if (focusRect && msg.focus_id !== null) lastFocus = { id: msg.focus_id, rect: focusRect };
 
       const el = card.current;
       if (focusRect && el && msg.focus_id !== null && s.identities[msg.focus_id]) {

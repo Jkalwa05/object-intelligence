@@ -16,7 +16,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-from oi import lines
+from oi import appearance, lines
 from oi.belief import Belief
 from oi.config import Settings
 from oi.contracts import (BeliefState, FocusMsg, IdentityMsg, Level, NoticeMsg, RecalibrateMsg, RecheckMsg,
@@ -41,6 +41,8 @@ FORGET_AFTER_S = 30.0
 SCENE_WIDTH = 1280  # the scene image for Claude is at most this wide
 SCENE_JPEG_QUALITY = 85
 PRIVATE_MEMORY_S = 2.0  # everyone seen in the last 2 s of the calibration is greyed, even if missed in the last frame
+REID_WINDOW_S = 3.0  # an identified object that vanished at most 3 s ago may come back under a new number
+REID_SIZE = 2.0  # ... if its box is at most twice or half as large
 
 Box = tuple[float, float, float, float]
 
@@ -51,6 +53,7 @@ def _normalized(box: Box, w: int, h: int) -> Box:
 
 @dataclass
 class _TrackState:
+    track_id: int  # changes when the tracker renumbers the object (spec §11)
     belief: Belief
     collector: ViewCollector
     label: str
@@ -71,6 +74,20 @@ def _scene_jpeg(image: np.ndarray, private: list[Track]) -> bytes:
     if not ok:
         raise ValueError("JPEG encoding failed")
     return jpeg.tobytes()
+
+
+@dataclass(frozen=True)
+class _Seen:
+    """The last identified focus object: what it looked like and when it was last held."""
+
+    track_id: int
+    signature: np.ndarray
+    area: float
+    t: float
+
+
+def _area(box: Box) -> float:
+    return max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
 
 
 class Pipeline:
@@ -94,6 +111,7 @@ class Pipeline:
         self._scene_generation = 0  # a new calibration makes a late answer for the old scene worthless
         self._background: list[Box] = []  # frozen background boxes in pixels: never the focus
         self._private: list[tuple[float, list[Track]]] = []  # recent person zones during the calibration
+        self._identified: _Seen | None = None
         self._tasks: set[asyncio.Task[None]] = set()
         self._in_flight = 0
         self._calls_logged = 0
@@ -120,6 +138,8 @@ class Pipeline:
 
         hint = None
         focus = next((t for t in visible if t.id == focus_id), None)
+        if focus is not None:
+            await self._recognise_again(focus, frame, {t.id for t in visible})
         if focus is not None and self._identifier is not None:
             state = self._states[focus.id]
             blocked = None
@@ -243,6 +263,30 @@ class Pipeline:
             model=result.model if result else (self._identifier.model_label if self._identifier else "–"),
             level_after=None))
 
+    async def _recognise_again(self, focus: Track, frame: Frame, visible_ids: set[int]) -> None:
+        """The tracker sometimes loses the held object for a moment and gives it a new number. A fresh focus is the
+        last identified object if that one has vanished, was held at most 3 s ago, and size and colours still fit:
+        its identity, views and calls move over, so the card stays and nothing is paid twice (spec §11)."""
+        state = self._states[focus.id]
+        signature = appearance.signature(frame.image, focus)
+        if state.calls or state.belief.observations:
+            self._identified = _Seen(focus.id, signature, _area(focus.box), frame.t)
+            return
+        seen = self._identified
+        if seen is None or seen.track_id == focus.id or seen.track_id in visible_ids:
+            return
+        old = self._states.get(seen.track_id)
+        ratio = _area(focus.box) / seen.area if seen.area else 0.0
+        if (old is None or frame.t - seen.t > REID_WINDOW_S or not 1 / REID_SIZE <= ratio <= REID_SIZE
+                or not appearance.similar(signature, seen.signature)):
+            return
+        del self._states[seen.track_id]
+        old.track_id, old.label, old.last_seen = focus.id, focus.label, frame.t
+        self._states[focus.id] = old
+        self._identified = _Seen(focus.id, signature, _area(focus.box), frame.t)
+        await self._emit(IdentityMsg.from_belief(focus.id, "analysing" if old.in_flight else "ready",
+                                                 self._snapshot(old), previous_id=seen.track_id))
+
     # --- identification -----------------------------------------------------------------------------------------
 
     async def _consider(self, track: Track, state: _TrackState, ready: ReadyCrop) -> None:
@@ -258,7 +302,7 @@ class Pipeline:
             self._telemetry.call_started()
             state.collector.mark_sent(ready)
             await self._send_identity(track.id, "analysing", self._snapshot(state))
-            task = asyncio.create_task(self._identify(track.id, state, ready))
+            task = asyncio.create_task(self._identify(state, ready))
             self._tasks.add(task)
             task.add_done_callback(self._tasks.discard)
         elif decision == Decision.BUSY:
@@ -272,7 +316,8 @@ class Pipeline:
                 self._telemetry.budget.cap_notice_sent = True
                 await self._emit(NoticeMsg(level="warn", text=paused))
 
-    async def _identify(self, track_id: int, state: _TrackState, ready: ReadyCrop) -> None:
+    async def _identify(self, state: _TrackState, ready: ReadyCrop) -> None:
+        """Reports to `state.track_id` when the answer arrives: the object may have a new number by then."""
         assert self._identifier is not None
         lang = self._s.language
         pending = self._snapshot(state).view_request
@@ -286,17 +331,17 @@ class Pipeline:
         except Exception as error:  # noqa: BLE001 - IdentifyError and anything unexpected end in status "error"
             reason = error.reason if isinstance(error, IdentifyError) else "api"
             if not isinstance(error, IdentifyError):
-                log.exception("identification of track %s failed", track_id)
+                log.exception("identification of track %s failed", state.track_id)
             self._telemetry.call_failed()
-            self._write_log(track_id, ready, req, None, reason, None)
+            self._write_log(state.track_id, ready, req, None, reason, None)
             snapshot = self._snapshot(state).model_copy(update={"line": lines.error_line(lang)})
-            await self._send_identity(track_id, "error", snapshot)
+            await self._send_identity(state.track_id, "error", snapshot)
         else:
             state.belief.add(result.observation, ready.view_id, ready.q)
             self._telemetry.call_finished(result.latency_s, result.cost_usd)
             snapshot = self._snapshot(state)
-            self._write_log(track_id, ready, req, result, None, snapshot.level)
-            await self._send_identity(track_id, "ready", snapshot)
+            self._write_log(state.track_id, ready, req, result, None, snapshot.level)
+            await self._send_identity(state.track_id, "ready", snapshot)
         finally:
             state.in_flight = False
             self._in_flight -= 1
@@ -336,7 +381,7 @@ class Pipeline:
     def _remember(self, track: Track, now: float) -> None:
         state = self._states.get(track.id)
         if state is None:
-            state = self._states[track.id] = _TrackState(belief=Belief(self._s.language),
+            state = self._states[track.id] = _TrackState(track_id=track.id, belief=Belief(self._s.language),
                                                          collector=ViewCollector(self._s), label=track.label,
                                                          last_seen=now)
         state.label, state.last_seen = track.label, now

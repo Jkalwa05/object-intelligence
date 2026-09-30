@@ -35,3 +35,22 @@ test("reset forgets what was spoken, for a fresh connection", () => {
   gate.reset();
   expect(gate.consider(line, 1, 1, false)).toBe("Das ist X.");
 });
+
+test("an object under a new tracker number does not repeat what was said", () => {
+  const gate = new SpeechGate();
+  const result = (trackId: number, line: string) => ({ trackId, line, kind: "result" as const });
+  expect(gate.consider(result(1, "Das ist X."), 0, 1, false)).toBe("Das ist X.");
+  gate.carry(1, 7);
+  expect(gate.consider(result(7, "Das ist X."), 100, 7, false)).toBeNull();
+  expect(gate.consider(result(7, "Das ist sicher X."), 200, 7, false)).toBe("Das ist sicher X.");
+});
+
+test("carrying keeps what the new number already said", () => {
+  const gate = new SpeechGate();
+  const result = (trackId: number, line: string) => ({ trackId, line, kind: "result" as const });
+  gate.consider(result(7, "Ich analysiere."), 0, 7, false);
+  gate.consider(result(1, "Das ist X."), 0, 1, false);
+  gate.carry(1, 7);
+  expect(gate.consider(result(7, "Ich analysiere."), 100, 7, false)).toBeNull();
+  expect(gate.consider(result(7, "Das ist X."), 100, 7, false)).toBeNull();
+});

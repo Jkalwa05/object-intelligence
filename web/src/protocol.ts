@@ -52,6 +52,7 @@ export interface IdentityMsg {
   final: boolean;
   calls_used: number;
   line: string;
+  previous_id: number | null; // the tracker's old number for this same object: nothing new to say
 }
 
 export interface TelemetryMsg {
@@ -112,7 +113,7 @@ export interface RecalibrateMsg {
 const REQUIRED: Record<ServerMsg["type"], string[]> = {
   tracks: ["frame_id", "w", "h", "focus_id", "tracks", "hint", "faces", "hands"],
   identity: ["track_id", "status", "level", "display_name", "candidates", "evidence", "view_request", "final",
-    "calls_used", "line"],
+    "calls_used", "line", "previous_id"],
   telemetry: ["fps_processed", "frames_dropped", "det_ms", "id_ms_last", "sharpness_focus", "calls_session",
     "cost_session_usd", "model", "gate_focus", "mode", "language"],
   notice: ["level", "text"],

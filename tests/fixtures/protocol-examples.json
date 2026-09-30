@@ -89,7 +89,8 @@
     "view_request": null,
     "final": false,
     "calls_used": 1,
-    "line": "Das ist wahrscheinlich Apple iPhone 14."
+    "line": "Das ist wahrscheinlich Apple iPhone 14.",
+    "previous_id": null
   },
   {
     "ts": 1.2,

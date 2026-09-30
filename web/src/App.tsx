@@ -25,18 +25,22 @@ function say(line: string | null, lang: Lang) {
 function useVoice() {
   useEffect(() => {
     const gate = new SpeechGate();
-    let focus: number | null = null;
+    let spokenFor: number | null = null; // the object the voice talks about; a moment without focus changes nothing
     return useHud.subscribe((s, prev) => {
       const synth = "speechSynthesis" in window ? window.speechSynthesis : null;
       const focusId = s.tracks?.focus_id ?? null;
       const lang: Lang = s.telemetry?.language ?? "de";
       const now = performance.now();
       if (s.connection === "open" && prev.connection !== "open") gate.reset(); // fresh pipeline, IDs start at 1
-      if (focusId !== focus || (s.muted && !prev.muted)) synth?.cancel();
-      focus = focusId;
+      if (s.muted && !prev.muted) synth?.cancel();
       if (focusId === null) return;
       const identity = s.identities[focusId];
+      if (focusId !== spokenFor) {
+        if (identity?.previous_id == null || identity.previous_id !== spokenFor) synth?.cancel(); // another object
+        spokenFor = focusId;
+      }
       if (identity && identity !== prev.identities[focusId]) {
+        if (identity.previous_id !== null) gate.carry(identity.previous_id, focusId); // same object, new number
         say(gate.consider({ trackId: focusId, line: identity.line, kind: "result" }, now, focusId, s.muted), lang);
       }
       if (s.tracks !== prev.tracks && s.tracks?.hint) {

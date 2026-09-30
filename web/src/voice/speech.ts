@@ -29,6 +29,11 @@ export class SpeechGate {
     this.lastHintAt = Number.NEGATIVE_INFINITY;
   }
 
+  // The tracker gave the same object a new number: what was said about it stays said.
+  carry(from: number, to: number): void {
+    this.spoken.set(to, new Set([...(this.spoken.get(to) ?? []), ...(this.spoken.get(from) ?? [])]));
+  }
+
   // Returns the line to speak now, or null.
   consider(event: SpeechEvent, now: number, focusId: number | null, muted: boolean): string | null {
     if (muted || !event.line || event.trackId !== focusId) return null;

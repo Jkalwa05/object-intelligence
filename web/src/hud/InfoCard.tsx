@@ -19,7 +19,7 @@ export default function InfoCard({ cardRef, onRecheck }: Props) {
   return (
     <div ref={cardRef} className={identity ? "card glass" : "card glass hidden"} aria-live="polite">
       {identity && (
-        <div key={identity.track_id} className="card-body">
+        <div key={identity.display_name} className="card-body"> {/* fades in for a new name, not a new number */}
           <div className="card-level">
             {identity.status === "analysing" ? t("analysing", lang)
               : identity.level ? t(`level.${identity.level}` as I18nKey, lang) : ""}

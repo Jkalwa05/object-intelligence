@@ -86,7 +86,7 @@ async def test_session_cap_pauses_and_notifies_once():
                             Settings(max_calls_session=1))
     image = sharp_image(boxes=(BOX,))
     await feed(pipeline, image, 13)
-    await feed(pipeline, image, 25, start=1.3, first_id=13)
+    await feed(pipeline, _tint(image, (40, 60, 255)), 25, start=1.3, first_id=13)  # a red book, not the cup again
     await pipeline.wait_idle()
     paused = [m for m in rec.of("identity") if m.status == "paused"]
     assert [m.track_id for m in paused] == [book.id] and paused[0].line == lines.paused_line("de")
@@ -470,3 +470,72 @@ async def test_a_shaky_hand_held_object_is_identified_without_nagging():
     await pipeline.wait_idle()
     assert len(identifier.requests) == 1 and rec.of("identity")[-1].status == "ready"
     assert all(m.hint is None for m in rec.of("tracks"))
+
+
+# --- the tracker gives the held object a new number: it keeps its identity (live test 2026-09-30: 10 numbers) -------
+
+CUP2 = trk(2, (410, 205, 705, 505))  # the same cup, found again under a new number
+
+
+def _tint(image, bgr):
+    import numpy as np
+    out = image.astype(np.float32)
+    out[200:500, 400:700] *= np.array(bgr, np.float32) / 255
+    return out.astype(np.uint8)
+
+
+async def _held_then_renumbered(identifier, gap_frames=2, second_colour=(255, 120, 40)):
+    script = [[CUP, HAND]] * 13 + [[HAND]] * gap_frames + [[CUP2, HAND]]
+    pipeline, rec, _ = make(script, identifier)
+    blue = _tint(sharp_image(boxes=(BOX,)), (255, 120, 40))
+    await feed(pipeline, blue, 13)
+    await feed(pipeline, blue, gap_frames, start=1.3, first_id=13)
+    await feed(pipeline, _tint(sharp_image(boxes=(BOX,)), second_colour), 15, start=1.3 + gap_frames * 0.1,
+               first_id=13 + gap_frames)
+    await pipeline.wait_idle()
+    return pipeline, rec
+
+
+async def test_the_same_object_under_a_new_number_keeps_its_identity():
+    identifier = FakeIdentifier(script=[obs(I14, I13)])
+    _, rec = await _held_then_renumbered(identifier)
+    assert len(identifier.requests) == 1  # nothing is paid twice
+    carried = [m for m in rec.of("identity") if m.track_id == CUP2.id]
+    assert carried and carried[0].previous_id == CUP.id and carried[0].display_name == "Apple iPhone 14"
+    assert rec.of("tracks")[-1].focus_id == CUP2.id
+
+
+async def test_a_different_object_is_analysed_anew():
+    identifier = FakeIdentifier(script=[obs(I14, I13)])
+    _, rec = await _held_then_renumbered(identifier, second_colour=(40, 60, 255))
+    assert len(identifier.requests) == 2
+    assert all(m.previous_id is None for m in rec.of("identity"))
+
+
+async def test_after_three_seconds_it_is_a_new_object():
+    identifier = FakeIdentifier(script=[obs(I14, I13)])
+    await _held_then_renumbered(identifier, gap_frames=35)
+    assert len(identifier.requests) == 2
+
+
+async def test_a_running_call_reports_to_the_new_number():
+    identifier = FakeIdentifier(script=[obs(I14, I13)], delay_s=0.2)
+    _, rec = await _held_then_renumbered(identifier)
+    assert len(identifier.requests) == 1
+    last = rec.of("identity")[-1]
+    assert (last.track_id, last.status, last.display_name) == (CUP2.id, "ready", "Apple iPhone 14")
+
+
+async def test_an_object_put_down_in_view_is_not_taken_over():
+    identifier = FakeIdentifier(script=[obs(I14, I13)])
+    on_table = trk(1, (100, 450, 350, 700))  # the first cup, put down but still in view
+    pipeline, _, _ = make([[CUP, HAND]] * 13 + [[on_table, CUP2, HAND]], identifier)
+    import numpy as np
+    blue = sharp_image(boxes=(BOX, (100, 450, 350, 700))).astype(np.float32)
+    for x1, y1, x2, y2 in (BOX, (100, 450, 350, 700)):  # both cups look exactly alike
+        blue[y1:y2, x1:x2] *= np.array((255, 120, 40), np.float32) / 255
+    blue = blue.astype(np.uint8)
+    await feed(pipeline, blue, 13)
+    await feed(pipeline, blue, 30, start=1.3, first_id=13)
+    await pipeline.wait_idle()
+    assert len(identifier.requests) == 2  # two cups that look alike, both in view: two objects

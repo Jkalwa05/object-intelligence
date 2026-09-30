@@ -152,10 +152,12 @@ class IdentityMsg(_ServerMsg):
     final: bool
     calls_used: int
     line: str
+    previous_id: int | None = None  # the tracker's old number for this same object (spec §11): nothing new to say
 
     @classmethod
-    def from_belief(cls, track_id: int, status: Status, b: BeliefState) -> IdentityMsg:
-        return cls(track_id=track_id, status=status, **b.model_dump())
+    def from_belief(cls, track_id: int, status: Status, b: BeliefState, previous_id: int | None = None
+                    ) -> IdentityMsg:
+        return cls(track_id=track_id, status=status, previous_id=previous_id, **b.model_dump())
 
 
 class TelemetryMsg(_ServerMsg):
