@@ -1,8 +1,8 @@
 # Object Intelligence, Teilprojekt 1: Sehen & Identifizieren
 
-Stand: 2026-09-30 · Status: Design im Gespräch freigegeben (Abschnitte 1–5), Spec wartet auf Review durch den Owner
+Stand: 2026-09-30 · Status: freigegeben und umgesetzt (auf `main`), Anpassungen nach dem Live-Test in §8
 
-Object Intelligence ist ein Portfolio-Projekt und Proof of Concept: Man hält einen beliebigen Gegenstand vor die
+Object Intelligence ist ein voll funktionsfähiges Programm und Portfolio-Projekt: Man hält einen beliebigen Gegenstand vor die
 Mac-Kamera, und das System sagt, *was* es ist, *wie sicher* es ist und *woher* die Infos stammen, zeigt ein 3D-Modell
 und beantwortet Fragen. Keine feste Objektliste (Open-Vocabulary). Das Gesamtprojekt ist in fünf Teilprojekte zerlegt,
 jedes mit eigener Spec und eigenem Plan:
@@ -382,3 +382,24 @@ schaltet das Protokoll ab.
 | Opus 5.5 antwortet zu langsam | Scanlinie und „ANALYSIERE …“ machen das Warten sichtbar; `OI_MODEL=claude-sonnet-5-5` als Ausweg |
 | Die Schärfe-Schwelle passt nicht zu Kamera und Licht | Der Schärfewert steht in der Telemetrie, die Schwelle wird im ersten Live-Test kalibriert |
 | Doppelgänger wie iPhone 13 und 14 | Gewolltes Verhalten: UNSICHER bzw. „kaum zu unterscheiden“. Das ist kein Fehler, sondern der Kern des Projekts |
+
+## 8. Nachtrag 2026-09-30: Anpassungen nach dem ersten Live-Test
+
+Diese Punkte ersetzen die betroffenen Stellen in §2.3 und §3 (Klammern für jedes Objekt, Klick zum Fokussieren).
+
+- **Box nur für das Gehaltene.** Hände findet Apples Vision-Framework (`VNDetectHumanHandPoseRequest`), weil YOLOE
+  fast nie „hand“ meldet. Fokus bekommt nur ein Objekt mit einer Hand darauf (2 s Gedächtnis). Es darf höchstens
+  achtmal so groß wie die Hand sein, damit ein großer Hintergrund hinter der Hand nicht als gehalten gilt. Box und
+  Karte verschwinden 2 s nach dem Loslassen. Klick zum Fokussieren entfällt.
+- **Die Person wird nie markiert.** Gesichter findet OpenCVs YuNet (MIT-Lizenz, Prüfsumme fest hinterlegt). Die
+  Körperzone reicht vom Gesicht verbreitert bis zum unteren Bildrand, dazu kommen die Personen-Boxen. Was dort liegt
+  (Kette, T-Shirt, Brille, Haare), bekommt nie eine Box und geht nie an Claude. Ausschnitte an Claude enthalten nur
+  die Pixel des Objekts, der Rest ist grau.
+- **Szene einmessen.** In den ersten 5 s nach dem Verbinden (oder nach Taste `R`) sammelt `oi/scene.py` den
+  Hintergrund. Was in mindestens der Hälfte der Bilder da war, wird mit dem häufigsten Label und der Median-Box
+  eingefroren und statisch angezeigt. Neue Server-Nachricht `scene` (`calibrating`, `items`), neue
+  Browser-Nachricht `recalibrate`. `tracks` enthält nur noch das gehaltene Objekt.
+- **Weniger Hinweise.** Hinweise kommen nur beim ersten Erfassen eines Objekts und nach „Neu prüfen“. Die Telemetrie
+  zeigt den Prüfgrund, die Karte legt sich nie über ein Gesicht.
+- **Start.** Ist der Port belegt, bricht der Start mit einer klaren Meldung ab, statt den Browser auf einen älteren
+  Server zu schicken.

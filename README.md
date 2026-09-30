@@ -57,15 +57,20 @@ or log in with `ant auth login`. Without any key the app runs in local mode: box
 
 ```bash
 uv run python -m oi                 # opens http://127.0.0.1:8766
-uv run python -m oi --fake-claude   # free canned answers, for working on the UI
+uv run python -m oi --fake-claude   # canned answers without API calls (tests)
 uv run python -m oi --no-browser --port 8766
 ```
 
-The object you hold in your hand becomes the focus automatically; anything else (a lamp on the desk, the stairs
-behind you) is focused with a click, and regions on your own body or face are never focused or sent.
-In the HUD: click an object to focus it, click empty space to return to automatic focus, `M` mutes the voice,
-`D` shows the telemetry, `S` toggles the mirror view. Settings such as `OI_MODEL=claude-sonnet-5-5` (faster),
-`OI_LANGUAGE=en` or `OI_MIN_SHARPNESS` are read from the environment or `.env`.
+For the first five seconds after start the scene is calibrated: everything that stays put (lamp, door, shelf) gets
+a fixed marker that never flickers afterwards; press `R` to calibrate again. You are never marked: not your face, hair,
+glasses, shirt or necklace (a dedicated face detector and a body zone keep them out). Only the object in your hand gets
+a box, and only that object goes to Claude, as a crop in which everything outside its outline is grey. Hands are found
+with Apple's Vision framework, faces with OpenCV's YuNet model.
+
+Keys: `M` mutes the voice, `D` shows the telemetry (including which quality check a crop fails), `S` toggles the mirror
+view, `R` calibrates the scene again. Settings such as `OI_MODEL=claude-sonnet-5-5` (faster), `OI_LANGUAGE=en` or
+`OI_MIN_SHARPNESS` are read from the environment or `.env`. `--fake-claude` gives canned answers without any API call;
+it is meant for the automated tests, real identification needs Claude.
 
 ## Tests
 
