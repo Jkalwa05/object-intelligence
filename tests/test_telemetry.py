@@ -57,3 +57,14 @@ def test_call_log_writes_files(tmp_path):
 def test_call_log_disabled(tmp_path):
     CallLog(tmp_path, enabled=False).write(_record())
     assert list(tmp_path.iterdir()) == []
+
+
+def test_budget_is_shared_between_connections():
+    from oi.telemetry import SessionBudget
+    budget = SessionBudget()
+    first = Telemetry(Settings(), "hybrid", "m", clock=FakeClock(), budget=budget)
+    second = Telemetry(Settings(), "hybrid", "m", clock=FakeClock(), budget=budget)
+    first.call_started()
+    first.call_finished(1.0, 0.02)
+    second.call_started()
+    assert second.calls_session == 2 and second.snapshot(0).cost_session_usd == 0.02

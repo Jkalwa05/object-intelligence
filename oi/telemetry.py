@@ -18,9 +18,19 @@ FPS_WINDOW_S = 2.0
 DET_MS_SAMPLES = 30
 
 
+@dataclass
+class SessionBudget:
+    """Calls and cost of the whole server run, shared by every browser connection, so a reload never resets the cost
+    brake (spec §4)."""
+
+    calls: int = 0
+    cost_usd: float = 0.0
+    cap_notice_sent: bool = False
+
+
 class Telemetry:
     def __init__(self, settings: Settings, mode: Literal["hybrid", "lokal"], model_label: str,
-                 clock: Callable[[], float] = time.monotonic) -> None:
+                 clock: Callable[[], float] = time.monotonic, budget: SessionBudget | None = None) -> None:
         self._settings = settings
         self._mode = mode
         self._model_label = model_label
@@ -28,14 +38,13 @@ class Telemetry:
         self._frame_times: deque[float] = deque()
         self._det_ms: deque[float] = deque(maxlen=DET_MS_SAMPLES)
         self._sharpness: float | None = None
-        self._calls = 0
+        self.budget = budget if budget is not None else SessionBudget()
         self._failed = 0
-        self._cost = 0.0
         self._id_ms_last: float | None = None
 
     @property
     def calls_session(self) -> int:
-        return self._calls
+        return self.budget.calls
 
     def frame_processed(self, det_ms: float) -> None:
         now = self._clock()
@@ -47,10 +56,10 @@ class Telemetry:
         self._sharpness = value
 
     def call_started(self) -> None:
-        self._calls += 1
+        self.budget.calls += 1
 
     def call_finished(self, latency_s: float, cost_usd: float) -> None:
-        self._cost += cost_usd
+        self.budget.cost_usd += cost_usd
         self._id_ms_last = latency_s * 1000.0
 
     def call_failed(self) -> None:
@@ -63,7 +72,7 @@ class Telemetry:
             fps_processed=round(len(self._frame_times) / FPS_WINDOW_S, 1), frames_dropped=frames_dropped,
             det_ms=round(det_ms, 1), id_ms_last=self._id_ms_last,
             sharpness_focus=None if self._sharpness is None else round(self._sharpness, 1),
-            calls_session=self._calls, cost_session_usd=round(self._cost, 4), model=self._model_label,
+            calls_session=self.budget.calls, cost_session_usd=round(self.budget.cost_usd, 4), model=self._model_label,
             mode=self._mode, language=self._settings.language)
 
     def _forget_old_frames(self, now: float) -> None:

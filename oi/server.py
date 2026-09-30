@@ -23,12 +23,14 @@ from oi.identify import Identifier
 from oi.ingest import FrameFormatError, FrameSlot, parse_frame_message
 from oi.perception import Detector
 from oi.pipeline import Pipeline
-from oi.telemetry import CallLog, Telemetry
+from oi.telemetry import CallLog, SessionBudget, Telemetry
 
 log = logging.getLogger(__name__)
 
 IdentifierFactory = Callable[[], Awaitable[tuple[Identifier | None, str | None, Literal["hybrid", "lokal"]]]]
 REPLACED_CODE = 4000
+POLICY_VIOLATION = 1008
+VITE_DEV_PORT = 5173
 TELEMETRY_EVERY_S = 1.0
 NOT_BUILT = ('<!doctype html><meta charset="utf-8"><title>Object Intelligence</title>'
              "<p>Frontend nicht gebaut: <code>npm --prefix web install &amp;&amp; npm --prefix web run build</code></p>")
@@ -62,12 +64,20 @@ def create_app(settings: Settings, detector: Detector, identifier_factory: Ident
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.identifier, app.state.notice, app.state.mode = await identifier_factory()
         app.state.active = None
+        app.state.budget = SessionBudget()
         yield
 
     app = FastAPI(lifespan=lifespan)
 
+    allowed_origins = {f"http://{host}:{port}" for host in ("127.0.0.1", "localhost")
+                       for port in (settings.port, VITE_DEV_PORT)}
+
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket) -> None:
+        origin = ws.headers.get("origin")
+        if origin is not None and origin not in allowed_origins:  # another website must not spend the API key
+            await ws.close(code=POLICY_VIOLATION)
+            return
         await ws.accept()
         previous, app.state.active = app.state.active, ws
         if previous is not None:
@@ -77,7 +87,8 @@ def create_app(settings: Settings, detector: Detector, identifier_factory: Ident
 
         identifier: Identifier | None = app.state.identifier
         sender = Sender(ws)
-        telemetry = Telemetry(settings, app.state.mode, identifier.model_label if identifier else "–")
+        telemetry = Telemetry(settings, app.state.mode, identifier.model_label if identifier else "–",
+                              budget=app.state.budget)
         pipeline = Pipeline(settings, detector, identifier, telemetry, CallLog(settings.runs_dir, settings.log_calls),
                             sender.send)
         slot = FrameSlot()

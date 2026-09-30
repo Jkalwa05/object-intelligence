@@ -58,7 +58,6 @@ class Pipeline:
         self._tasks: set[asyncio.Task[None]] = set()
         self._in_flight = 0
         self._calls_logged = 0
-        self._cap_notice_sent = False
 
     async def handle_frame(self, frame: Frame) -> None:
         started = time.perf_counter()
@@ -142,8 +141,8 @@ class Pipeline:
             if not state.paused_sent:
                 state.paused_sent = True
                 await self._send_identity(track.id, "paused", self._snapshot(state).model_copy(update={"line": paused}))
-            if not self._cap_notice_sent:
-                self._cap_notice_sent = True
+            if not self._telemetry.budget.cap_notice_sent:
+                self._telemetry.budget.cap_notice_sent = True
                 await self._emit(NoticeMsg(level="warn", text=paused))
 
     async def _identify(self, track_id: int, state: _TrackState, ready: ReadyCrop) -> None:

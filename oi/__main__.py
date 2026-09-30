@@ -6,6 +6,7 @@ import argparse
 import logging
 import threading
 import webbrowser
+from dataclasses import replace
 from pathlib import Path
 
 import uvicorn
@@ -26,7 +27,9 @@ def main(argv: list[str] | None = None) -> None:
 
     load_dotenv(Path(".env"), override=False)
     settings = Settings.from_env()
-    port = args.port or settings.port
+    if args.port:
+        settings = replace(settings, port=args.port)
+    port = settings.port
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     detector = YoloeDetector(settings)

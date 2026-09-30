@@ -25,13 +25,31 @@ def frame_message(image=None, frame_id: int = 1, t_ms: float = 0.0) -> bytes:
     return struct.pack(">I", len(header)) + header + jpeg.tobytes()
 
 
-def app_with(identifier_result, detector=None, static_dir: Path = Path("/nonexistent")):
+def app_with(identifier_result, detector=None, static_dir: Path = Path("/nonexistent"), settings=None):
     detector = detector or FakeDetector([[CUP]])
 
     async def factory():
         return identifier_result
 
-    return create_app(Settings(log_calls=False), detector, factory, static_dir), detector
+    return create_app(settings or Settings(log_calls=False), detector, factory, static_dir), detector
+
+
+def drive(ws, image, n):
+    """Send n frames 0.1 s apart, each only after the previous one was processed; return every message seen."""
+    seen = []
+    for i in range(n):
+        ws.send_bytes(frame_message(image, frame_id=i + 1, t_ms=i * 100.0))
+        while (message := ws.receive_json())["type"] != "tracks":
+            seen.append(message)
+        seen.append(message)
+    return seen
+
+
+def wait_for_identity(ws, seen, statuses, limit=30):
+    while not any(m["type"] == "identity" and m["status"] in statuses for m in seen) and limit:
+        seen.append(ws.receive_json())
+        limit -= 1
+    return [m["status"] for m in seen if m["type"] == "identity"]
 
 
 def test_ws_frame_produces_tracks_with_seq():
@@ -94,3 +112,28 @@ def test_root_serves_built_frontend(tmp_path):
     app, _ = app_with((None, None, "lokal"), static_dir=tmp_path)
     with TestClient(app) as client:
         assert 'id="root"' in client.get("/").text
+
+
+def test_session_budget_survives_reconnect():
+    from tests.helpers import cand, obs
+    app, _ = app_with((FakeIdentifier(script=[obs(cand("Apple", "iPhone 14"))]), None, "hybrid"),
+                      settings=Settings(log_calls=False, max_calls_session=1))
+    image = sharp_image(boxes=(BOX,))
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as ws:
+            assert "ready" in wait_for_identity(ws, drive(ws, image, 13), {"ready"})
+        with client.websocket_connect("/ws") as ws:
+            statuses = wait_for_identity(ws, drive(ws, image, 13), {"paused", "analysing"})
+    assert "paused" in statuses and "analysing" not in statuses
+
+
+def test_foreign_origin_is_rejected():
+    app, _ = app_with((None, None, "lokal"))
+    with TestClient(app) as client:
+        with pytest.raises(WebSocketDisconnect) as closed:
+            with client.websocket_connect("/ws", headers={"origin": "https://evil.example"}) as ws:
+                ws.receive_json()
+        assert closed.value.code == 1008
+        with client.websocket_connect("/ws", headers={"origin": "http://127.0.0.1:8766"}) as ws:
+            ws.send_bytes(frame_message())
+            assert ws.receive_json()["type"] == "tracks"
