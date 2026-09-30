@@ -143,3 +143,14 @@ async def test_telemetry_tick_emits_snapshot():
     await pipeline.telemetry_tick(frames_dropped=2)
     (message,) = rec.of("telemetry")
     assert (message.frames_dropped, message.mode) == (2, "lokal")
+
+
+async def test_person_region_is_never_sent():
+    person = trk(10, (300, 0, 980, 720), label="man")
+    flag = trk(1, (320, 20, 960, 700), label="flag")
+    identifier = FakeIdentifier(script=[obs(I14)])
+    pipeline, rec, _ = make([[person, flag]], identifier)
+    await feed(pipeline, sharp_image(boxes=((320, 20, 960, 700),)), 22)
+    await pipeline.wait_idle()
+    assert identifier.requests == []
+    assert rec.of("tracks")[20].hint == lines.hint_line("person", "de")

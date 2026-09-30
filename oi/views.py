@@ -15,7 +15,7 @@ import numpy as np
 from oi.config import Settings
 from oi.contracts import Track
 
-GateFailure = Literal["cut", "small", "blurry", "unsteady"]
+GateFailure = Literal["cut", "small", "blurry", "unsteady", "person"]
 
 
 def sharpness(gray: np.ndarray) -> float:
@@ -36,14 +36,33 @@ def hamming(a: int, b: int) -> int:
     return (a ^ b).bit_count()
 
 
-def crop_box(image: np.ndarray, box: tuple[float, float, float, float], margin: float) -> np.ndarray:
-    """The box plus `margin` of its size on every side, clamped to the image."""
-    h, w = image.shape[:2]
+def _crop_bounds(shape: tuple[int, ...], box: tuple[float, float, float, float], margin: float
+                 ) -> tuple[int, int, int, int]:
+    h, w = shape[:2]
     x1, y1, x2, y2 = box
     mx, my = (x2 - x1) * margin, (y2 - y1) * margin
-    left, top = max(0, round(x1 - mx)), max(0, round(y1 - my))
-    right, bottom = min(w, round(x2 + mx)), min(h, round(y2 + my))
+    return max(0, round(x1 - mx)), max(0, round(y1 - my)), min(w, round(x2 + mx)), min(h, round(y2 + my))
+
+
+def crop_box(image: np.ndarray, box: tuple[float, float, float, float], margin: float) -> np.ndarray:
+    """The box plus `margin` of its size on every side, clamped to the image."""
+    left, top, right, bottom = _crop_bounds(image.shape, box, margin)
     return image[top:bottom, left:right]
+
+
+def keep_only_object(crop: np.ndarray, polygon: list[tuple[float, float]], origin: tuple[int, int],
+                     widen_px: int) -> np.ndarray:
+    """Grey out everything outside the object's (slightly widened) outline, so only the object leaves the Mac."""
+    if len(polygon) < 3:
+        return crop
+    mask = np.zeros(crop.shape[:2], np.uint8)
+    points = np.array([[round(x - origin[0]), round(y - origin[1])] for x, y in polygon], np.int32)
+    cv2.fillPoly(mask, [points], 255)
+    if widen_px > 0:
+        mask = cv2.dilate(mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * widen_px + 1, 2 * widen_px + 1)))
+    out = np.full_like(crop, 128)
+    out[mask > 0] = crop[mask > 0]
+    return out
 
 
 def encode_for_claude(crop: np.ndarray, long_edge: int, quality: int) -> bytes:
@@ -99,12 +118,13 @@ class ViewCollector:
         self._armed = True
         self._forced = False
         self._window_start: float | None = None
-        self._best: tuple[float, np.ndarray, int, float] | None = None  # sharpness, crop, dhash, aspect
+        self._best: tuple[float, np.ndarray, int, float] | None = None  # sharpness, sendable crop, dhash, aspect
         self._last_released: int | None = None
         self._sent: list[_SentView] = []
         self._next_view_id = 1
 
-    def offer(self, track: Track, image: np.ndarray, steady: float, now: float) -> ViewResult:
+    def offer(self, track: Track, image: np.ndarray, steady: float, now: float, blocked: bool = False) -> ViewResult:
+        """`blocked`: the privacy veto says this crop could show a person or a face."""
         s = self._s
         if steady >= s.steady_min:
             if self._steady_since is None:
@@ -112,7 +132,7 @@ class ViewCollector:
         else:
             self._steady_since = None
 
-        failing, sharp, crop, gray = self._gate(track, image, now)
+        failing, sharp, crop, gray = ("person", None, None, None) if blocked else self._gate(track, image, now)
         if failing is not None:
             if self._fail_since is None:
                 self._fail_since = now
@@ -132,7 +152,9 @@ class ViewCollector:
         if self._window_start is None:
             self._window_start, self._best = now, None
         if self._best is None or sharp > self._best[0]:
-            self._best = (sharp, crop.copy(), fingerprint, aspect)
+            left, top, _, _ = _crop_bounds(image.shape, track.box, s.crop_margin)
+            widen = round(s.mask_dilate * max(x2 - x1, y2 - y1))
+            self._best = (sharp, keep_only_object(crop, track.polygon, (left, top), widen), fingerprint, aspect)
         if now - self._window_start < s.best_of_window_s:
             return ViewResult(ready=None, failing=None, hint=None, sharpness=sharp)
 

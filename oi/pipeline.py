@@ -21,6 +21,7 @@ from oi.focus import FocusSelector, split_tracks
 from oi.identify import Identifier, IdentifyError, IdentifyRequest, IdentifyResult, format_history, request_text
 from oi.ingest import Frame, FrameFormatError, FrameSlot, decode_frame
 from oi.perception import Detector
+from oi.privacy import privacy_veto
 from oi.telemetry import CallLog, CallRecord, Telemetry
 from oi.trigger import Decision, TriggerInput, decide
 from oi.views import ReadyCrop, ViewCollector
@@ -73,7 +74,8 @@ class Pipeline:
         focus = next((t for t in visible if t.id == focus_id), None)
         if focus is not None and self._identifier is not None:
             state = self._states[focus.id]
-            result = state.collector.offer(focus, frame.image, self._focus.steady(focus.id), frame.t)
+            blocked = privacy_veto(focus, tracks, self._s)  # all raw detections, people included
+            result = state.collector.offer(focus, frame.image, self._focus.steady(focus.id), frame.t, blocked)
             self._telemetry.set_sharpness(result.sharpness)
             if result.hint is not None:
                 hint = lines.hint_line(result.hint, self._s.language)

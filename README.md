@@ -15,8 +15,9 @@ their own sub-projects.
   corner. A result becomes *certain* only through two independent views or a model name that is readable on the
   object.
 - **Detection and identification are separate.** A local open-vocabulary detector (YOLOE-26, prompt-free) with
-  BoT-SORT tracking runs on every frame on the Mac GPU. Only the focus object goes to Claude, and only as a crop:
-  never the whole frame, never a face.
+  BoT-SORT tracking runs on every frame on the Mac GPU. Only the focus object goes to Claude, as a crop in which
+  everything outside the object's own outline is painted grey. A crop that could show a person is never sent: the
+  focus may not cover most of a person, sit in a person's head zone or lie over a face.
 - **Costs are bounded and visible.** At most 4 calls per object and 150 per session; every call is logged in `runs/`
   with the crop, the answer, tokens, cost and latency. A measured call with Claude Opus 5.5 cost about 1.7 cents.
 

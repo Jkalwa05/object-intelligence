@@ -65,3 +65,8 @@ def test_status_and_notice_texts():
     assert lines.notice_text("model_missing", "en", model="claude-x") == "Model claude-x not found: local detection only."
     assert lines.notice_text("unreachable", "de") == "Claude gerade nicht erreichbar."
     assert lines.notice_text("unreachable", "en") == "Claude is not reachable right now."
+
+
+def test_person_hint():
+    assert lines.hint_line("person", "de") == "Bitte nur den Gegenstand zeigen, nicht vors Gesicht."
+    assert lines.hint_line("person", "en") == "Please show only the object, not in front of your face."

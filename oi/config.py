@@ -46,9 +46,16 @@ class Settings:
     min_area: float = 0.01
     max_area: float = 0.60
     min_age_frames: int = 3
-    excluded_labels: tuple[str, ...] = ("person", "man", "woman", "boy", "girl", "child", "baby", "face", "head",
-                                        "hand", "arm", "finger")
+    excluded_labels: tuple[str, ...] = ("person", "man", "woman", "boy", "girl", "child", "baby", "adult", "toddler",
+                                        "preacher", "portrait", "selfie", "body", "face", "head", "hair", "beard",
+                                        "eye", "ear", "nose", "mouth", "forehead", "neck", "shoulder", "chest", "skin",
+                                        "hand", "arm", "finger", "leg", "foot")
     hand_labels: tuple[str, ...] = ("hand",)
+    # privacy veto (never send a crop that is really a person or holds a face): whole persons and face parts
+    person_labels: tuple[str, ...] = ("person", "man", "woman", "boy", "girl", "child", "baby", "adult", "toddler",
+                                      "preacher", "portrait", "selfie", "body")
+    face_labels: tuple[str, ...] = ("face", "head", "hair", "beard", "eye", "ear", "nose", "mouth", "forehead")
+    mask_dilate: float = 0.04  # the object outline is widened by 4 % of the box before everything else is greyed out
     min_sharpness: float = 60.0
     dhash_min_distance: int = 14
     aspect_change: float = 0.25

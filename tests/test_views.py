@@ -101,3 +101,24 @@ def test_quality_q_mapping():
     assert quality_q(60, 60) == 0.5
     assert quality_q(300, 60) == 1.0
     assert quality_q(1000, 60) == 1.0
+
+
+def test_privacy_block_never_releases_and_hints():
+    collector = ViewCollector(Settings())
+    image = sharp_image(boxes=(BOX,))
+    results = [collector.offer(trk(1, BOX), image, steady=1.0, now=i * 0.1, blocked=True) for i in range(22)]
+    assert all(r.ready is None and r.failing == "person" for r in results)
+    assert results[19].hint is None and results[20].hint == "person"
+
+
+def test_released_crop_contains_only_the_object():
+    from oi.contracts import Track
+    image = sharp_image(boxes=(BOX,))
+    image[166:184, 400:700] = 255  # a bright "face" above the object, inside the crop margin
+    track = Track(id=1, box=BOX, polygon=[(400, 200), (700, 200), (700, 500), (400, 500)], label="cup", score=0.9,
+                  age_frames=10, first_seen_ts=0.0)
+    collector = ViewCollector(Settings())
+    ready = next(r.ready for r in (collector.offer(track, image, 1.0, i * 0.1) for i in range(12)) if r.ready)
+    crop = cv2.imdecode(np.frombuffer(ready.jpeg, np.uint8), cv2.IMREAD_GRAYSCALE)  # crop starts at (364, 164)
+    assert abs(float(crop[3:18, 60:300].mean()) - 128) < 15  # the bright band is painted grey
+    assert float(crop[60:300, 60:300].std()) > 20  # the object keeps its texture
