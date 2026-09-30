@@ -61,6 +61,8 @@ uv run python -m oi --fake-claude   # free canned answers, for working on the UI
 uv run python -m oi --no-browser --port 8766
 ```
 
+The object you hold in your hand becomes the focus automatically; anything else (a lamp on the desk, the stairs
+behind you) is focused with a click, and regions on your own body or face are never focused or sent.
 In the HUD: click an object to focus it, click empty space to return to automatic focus, `M` mutes the voice,
 `D` shows the telemetry, `S` toggles the mirror view. Settings such as `OI_MODEL=claude-sonnet-5-5` (faster),
 `OI_LANGUAGE=en` or `OI_MIN_SHARPNESS` are read from the environment or `.env`.

@@ -35,3 +35,11 @@ def test_person_and_body_labels_are_excluded():
     s = Settings()
     for label in ("adult", "preacher", "selfie", "portrait", "hair", "beard", "neck", "shoulder", "forehead", "body"):
         assert label in s.excluded_labels
+
+
+def test_privacy_hint_texts():
+    from oi import lines
+    assert lines.hint_line("person", "de") == "Personen und Gesichter identifiziere ich nicht."
+    assert lines.hint_line("person", "en") == "I don't identify people or faces."
+    assert lines.hint_line("lower", "de") == "Halt es bitte tiefer, nicht vors Gesicht."
+    assert lines.hint_line("lower", "en") == "Please hold it lower, not in front of your face."

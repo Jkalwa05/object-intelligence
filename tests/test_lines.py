@@ -67,6 +67,3 @@ def test_status_and_notice_texts():
     assert lines.notice_text("unreachable", "en") == "Claude is not reachable right now."
 
 
-def test_person_hint():
-    assert lines.hint_line("person", "de") == "Bitte nur den Gegenstand zeigen, nicht vors Gesicht."
-    assert lines.hint_line("person", "en") == "Please show only the object, not in front of your face."

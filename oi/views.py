@@ -15,7 +15,7 @@ import numpy as np
 from oi.config import Settings
 from oi.contracts import Track
 
-GateFailure = Literal["cut", "small", "blurry", "unsteady", "person"]
+GateFailure = Literal["cut", "small", "blurry", "unsteady", "person", "lower"]
 
 
 def sharpness(gray: np.ndarray) -> float:
@@ -123,8 +123,9 @@ class ViewCollector:
         self._sent: list[_SentView] = []
         self._next_view_id = 1
 
-    def offer(self, track: Track, image: np.ndarray, steady: float, now: float, blocked: bool = False) -> ViewResult:
-        """`blocked`: the privacy veto says this crop could show a person or a face."""
+    def offer(self, track: Track, image: np.ndarray, steady: float, now: float,
+              blocked: GateFailure | None = None) -> ViewResult:
+        """`blocked`: the privacy veto's reason ("person", or "lower" for a held object in front of the face)."""
         s = self._s
         if steady >= s.steady_min:
             if self._steady_since is None:
@@ -132,7 +133,7 @@ class ViewCollector:
         else:
             self._steady_since = None
 
-        failing, sharp, crop, gray = ("person", None, None, None) if blocked else self._gate(track, image, now)
+        failing, sharp, crop, gray = (blocked, None, None, None) if blocked else self._gate(track, image, now)
         if failing is not None:
             if self._fail_since is None:
                 self._fail_since = now

@@ -20,7 +20,8 @@ _TEXTS: dict[str, dict[str, str]] = {
         "cut": "Bitte ganz ins Bild.",
         "small": "Bitte etwas näher.",
         "still": "Halt es bitte ruhig.",
-        "person": "Bitte nur den Gegenstand zeigen, nicht vors Gesicht.",
+        "person": "Personen und Gesichter identifiziere ich nicht.",
+        "lower": "Halt es bitte tiefer, nicht vors Gesicht.",
         "error": "Identifikation gerade nicht möglich.",
         "paused": "Kostenbremse erreicht, Identifikation pausiert.",
         "no_key": "Kein API-Key: nur lokale Erkennung.",
@@ -38,7 +39,8 @@ _TEXTS: dict[str, dict[str, str]] = {
         "cut": "Please bring it fully into view.",
         "small": "Please come a bit closer.",
         "still": "Please hold it still.",
-        "person": "Please show only the object, not in front of your face.",
+        "person": "I don't identify people or faces.",
+        "lower": "Please hold it lower, not in front of your face.",
         "error": "Identification is not available right now.",
         "paused": "Cost limit reached, identification paused.",
         "no_key": "No API key: local detection only.",
@@ -48,7 +50,7 @@ _TEXTS: dict[str, dict[str, str]] = {
 }
 
 _HINT_KEYS: dict[GateFailure, str] = {"cut": "cut", "small": "small", "blurry": "still", "unsteady": "still",
-                                     "person": "person"}
+                                     "person": "person", "lower": "lower"}
 
 
 def _capitalize(text: str) -> str:

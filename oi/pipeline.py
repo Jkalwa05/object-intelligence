@@ -65,7 +65,12 @@ class Pipeline:
         self._telemetry.frame_processed((time.perf_counter() - started) * 1000.0)
         h, w = frame.image.shape[:2]
         visible, hands = split_tracks(tracks, self._s)
-        focus_id = self._focus.update(visible, hands, w, h, frame.t)
+        people_labels = set(self._s.person_labels) | set(self._s.face_labels)
+        people = [t for t in tracks if t.label.lower() in people_labels]
+        focus_id = self._focus.update(visible, hands, w, h, frame.t, people=people)
+        # regions on a person's body or face ("flag", "night sky" on a shirt or a face) get no brackets either
+        visible = [t for t in visible if t.id == focus_id or self._focus.held(t.id, frame.t)
+                   or not privacy_veto(t, people, self._s)]
         for track in visible:
             self._remember(track, frame.t)
 
@@ -73,7 +78,9 @@ class Pipeline:
         focus = next((t for t in visible if t.id == focus_id), None)
         if focus is not None and self._identifier is not None:
             state = self._states[focus.id]
-            blocked = privacy_veto(focus, tracks, self._s)  # all raw detections, people included
+            blocked = None
+            if privacy_veto(focus, people, self._s):
+                blocked = "lower" if self._focus.held(focus.id, frame.t) else "person"
             result = state.collector.offer(focus, frame.image, self._focus.steady(focus.id), frame.t, blocked)
             self._telemetry.set_sharpness(result.sharpness)
             if result.hint is not None and self._can_still_call(state):

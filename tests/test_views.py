@@ -106,7 +106,7 @@ def test_quality_q_mapping():
 def test_privacy_block_never_releases_and_hints():
     collector = ViewCollector(Settings())
     image = sharp_image(boxes=(BOX,))
-    results = [collector.offer(trk(1, BOX), image, steady=1.0, now=i * 0.1, blocked=True) for i in range(22)]
+    results = [collector.offer(trk(1, BOX), image, steady=1.0, now=i * 0.1, blocked="person") for i in range(22)]
     assert all(r.ready is None and r.failing == "person" for r in results)
     assert results[19].hint is None and results[20].hint == "person"
 

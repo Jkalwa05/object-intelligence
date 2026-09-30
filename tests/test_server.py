@@ -15,6 +15,7 @@ from tests.helpers import sharp_image, trk
 
 BOX = (400, 200, 700, 500)
 CUP, BOOK = trk(1, BOX), trk(2, (1000, 100, 1200, 300), label="book")
+HAND = trk(99, (450, 400, 650, 520), label="hand")  # the cup is held: only held objects get focus
 
 
 def frame_message(image=None, frame_id: int = 1, t_ms: float = 0.0) -> bytes:
@@ -26,7 +27,7 @@ def frame_message(image=None, frame_id: int = 1, t_ms: float = 0.0) -> bytes:
 
 
 def app_with(identifier_result, detector=None, static_dir: Path = Path("/nonexistent"), settings=None):
-    detector = detector or FakeDetector([[CUP]])
+    detector = detector or FakeDetector([[CUP, HAND]])
 
     async def factory():
         return identifier_result
