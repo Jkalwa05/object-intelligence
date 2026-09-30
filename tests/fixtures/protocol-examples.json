@@ -1,0 +1,88 @@
+[
+  {
+    "ts": 1.0,
+    "seq": 1,
+    "type": "tracks",
+    "frame_id": 42,
+    "w": 1280,
+    "h": 720,
+    "focus_id": 17,
+    "tracks": [
+      {
+        "id": 17,
+        "box": [
+          0.1,
+          0.2,
+          0.3,
+          0.6
+        ],
+        "polygon": [
+          [
+            0.1,
+            0.2
+          ],
+          [
+            0.3,
+            0.2
+          ],
+          [
+            0.3,
+            0.6
+          ]
+        ],
+        "label": "cell phone",
+        "score": 0.91
+      }
+    ],
+    "hint": null
+  },
+  {
+    "ts": 1.1,
+    "seq": 2,
+    "type": "identity",
+    "track_id": 17,
+    "status": "ready",
+    "level": "likely",
+    "display_name": "Apple iPhone 14",
+    "candidates": [
+      {
+        "name": "Apple iPhone 14",
+        "share": 0.67
+      },
+      {
+        "name": "Apple iPhone 13",
+        "share": 0.33
+      }
+    ],
+    "evidence": [
+      "Apple-Logo",
+      "2 Kameras"
+    ],
+    "view_request": null,
+    "final": false,
+    "calls_used": 1,
+    "line": "Das ist wahrscheinlich Apple iPhone 14."
+  },
+  {
+    "ts": 1.2,
+    "seq": 3,
+    "type": "telemetry",
+    "fps_processed": 11.5,
+    "frames_dropped": 3,
+    "det_ms": 24.0,
+    "id_ms_last": 2800.0,
+    "sharpness_focus": 142.0,
+    "calls_session": 1,
+    "cost_session_usd": 0.02,
+    "model": "claude-opus-5-5",
+    "mode": "hybrid",
+    "language": "de"
+  },
+  {
+    "ts": 1.3,
+    "seq": 4,
+    "type": "notice",
+    "level": "warn",
+    "text": "Kein API-Key: nur lokale Erkennung."
+  }
+]

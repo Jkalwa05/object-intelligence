@@ -1,0 +1,30 @@
+[project]
+name = "object-intelligence"
+version = "0.1.0"
+description = "Hold any object up to the camera: live detection, tracking and honest identification."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "ultralytics",
+    "torch",
+    "numpy",
+    "pydantic>=2",
+    "anthropic",
+    "python-dotenv",
+]
+
+[dependency-groups]
+dev = ["pytest", "pytest-asyncio", "httpx"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+asyncio_mode = "auto"
+markers = [
+    "model: loads the YOLOE weights (slow, downloads them on first run)",
+    "claude: makes a real Claude API call (costs about 2 cents)",
+]
+addopts = "-m 'not model and not claude'"
