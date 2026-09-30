@@ -1,0 +1,208 @@
+/* Look "Glas" (spec §3): white system type on dark frosted glass, one colour, no glow, quiet animations. */
+
+:root {
+  --glass-bg: rgba(22, 22, 28, 0.6);
+  --glass-blur: 8px;
+  --radius: 10px;
+  --text: #fff;
+  --line: rgba(255, 255, 255, 0.5);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: #000;
+  color: var(--text);
+  font-family: -apple-system, system-ui, sans-serif;
+}
+
+.stage {
+  position: fixed;
+  inset: 0;
+}
+
+.video,
+.overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.video {
+  object-fit: contain;
+  background: #000;
+}
+
+.video.mirrored {
+  transform: scaleX(-1);
+}
+
+.overlay {
+  cursor: crosshair;
+}
+
+.glass {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+  border-radius: var(--radius);
+}
+
+.card {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 300px;
+  padding: 14px 16px;
+  will-change: transform;
+}
+
+.card.hidden {
+  display: none;
+}
+
+.card-body {
+  animation: fade 200ms ease-out;
+}
+
+.card-level {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  opacity: 0.75;
+}
+
+.card-name {
+  margin: 2px 0 4px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.card-line {
+  margin-bottom: 10px;
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.bars {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.bars li {
+  display: grid;
+  grid-template-columns: 1fr 90px;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.bars i {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--text);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.chip {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 11px;
+  opacity: 0;
+  animation: fade 200ms ease-out forwards;
+}
+
+.ask {
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ask small {
+  display: block;
+  font-weight: 400;
+  opacity: 0.75;
+}
+
+.pill {
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.telemetry {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 8px 10px;
+  font: 11px/1.5 ui-monospace, Menlo, monospace;
+}
+
+.telemetry div {
+  display: flex;
+  gap: 10px;
+}
+
+.telemetry dt {
+  min-width: 80px;
+  opacity: 0.6;
+}
+
+.telemetry dd {
+  margin: 0;
+}
+
+.muted-badge {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.banner-stack {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  display: grid;
+  gap: 6px;
+  transform: translateX(-50%);
+}
+
+.banner {
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
