@@ -103,3 +103,23 @@ def test_observations_are_kept_in_order():
     b.add(first, 1, 1.0)
     b.add(second, 2, 1.0)
     assert b.observations == [first, second]
+
+
+def test_low_self_assessment_never_makes_certain():
+    b = Belief("de")
+    b.add(obs(I14, I13, sa="low"), 1, 1.0)
+    b.add(obs(I14, I13, sa="low"), 2, 1.0)
+    state = b.snapshot(2)
+    assert (state.level, state.final) == (Level.UNSURE, False)
+
+
+def test_short_or_partial_model_names_are_not_decisive():
+    b = Belief("de")
+    b.add(obs(cand("Apple", "Pro"), readable=("Protein powder",)), 1, 1.0)
+    assert b.snapshot(1).level == Level.LIKELY
+    b = Belief("de")
+    b.add(obs(cand("Microsoft", "One"), readable=("Xbox One S",)), 1, 1.0)
+    assert b.snapshot(1).level == Level.LIKELY
+    b = Belief("de")
+    b.add(obs(cand("Sony", "Alpha 7"), readable=("ALPHA 7 III",)), 1, 1.0)
+    assert b.snapshot(1).level == Level.CERTAIN

@@ -26,3 +26,7 @@ def test_env_without_overrides_gives_defaults():
 def test_invalid_values_rejected(env):
     with pytest.raises(ValueError):
         Settings.from_env(env)
+
+
+def test_dhash_distance_can_be_calibrated():
+    assert Settings.from_env({"OI_DHASH_MIN_DISTANCE": "20"}).dhash_min_distance == 20

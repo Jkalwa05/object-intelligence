@@ -86,6 +86,7 @@ class Settings:
             "OI_MAX_CALLS_SESSION": ("max_calls_session", int),
             "OI_DETECTOR": ("detector", str),
             "OI_MIN_SHARPNESS": ("min_sharpness", float),
+            "OI_DHASH_MIN_DISTANCE": ("dhash_min_distance", int),
             "OI_LOG_CALLS": ("log_calls", _parse_bool),
             "OI_PORT": ("port", int),
         }

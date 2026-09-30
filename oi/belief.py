@@ -6,6 +6,7 @@ quality. Only independent views (different view ids) or a readable model name ca
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from oi import lines
@@ -112,6 +113,10 @@ class Belief:
             return _Verdict(Level.CERTAIN, True, ranking, total, False)
         if indistinct:
             return _Verdict(Level.UNSURE, True, ranking, total, True)
+        # Ruling (ledger, final review): Claude's own "low" blocks the two-view rule as well; a slightly tilted
+        # re-grip can count as a new view, so agreement alone must not make look-alikes certain.
+        if latest.self_assessment == "low":
+            return _Verdict(Level.UNSURE, False, ranking, total, False)
         if len(top.top_views) >= 2 and share >= CERTAIN_SHARE - EPS and lead >= CERTAIN_LEAD - EPS:
             return _Verdict(Level.CERTAIN, True, ranking, total, False)
         if lead < CLOSE_LEAD - EPS or latest.self_assessment == "low":
@@ -133,10 +138,13 @@ class Belief:
 
     @staticmethod
     def _decisive(entry: _Entry) -> bool:
-        """The candidate's model name is readable on the object in one of its own observations."""
+        """The candidate's model name is readable on the object, as whole words, in one of its own observations.
+        Short names without a digit ("Pro", "One") are too common to prove anything."""
         for c, obs in entry.sightings:
             name = _normalize(c.model_name or "")
-            if len(name) >= 3 and name in _normalize(" ".join(obs.readable_text)):
+            if len(name) < 4 and not any(ch.isdigit() for ch in name):
+                continue
+            if re.search(rf"(?<!\w){re.escape(name)}(?!\w)", _normalize(" ".join(obs.readable_text))):
                 return True
         return False
 
