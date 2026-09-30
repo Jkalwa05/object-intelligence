@@ -23,6 +23,7 @@ anthropic SDK, pytest + pytest-asyncio; Vite, React, TypeScript, zustand, Vitest
 - Claude: Standard `claude-opus-5-5` mit `effort: "low"`; erlaubt sind `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-4-5`. An Claude geht nur der Ausschnitt des Fokus-Objekts (lange Kante ≤ 1024 px, JPEG-Qualität 90), nie das ganze Bild.
 - Grenzen: 4 Aufrufe pro Objekt, 150 pro Sitzung, 2 gleichzeitig.
 - Sprache `de` (Standard) oder `en`. Alle Zeilen für Karte und Stimme kommen vom Server (`oi/lines.py`).
+- Der API-Key steht nur in `.env` im Projektordner (git-ignored, existiert schon) oder in der Umgebung, nie in `web/` und nie im Code. Geladen wird er mit `python-dotenv` und `override=False`.
 - Werte im Code und Protokoll: Stufen `certain`, `likely`, `unsure`, `category_only` (= SICHER, WAHRSCHEINLICH, UNSICHER, NUR KATEGORIE der Spec); Status `analysing`, `ready`, `error`, `paused`; Modus `hybrid`, `lokal`.
 - Alle Server-Nachrichten sind JSON mit `type`, `ts`, `seq`; Koordinaten auf 0–1 normalisiert; Contract-Version 1.
 - Look „Glas“: Text `#fff` auf `rgba(22,22,28,.6)`, `backdrop-filter: blur(8px)` plus `-webkit-backdrop-filter` (Safari), Radius 10 px, Schrift `-apple-system`, einfarbig, kein Glow.
@@ -43,7 +44,7 @@ anthropic SDK, pytest + pytest-asyncio; Vite, React, TypeScript, zustand, Vitest
 ### Task 1: Projektgerüst, Konfiguration, Contracts
 
 **Files:**
-- Create: `pyproject.toml`, `.python-version`, `oi/__init__.py`, `oi/config.py`, `oi/contracts.py`, `tests/test_config.py`, `tests/test_contracts.py`, `tests/fixtures/protocol-examples.json`
+- Create: `pyproject.toml`, `.python-version`, `.env.example`, `oi/__init__.py`, `oi/config.py`, `oi/contracts.py`, `tests/conftest.py`, `tests/test_config.py`, `tests/test_contracts.py`, `tests/fixtures/protocol-examples.json`
 
 **Interfaces:**
 - Produces `oi/config.py`: `Lang = Literal["de", "en"]`; `@dataclass(frozen=True) class Settings` mit den Feldern unten; `Settings.from_env(env: Mapping[str, str] | None = None) -> Settings` (`None` bedeutet `os.environ`). `from_env` wirft `ValueError`, wenn die Sprache nicht `de`/`en` ist oder das Modell nicht in `prices` steht.
@@ -81,7 +82,9 @@ Modell-Festlegungen, Felder wie in §2.2, §2.5, §2.6 und §2.7:
 
 - [ ] **Step 1: Gerüst anlegen.**
   - `pyproject.toml`: Name `object-intelligence`, `requires-python = ">=3.12,<3.13"`.
-  - Abhängigkeiten: `fastapi`, `uvicorn[standard]`, `ultralytics`, `torch`, `numpy`, `pydantic>=2`, `anthropic`; Gruppe `dev`: `pytest`, `pytest-asyncio`, `httpx`.
+  - Abhängigkeiten: `fastapi`, `uvicorn[standard]`, `ultralytics`, `torch`, `numpy`, `pydantic>=2`, `anthropic`, `python-dotenv`; Gruppe `dev`: `pytest`, `pytest-asyncio`, `httpx`.
+  - `.env.example` (committet): Kommentarzeile „Kopiere diese Datei nach .env und trage deinen Key ein. .env landet nie in Git.“, dann `ANTHROPIC_API_KEY=` und auskommentiert `# OI_MODEL=claude-sonnet-5-5` und `# OI_LANGUAGE=en`.
+  - `tests/conftest.py`: `load_dotenv(override=False)`, damit `-m claude` den Key aus `.env` findet.
   - `[tool.uv] package = false`.
   - `[tool.pytest.ini_options]`: `pythonpath = ["."]`, `asyncio_mode = "auto"`, Marker `model` („lädt YOLOE-Gewichte“) und `claude` („echter API-Aufruf, ca. 2 Cent“), `addopts = "-m 'not model and not claude'"`.
   - `.python-version` mit `3.12`.
@@ -624,7 +627,7 @@ async def test_two_similar_objects_do_not_flicker():   # zwei gleich große Tass
 - `/ws` beim Beenden: Tasks abbrechen und `await pipeline.aclose()`.
 - `GET /`: Gibt es `static_dir/index.html`, mountet die App `StaticFiles(directory=static_dir, html=True)` an `/`. Sonst liefert sie eine kleine HTML-Seite mit dem Satz „Frontend nicht gebaut: `npm --prefix web install && npm --prefix web run build`“.
 - `main`:
-  1. `Settings.from_env()` laden, `YoloeDetector(s)` bauen.
+  1. `load_dotenv(Path(".env"), override=False)`, dann `Settings.from_env()` laden und `YoloeDetector(s)` bauen.
   2. `create_app(s, detector, lambda: choose_identifier(s, args.fake_claude))`.
   3. Ohne `--no-browser` öffnet ein `threading.Timer(1.5, webbrowser.open, ...)` die Seite `http://127.0.0.1:{port}`.
   4. `uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")`.
@@ -845,7 +848,7 @@ test("hints at most every 5 s", ...);               // t=0 -> Zeile; t=4000 -> n
 - **`README.md`**, auf Englisch fürs Portfolio:
   - was das Projekt ist und die Ehrlichkeits-Prinzipien (Stufen statt Prozenten, nur der Ausschnitt geht an Claude)
   - Setup: `uv sync`, `npm --prefix web install`, `npm --prefix web run build`
-  - Start: `uv run python -m oi`, dazu `--fake-claude` und `--no-browser`; der API-Key per `ANTHROPIC_API_KEY` oder `ant auth login`
+  - Start: `uv run python -m oi`, dazu `--fake-claude` und `--no-browser`; der API-Key kommt in `.env` (Vorlage `.env.example`), per Umgebungsvariable `ANTHROPIC_API_KEY` oder per `ant auth login`
   - Tests: Standardlauf, `-m model`, `-m claude` (kostet ca. 2 Cent) und `npm --prefix web test`
   - eine Architekturskizze aus §2
   - Hinweis auf die Teilprojekte 2–5
