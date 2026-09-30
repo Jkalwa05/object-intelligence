@@ -1,6 +1,6 @@
 # Object Intelligence, Teilprojekt 1: Sehen & Identifizieren
 
-Stand: 2026-09-30 · Status: freigegeben und umgesetzt (auf `main`), Anpassungen nach den Live-Tests in §8 und §9
+Stand: 2026-09-30 · Status: freigegeben und umgesetzt (auf `main`), Anpassungen nach den Live-Tests in §8 bis §10
 
 Object Intelligence ist ein voll funktionsfähiges Programm und Portfolio-Projekt: Man hält einen beliebigen Gegenstand vor die
 Mac-Kamera, und das System sagt, *was* es ist, *wie sicher* es ist und *woher* die Infos stammen, zeigt ein 3D-Modell
@@ -443,3 +443,23 @@ towel“ und „cup“.
   unterscheidende Ansicht an, ist das Ergebnis nicht mehr endgültig. Beispiel: iPhone 14 oder 15 → Unterseite
   (Lightning oder USB-C) oder Vorderseite (Notch oder Dynamic Island). Die Karte fragt dann nach dieser Ansicht.
   Übereinstimmende Ansichten machen solche Kandidaten nicht „sicher“.
+
+## 10. Nachtrag 2026-10-01: Schnappschuss aus dem Video statt Stillhalten
+
+Dieser Nachtrag ersetzt in §2.4 Punkt 4 der Prüfung (`steady ≥ 0,6` seit 0,5 s), das 0,4-s-Fenster und den Hinweis
+„Halt es bitte ruhig.“.
+
+Nach dem dritten Live-Test gab es in einer ganzen Sitzung keinen einzigen Aufruf für das Handy, nur „Halt es bitte
+ruhig“. Das Handy musste 0,5 s ununterbrochen ruhig sein und danach 0,4 s ohne einen Ausreißer bleiben. Jedes
+unruhige oder unscharfe Bild setzte alles zurück, und ein Video aus der Hand ist nie so ruhig. An der Schärfe lag
+es nicht: Ein Standbild des gehaltenen Handys hatte 451 bei einer Schwelle von 60, mit 9 px Bewegungsunschärfe noch 83.
+
+- **Kandidaten.** Jedes Bild, das das ganze Objekt zeigt, ist ein Kandidat, auch ein unscharfes. Abgeschnittene,
+  zu kleine oder vom Datenschutz gesperrte Bilder werden übersprungen. Was schon gesammelt ist, bleibt erhalten.
+- **Schnappschuss.** 0,5 s nach dem ersten Kandidaten geht der schärfste Kandidat an Claude (Bewegung verwischt,
+  also ist das schärfste Bild das ruhigste), sofern er die Schärfeschwelle erreicht. Nach 2 s geht der schärfste
+  auch ohne Schwelle (`capture_patience_s`). Sein Gewicht im Belegbuch bleibt dann das kleinste (q = 0,5).
+- **Hinweise** gibt es nur noch für das, was man ändern kann: „Bitte ganz ins Bild“, „Bitte etwas näher“,
+  „Personen und Gesichter …“ und „tiefer“. Ruhe und Schärfe erscheinen nur noch in der Telemetrie („zu unscharf“).
+- **Neue Ansichten** und das Aufruf-Limit bleiben unverändert: Ein neuer Aufruf kommt nur für eine Ansicht mit
+  dHash-Abstand ≥ 14 zu allen gesendeten Ansichten, höchstens 4 pro Objekt.
