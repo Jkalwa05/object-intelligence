@@ -114,10 +114,15 @@ def format_history(observations: list[Observation], lang: Lang) -> str:
     return "\n".join(rows)
 
 
-def build_request(s: Settings, req: IdentifyRequest) -> dict[str, Any]:
+def request_text(req: IdentifyRequest) -> str:
+    """The text that goes next to the crop; also stored in the call log."""
     text = [f"Coarse detector label: {req.coarse_label}", f"Previous observations of this object: {req.history}"]
     if req.pending_view is not None:
         text.append(f"Requested view: {req.pending_view.view} ({req.pending_view.reason})")
+    return "\n".join(text)
+
+
+def build_request(s: Settings, req: IdentifyRequest) -> dict[str, Any]:
     output_config: dict[str, Any] = {"format": {"type": "json_schema", "schema": OBSERVATION_SCHEMA}}
     request: dict[str, Any] = {
         "model": s.model,
@@ -126,7 +131,7 @@ def build_request(s: Settings, req: IdentifyRequest) -> dict[str, Any]:
         "messages": [{"role": "user", "content": [
             {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
                                          "data": base64.standard_b64encode(req.jpeg).decode()}},
-            {"type": "text", "text": "\n".join(text)},
+            {"type": "text", "text": request_text(req)},
         ]}],
         "output_config": output_config,
     }
