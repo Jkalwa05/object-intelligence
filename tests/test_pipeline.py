@@ -221,3 +221,26 @@ async def test_no_hints_once_nothing_can_be_called():
     assert rec.of("identity")[-1].final
     await feed(pipeline, blurry_image(boxes=(BOX,)), 25, start=1.3, first_id=13)
     assert all(m.hint is None for m in rec.of("tracks"))
+
+
+class FakeFaces:
+    def __init__(self, boxes):
+        from oi.contracts import Track
+        self._faces = [Track(id=-(i + 1), box=b, polygon=[], label="face", score=0.9, age_frames=1, first_seen_ts=0.0)
+                       for i, b in enumerate(boxes)]
+
+    def find(self, image):
+        return self._faces
+
+
+async def test_face_finder_keeps_glasses_on_the_face_private():
+    glasses = trk(7, (740, 300, 990, 400), label="glasses")
+    hand = trk(99, (900, 350, 1000, 470), label="hand")  # touching the glasses
+    identifier = FakeIdentifier(script=[obs(I14)])
+    settings = Settings()
+    rec = Recorder()
+    pipeline = Pipeline(settings, FakeDetector([[glasses, hand]]), identifier,
+                        Telemetry(settings, "hybrid", "fake"), None, rec, faces=FakeFaces([(700, 200, 1010, 600)]))
+    await feed(pipeline, sharp_image(boxes=((740, 300, 990, 400),)), 22)
+    await pipeline.wait_idle()
+    assert identifier.requests == []

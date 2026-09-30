@@ -13,6 +13,8 @@ PERSON_COVER = 0.40  # the focus box covers 40 % of a person box: it is the pers
 HEAD_ZONE = 1 / 3  # the top third of a person box
 HEAD_SHARE = 0.50  # half of the focus box lies in a head zone
 FACE_SHARE = 0.20  # the focus box covers 20 % of a face box
+FACE_WIDEN = 0.25  # a face box widened by 25 % per side includes hair, ears and earrings
+ON_FACE_SHARE = 0.50  # half of the focus box lies on the widened face: it is worn, not held up
 
 Box = tuple[float, float, float, float]
 
@@ -40,6 +42,12 @@ def privacy_veto(focus: Track, tracks: list[Track], s: Settings) -> bool:
                 return True
             if focus_area and _overlap(focus.box, head_zone) >= HEAD_SHARE * focus_area:
                 return True
-        elif label in face_labels and _overlap(focus.box, other.box) >= FACE_SHARE * _area(other.box):
-            return True
+        elif label in face_labels:
+            if _overlap(focus.box, other.box) >= FACE_SHARE * _area(other.box):
+                return True
+            x1, y1, x2, y2 = other.box
+            dx, dy = (x2 - x1) * FACE_WIDEN, (y2 - y1) * FACE_WIDEN
+            widened = (x1 - dx, y1 - dy, x2 + dx, y2 + dy)
+            if focus_area and _overlap(focus.box, widened) >= ON_FACE_SHARE * focus_area:
+                return True
     return False

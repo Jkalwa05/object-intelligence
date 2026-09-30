@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 
 from oi.config import Settings
 from oi.contracts import NoticeMsg, ServerMsg, parse_client_message
+from oi.faces import FaceFinder
 from oi.identify import Identifier
 from oi.ingest import FrameFormatError, FrameSlot, parse_frame_message
 from oi.perception import Detector
@@ -59,7 +60,7 @@ async def _tick(pipeline: Pipeline, slot: FrameSlot) -> None:
 
 
 def create_app(settings: Settings, detector: Detector, identifier_factory: IdentifierFactory,
-               static_dir: Path = Path("web/dist")) -> FastAPI:
+               static_dir: Path = Path("web/dist"), faces: FaceFinder | None = None) -> FastAPI:
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.identifier, app.state.notice, app.state.mode = await identifier_factory()
@@ -90,7 +91,7 @@ def create_app(settings: Settings, detector: Detector, identifier_factory: Ident
         telemetry = Telemetry(settings, app.state.mode, identifier.model_label if identifier else "–",
                               budget=app.state.budget)
         pipeline = Pipeline(settings, detector, identifier, telemetry, CallLog(settings.runs_dir, settings.log_calls),
-                            sender.send)
+                            sender.send, faces=faces)
         slot = FrameSlot()
         if app.state.notice:
             await sender.send(NoticeMsg(level="warn", text=app.state.notice))

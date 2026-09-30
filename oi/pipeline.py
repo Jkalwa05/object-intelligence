@@ -17,6 +17,7 @@ from oi.belief import Belief
 from oi.config import Settings
 from oi.contracts import (BeliefState, FocusMsg, IdentityMsg, Level, NoticeMsg, RecheckMsg, ServerMsg, Status, Track,
                           TracksMsg, WireTrack)
+from oi.faces import FaceFinder
 from oi.focus import FocusSelector, split_tracks
 from oi.identify import Identifier, IdentifyError, IdentifyRequest, IdentifyResult, format_history, request_text
 from oi.ingest import Frame, FrameFormatError, FrameSlot, decode_frame
@@ -46,13 +47,14 @@ class _TrackState:
 
 class Pipeline:
     def __init__(self, settings: Settings, detector: Detector, identifier: Identifier | None, telemetry: Telemetry,
-                 call_log: CallLog | None, emit: Emit) -> None:
+                 call_log: CallLog | None, emit: Emit, faces: FaceFinder | None = None) -> None:
         self._s = settings
         self._detector = detector
         self._identifier = identifier
         self._telemetry = telemetry
         self._call_log = call_log
         self._emit = emit
+        self._faces = faces
         self._focus = FocusSelector(settings)
         self._states: dict[int, _TrackState] = {}
         self._tasks: set[asyncio.Task[None]] = set()
@@ -67,6 +69,8 @@ class Pipeline:
         visible, hands = split_tracks(tracks, self._s)
         people_labels = set(self._s.person_labels) | set(self._s.face_labels)
         people = [t for t in tracks if t.label.lower() in people_labels]
+        if self._faces is not None:
+            people += await asyncio.to_thread(self._faces.find, frame.image)
         focus_id = self._focus.update(visible, hands, w, h, frame.t, people=people)
         # regions on a person's body or face ("flag", "night sky" on a shirt or a face) get no brackets either
         visible = [t for t in visible if t.id == focus_id or self._focus.held(t.id, frame.t)
