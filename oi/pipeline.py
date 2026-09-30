@@ -58,7 +58,8 @@ class Pipeline:
         self._emit = emit
         self._faces = faces
         self._hands = hands
-        self._focus = FocusSelector(settings)
+        self._head_zone = faces is None  # with real face boxes the coarse head-zone rule is not needed
+        self._focus = FocusSelector(settings, head_zone=self._head_zone)
         self._states: dict[int, _TrackState] = {}
         self._tasks: set[asyncio.Task[None]] = set()
         self._in_flight = 0
@@ -74,12 +75,12 @@ class Pipeline:
             hands += await asyncio.to_thread(self._hands.find, frame.image)
         people_labels = set(self._s.person_labels) | set(self._s.face_labels)
         people = [t for t in tracks if t.label.lower() in people_labels]
-        if self._faces is not None:
-            people += await asyncio.to_thread(self._faces.find, frame.image)
+        faces = await asyncio.to_thread(self._faces.find, frame.image) if self._faces is not None else []
+        people += faces
         focus_id = self._focus.update(visible, hands, w, h, frame.t, people=people)
         # regions on a person's body or face ("flag", "night sky" on a shirt or a face) get no brackets either
         visible = [t for t in visible if t.id == focus_id or self._focus.held(t.id, frame.t)
-                   or not privacy_veto(t, people, self._s)]
+                   or not privacy_veto(t, people, self._s, self._head_zone)]
         for track in visible:
             self._remember(track, frame.t)
 
@@ -88,20 +89,23 @@ class Pipeline:
         if focus is not None and self._identifier is not None:
             state = self._states[focus.id]
             blocked = None
-            if privacy_veto(focus, people, self._s):
+            if privacy_veto(focus, people, self._s, self._head_zone):
                 blocked = "lower" if self._focus.held(focus.id, frame.t) else "person"
             result = state.collector.offer(focus, frame.image, self._focus.steady(focus.id), frame.t, blocked)
             self._telemetry.set_sharpness(result.sharpness)
-            if result.hint is not None and self._can_still_call(state):
+            self._telemetry.set_gate(result.failing)
+            if result.hint is not None and self._hints_wanted(state):
                 hint = lines.hint_line(result.hint, self._s.language)
             if result.ready is not None:
                 await self._consider(focus, state, result.ready)
         else:
             self._telemetry.set_sharpness(None)
+            self._telemetry.set_gate(None)
 
         self._forget(frame.t)
         await self._emit(TracksMsg(frame_id=frame.frame_id, w=w, h=h, focus_id=focus_id,
-                                   tracks=[WireTrack.from_track(t, w, h) for t in visible], hint=hint))
+                                   tracks=[WireTrack.from_track(t, w, h) for t in visible], hint=hint,
+                                   faces=[WireTrack.from_track(f, w, h).box for f in faces]))
 
     async def on_client_message(self, message: FocusMsg | RecheckMsg) -> None:
         if isinstance(message, FocusMsg):
@@ -192,11 +196,14 @@ class Pipeline:
             state.in_flight = False
             self._in_flight -= 1
 
-    def _can_still_call(self, state: _TrackState) -> bool:
-        """Hints ask the user to do something; they make no sense once no call can start for this object."""
+    def _hints_wanted(self, state: _TrackState) -> bool:
+        """Hints guide the first capture of an object (and a requested re-check). Once an answer is on the card they
+        only nag, and once no call can start they make no sense at all."""
         if self._telemetry.calls_session >= self._s.max_calls_session:
             return False
-        return state.forced or not (state.belief.is_final or state.calls >= self._s.max_calls_object)
+        if state.forced:
+            return True
+        return not state.belief.observations and state.calls < self._s.max_calls_object
 
     def _snapshot(self, state: _TrackState) -> BeliefState:
         if not state.belief.observations:

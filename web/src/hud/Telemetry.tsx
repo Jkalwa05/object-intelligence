@@ -1,7 +1,7 @@
 // Top-left numbers (key D): the only place in the HUD where confidence shares appear as numbers (spec §3).
 
 import { useEffect, useState, type RefObject } from "react";
-import { t } from "../i18n";
+import { t, type I18nKey } from "../i18n";
 import { useHud } from "../store";
 
 export default function Telemetry({ video }: { video: RefObject<HTMLVideoElement | null> }) {
@@ -41,6 +41,7 @@ export default function Telemetry({ video }: { video: RefObject<HTMLVideoElement
     [t("tel.detMs", lang), tel ? `${tel.det_ms.toFixed(0)} ms` : "–"],
     [t("tel.idLast", lang), tel?.id_ms_last != null ? `${(tel.id_ms_last / 1000).toFixed(1)} s` : "–"],
     [t("tel.sharpness", lang), tel?.sharpness_focus != null ? tel.sharpness_focus.toFixed(0) : "–"],
+    [t("tel.gate", lang), tel ? t(`gate.${tel.gate_focus ?? "ok"}` as I18nKey, lang) : "–"],
     [t("tel.calls", lang), tel ? String(tel.calls_session) : "–"],
     [t("tel.cost", lang), tel ? `$${tel.cost_session_usd.toFixed(3)}` : "–"],
     [t("tel.model", lang), tel?.model ?? "–"],

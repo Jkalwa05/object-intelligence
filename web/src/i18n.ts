@@ -30,6 +30,14 @@ const TEXTS = {
   "tel.mode": { de: "Modus", en: "Mode" },
   "tel.dropped": { de: "Verworfen", en: "Dropped" },
   "tel.shares": { de: "Anteile", en: "Shares" },
+  "tel.gate": { de: "Prüfung", en: "Check" },
+  "gate.ok": { de: "ok", en: "ok" },
+  "gate.blurry": { de: "zu unscharf", en: "too blurry" },
+  "gate.unsteady": { de: "zu wackelig", en: "too shaky" },
+  "gate.cut": { de: "abgeschnitten", en: "cut off" },
+  "gate.small": { de: "zu klein", en: "too small" },
+  "gate.person": { de: "Person/Gesicht", en: "person/face" },
+  "gate.lower": { de: "vor dem Gesicht", en: "in front of the face" },
 } satisfies Record<string, Record<Lang, string>>;
 
 export type I18nKey = keyof typeof TEXTS;

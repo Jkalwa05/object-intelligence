@@ -140,7 +140,8 @@ export default function Overlay({ video, card, onFocus }: Props) {
       const el = card.current;
       if (focusRect && el && msg.focus_id !== null && s.identities[msg.focus_id]) {
         const size = el.offsetWidth ? { w: el.offsetWidth, h: el.offsetHeight } : FALLBACK_CARD;
-        const pos = placer.place(focusRect, size, { w: vw, h: vh }, now);
+        const faces = msg.faces.map((f) => toScreen(f, content, s.mirrored));
+        const pos = placer.place(focusRect, size, { w: vw, h: vh }, now, faces);
         el.style.transform = `translate(${Math.round(pos.x)}px, ${Math.round(pos.y)}px)`;
         drawLeader(ctx, focusRect, { x: pos.x, y: pos.y, ...size }, pos.side);
       }

@@ -38,6 +38,7 @@ class Telemetry:
         self._frame_times: deque[float] = deque()
         self._det_ms: deque[float] = deque(maxlen=DET_MS_SAMPLES)
         self._sharpness: float | None = None
+        self._gate: str | None = None
         self.budget = budget if budget is not None else SessionBudget()
         self._failed = 0
         self._id_ms_last: float | None = None
@@ -54,6 +55,9 @@ class Telemetry:
 
     def set_sharpness(self, value: float | None) -> None:
         self._sharpness = value
+
+    def set_gate(self, reason: str | None) -> None:
+        self._gate = reason
 
     def call_started(self) -> None:
         self.budget.calls += 1
@@ -73,6 +77,7 @@ class Telemetry:
             det_ms=round(det_ms, 1), id_ms_last=self._id_ms_last,
             sharpness_focus=None if self._sharpness is None else round(self._sharpness, 1),
             calls_session=self.budget.calls, cost_session_usd=round(self.budget.cost_usd, 4), model=self._model_label,
+            gate_focus=self._gate,
             mode=self._mode, language=self._settings.language)
 
     def _forget_old_frames(self, now: float) -> None:

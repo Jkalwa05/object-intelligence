@@ -27,8 +27,11 @@ def _overlap(a: Box, b: Box) -> float:
     return _area((max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])))
 
 
-def privacy_veto(focus: Track, tracks: list[Track], s: Settings) -> bool:
-    """True if the focus crop could show a person or a face. `tracks` are all raw detections of the frame."""
+def privacy_veto(focus: Track, tracks: list[Track], s: Settings, head_zone: bool = True) -> bool:
+    """True if the focus crop could show a person or a face. `tracks` are all raw detections of the frame.
+
+    `head_zone=False` when a dedicated face detector supplies face boxes: faces are then covered directly, and the
+    coarse "top third of a person" rule would only block objects held beside the head."""
     person_labels, face_labels = set(s.person_labels), set(s.face_labels)
     focus_area = _area(focus.box)
     for other in tracks:
@@ -37,10 +40,10 @@ def privacy_veto(focus: Track, tracks: list[Track], s: Settings) -> bool:
         label = other.label.lower()
         if label in person_labels:
             x1, y1, x2, y2 = other.box
-            head_zone = (x1, y1, x2, y1 + (y2 - y1) * HEAD_ZONE)
+            zone = (x1, y1, x2, y1 + (y2 - y1) * HEAD_ZONE)
             if _overlap(focus.box, other.box) >= PERSON_COVER * _area(other.box):
                 return True
-            if focus_area and _overlap(focus.box, head_zone) >= HEAD_SHARE * focus_area:
+            if head_zone and focus_area and _overlap(focus.box, zone) >= HEAD_SHARE * focus_area:
                 return True
         elif label in face_labels:
             if _overlap(focus.box, other.box) >= FACE_SHARE * _area(other.box):

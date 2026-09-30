@@ -26,3 +26,10 @@ test("cramped viewport: below, else above, never over the box", () => {
   const above = new CardPlacer().place({ x: 150, y: 350, w: 200, h: 200 }, card, narrow, 0);
   expect(above).toEqual({ x: 150, y: 126, side: "above" });
 });
+
+test("the card never covers a face", () => {
+  const box = { x: 800, y: 200, w: 200, h: 200 }; // more room on the left ...
+  const face = { x: 480, y: 150, w: 250, h: 300 }; // ... but a face sits there
+  expect(new CardPlacer().place(box, card, wide, 0, [face])).toEqual({ x: 1024, y: 200, side: "right" });
+  expect(new CardPlacer().place(box, card, wide, 0, []).side).toBe("left");
+});

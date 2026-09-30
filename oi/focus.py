@@ -41,8 +41,9 @@ def _center(box: tuple[float, float, float, float]) -> tuple[float, float]:
 
 
 class FocusSelector:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, head_zone: bool = True) -> None:
         self._s = settings
+        self._head_zone = head_zone
         self._focus: int | None = None
         self._pinned: int | None = None
         self._challenger: int | None = None
@@ -90,7 +91,7 @@ class FocusSelector:
         scores = {t.id: self._score(t, hands, frame_w, frame_h, diag, now) for t in visible
                   if self._eligible(t, frame_area)
                   and (t.id == self._focus or self.held(t.id, now))
-                  and (self.held(t.id, now) or not privacy_veto(t, list(people), self._s))}
+                  and (self.held(t.id, now) or not privacy_veto(t, list(people), self._s, self._head_zone))}
         if not scores:
             self._focus, self._challenger = None, None
             return None

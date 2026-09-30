@@ -135,6 +135,7 @@ class TracksMsg(_ServerMsg):
     focus_id: int | None
     tracks: list[WireTrack]
     hint: str | None
+    faces: list[tuple[float, float, float, float]] = Field(default_factory=list)  # normalized, the card avoids them
 
 
 class IdentityMsg(_ServerMsg):
@@ -165,6 +166,7 @@ class TelemetryMsg(_ServerMsg):
     calls_session: int
     cost_session_usd: float
     model: str
+    gate_focus: str | None = None  # which quality check the focus crop fails right now (views.GateFailure) or None
     mode: Literal["hybrid", "lokal"]
     language: Lang  # addition to §2.7: the browser needs it for its fixed texts
 

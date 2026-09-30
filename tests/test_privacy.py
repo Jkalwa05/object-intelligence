@@ -51,3 +51,11 @@ def test_small_object_on_a_face_is_vetoed():
     earring = trk(8, (1020, 820, 1040, 850), label="earring")  # just outside the face box, inside the widened zone
     assert privacy_veto(glasses, [face, glasses], Settings())
     assert privacy_veto(earring, [face, earring], Settings())
+
+
+def test_head_zone_rule_can_be_switched_off_when_faces_are_known():
+    beside = trk(6, (700, 40, 880, 230), label="cell phone")
+    assert privacy_veto(beside, [PERSON, beside], Settings())
+    assert not privacy_veto(beside, [PERSON, beside], Settings(), head_zone=False)
+    on_face = trk(7, (580, 100, 700, 200), label="glasses")
+    assert privacy_veto(on_face, [PERSON, FACE, on_face], Settings(), head_zone=False)

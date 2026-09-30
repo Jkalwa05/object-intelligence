@@ -3,7 +3,7 @@ import type { IdentityMsg, NoticeMsg, TracksMsg } from "./protocol";
 import { applyServerMessage, initialState } from "./store";
 
 const tracks = (seq: number): TracksMsg =>
-  ({ type: "tracks", ts: 0, seq, frame_id: seq, w: 1280, h: 720, focus_id: 1, tracks: [], hint: null });
+  ({ type: "tracks", ts: 0, seq, frame_id: seq, w: 1280, h: 720, focus_id: 1, tracks: [], hint: null, faces: [] });
 const identity = (trackId: number, line: string): IdentityMsg => ({
   type: "identity", ts: 0, seq: 0, track_id: trackId, status: "ready", level: "likely", display_name: "X",
   candidates: [], evidence: [], view_request: null, final: false, calls_used: 1, line,

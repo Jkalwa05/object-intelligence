@@ -258,3 +258,43 @@ async def test_hand_finder_makes_the_held_phone_the_focus():
     await feed(pipeline, sharp_image(boxes=(BOX,)), 13)
     await pipeline.wait_idle()
     assert len(identifier.requests) == 1
+
+
+async def test_no_nagging_after_the_first_result():
+    from tests.helpers import blurry_image
+    pipeline, rec, _ = make([[CUP, HAND]], FakeIdentifier(script=[obs(desc="Gadget", cat="Gadget")]))
+    await feed(pipeline, sharp_image(boxes=(BOX,)), 13)
+    await pipeline.wait_idle()
+    assert rec.of("identity")[-1].level == "category_only" and not rec.of("identity")[-1].final
+    await feed(pipeline, blurry_image(boxes=(BOX,)), 25, start=1.3, first_id=13)
+    assert all(m.hint is None for m in rec.of("tracks")[13:])
+
+
+async def test_phone_beside_the_face_is_fine_when_faces_are_known():
+    person = trk(10, (300, 0, 980, 720), label="man")
+    phone = trk(3, (700, 40, 880, 230), label="cell phone")  # head height, beside the face
+    hand = trk(99, (740, 180, 840, 300), label="hand")
+    identifier = FakeIdentifier(script=[obs(I14)])
+    settings = Settings()
+    pipeline = Pipeline(settings, FakeDetector([[person, phone, hand]]), identifier,
+                        Telemetry(settings, "hybrid", "fake"), None, Recorder(), faces=FakeFaces([(450, 60, 650, 300)]))
+    await feed(pipeline, sharp_image(boxes=((700, 40, 880, 230),)), 13)
+    await pipeline.wait_idle()
+    assert len(identifier.requests) == 1
+
+
+async def test_telemetry_names_the_failing_check():
+    from tests.helpers import blurry_image
+    pipeline, rec, telemetry = make([[CUP, HAND]], FakeIdentifier(script=[obs(I14)]))
+    await feed(pipeline, blurry_image(boxes=(BOX,)), 5)
+    await pipeline.telemetry_tick(frames_dropped=0)
+    assert rec.of("telemetry")[-1].gate_focus == "blurry"
+
+
+async def test_tracks_carry_face_boxes_for_the_card():
+    settings = Settings()
+    rec = Recorder()
+    pipeline = Pipeline(settings, FakeDetector([[CUP, HAND]]), None, Telemetry(settings, "lokal", "–"), None, rec,
+                        faces=FakeFaces([(128, 72, 256, 216)]))
+    await feed(pipeline, sharp_image(boxes=(BOX,)), 1)
+    assert rec.of("tracks")[0].faces == [(0.1, 0.1, 0.2, 0.3)]
