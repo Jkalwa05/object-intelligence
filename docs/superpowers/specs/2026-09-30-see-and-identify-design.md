@@ -1,6 +1,6 @@
 # Object Intelligence, Teilprojekt 1: Sehen & Identifizieren
 
-Stand: 2026-09-30 · Status: freigegeben und umgesetzt (auf `main`), Anpassungen nach dem Live-Test in §8
+Stand: 2026-09-30 · Status: freigegeben und umgesetzt (auf `main`), Anpassungen nach den Live-Tests in §8 und §9
 
 Object Intelligence ist ein voll funktionsfähiges Programm und Portfolio-Projekt: Man hält einen beliebigen Gegenstand vor die
 Mac-Kamera, und das System sagt, *was* es ist, *wie sicher* es ist und *woher* die Infos stammen, zeigt ein 3D-Modell
@@ -403,3 +403,43 @@ Diese Punkte ersetzen die betroffenen Stellen in §2.3 und §3 (Klammern für je
   zeigt den Prüfgrund, die Karte legt sich nie über ein Gesicht.
 - **Start.** Ist der Port belegt, bricht der Start mit einer klaren Meldung ab, statt den Browser auf einen älteren
   Server zu schicken.
+
+## 9. Nachtrag 2026-09-30 (Abend): Hintergrund per Claude, Hand-Umrandung, Akzentfarben
+
+Nach dem zweiten Live-Test mit echtem Claude. Die Protokolle zeigten: Lampe (3×) und Treppe (1×) gingen als
+„gehaltenes Objekt“ an Claude. „Gehalten“ hieß nur, dass die Handbox eine Objektbox überlappte. Teile hinter der Hand
+zählten damit als gehalten und punkteten durch Stillstand sogar vor dem iPhone. YOLOE nannte Treppenstufen „paper
+towel“ und „cup“.
+
+- **Hintergrund in einem Claude-Aufruf.** Wenn die Szene nach 5 s einfriert, geht **ein** Bild an Claude
+  (höchstens 1280 px breit). Vorher werden alle Personenzonen der letzten 2 s grau übermalt (`privacy.mask_people`,
+  Gesicht bis zu den Schultern und bis zum Bildrand, Personenboxen, Körperteil-Labels). Das ist die einzige
+  Ausnahme von „nur Objekt-Ausschnitte verlassen den Mac“. Gesichter verlassen ihn weiterhin nie.
+  - Claude antwortet mit bis zu 15 Dingen, jeweils Name und Box in 0–1000. Die Antwort wird aufgeräumt: Boxen
+    werden ins Bild geklemmt und sortiert, Einträge ohne Namen oder Fläche fallen weg.
+  - Während Claude arbeitet, steht oben „Hintergrund wird erkannt …“ (`scene.naming`).
+  - Der Aufruf zählt zum Sitzungsbudget und landet im Aufruf-Log (`track_id` 0).
+  - Ohne Claude, ohne Budget oder bei einem Fehler bleiben die YOLOE-Labels, dann mit Hinweis. Eine Antwort für
+    eine alte Szene (nach Taste R) wird verworfen.
+  - Gemessen: 1,3–1,7 Cent, 6–8 s.
+- **Hintergrund wird nie Fokus.** Eine Erkennung mit IoU ≥ 0,5 zu einer eingefrorenen Box gilt als Hintergrund.
+  Das gilt für die YOLOE-Boxen der Kalibrierung und für Claudes Boxen. Hintergrund ist nie „gehalten“.
+- **Gehalten heißt: Finger auf dem Objekt.** Mindestens 3 Gelenkpunkte der Hand liegen in der Objektbox (10 %
+  Rand für Finger an der Kante). Das Objekt ist höchstens 8× so groß wie die Hand. Hände ohne Gelenkpunkte
+  (YOLOE-Label „hand“) behalten die alte Überlappungsregel.
+- **Geprüfte Hand.** Apple Vision (`VNDetectHumanHandPoseRequest`) läuft jetzt in voller Kamerabreite: 12 statt 7
+  Gelenkpunkte an einem gehaltenen iPhone, weiter ca. 5 ms. Eine Hand zählt, wenn diese Bedingungen gelten:
+  - Vision-Konfidenz ≥ 0,6,
+  - mindestens 6 der 21 Gelenkpunkte sichtbar (Punkt-Konfidenz > 0,3),
+  - in zwei Bildern hintereinander an fast derselben Stelle (IoU ≥ 0,2).
+
+  Die YOLOE-Hände fallen dann weg.
+- **Hand-Umrandung und Akzentfarben.** `tracks.hands` trägt pro bestätigter Hand eine Umrandung aus 16 Punkten.
+  Sie folgt für 16 Richtungen jeweils dem äußersten Gelenkpunkt, plus 15 % der Handgröße. Der Browser zeichnet sie
+  als weiche Kurve und glättet sie Punkt für Punkt.
+  - Farben: Hand Cyan (46, 230, 255), gehaltenes Objekt Neongrün (124, 255, 90), Hintergrund Violett (185, 156, 255).
+  - Auf der Karte sind Stufe, Balken und „Zeig mir bitte …“ grün, der Text bleibt weiß.
+- **Ähnliche Kandidaten.** Nennt Claude die Kandidaten „von außen nicht unterscheidbar“, gibt aber eine
+  unterscheidende Ansicht an, ist das Ergebnis nicht mehr endgültig. Beispiel: iPhone 14 oder 15 → Unterseite
+  (Lightning oder USB-C) oder Vorderseite (Notch oder Dynamic Island). Die Karte fragt dann nach dieser Ansicht.
+  Übereinstimmende Ansichten machen solche Kandidaten nicht „sicher“.

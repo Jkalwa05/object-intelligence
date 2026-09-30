@@ -17,7 +17,8 @@ their own sub-projects.
 - **Detection and identification are separate.** A local open-vocabulary detector (YOLOE-26, prompt-free) with
   BoT-SORT tracking runs on every frame on the Mac GPU. Only the focus object goes to Claude, as a crop in which
   everything outside the object's own outline is painted grey. A crop that could show a person is never sent: the
-  focus may not cover most of a person, sit in a person's head zone or lie over a face.
+  focus may not cover most of a person, sit in a person's head zone or lie over a face. The one whole frame that
+  leaves the Mac, for naming the background after a calibration, has every person painted grey first.
 - **Costs are bounded and visible.** At most 4 calls per object and 150 per session; every call is logged in `runs/`
   with the crop, the answer, tokens, cost and latency. A measured call with Claude Opus 5.5 cost about 1.7 cents.
 
@@ -61,11 +62,18 @@ uv run python -m oi --fake-claude   # canned answers without API calls (tests)
 uv run python -m oi --no-browser --port 8766
 ```
 
-For the first five seconds after start the scene is calibrated: everything that stays put (lamp, door, shelf) gets
-a fixed marker that never flickers afterwards; press `R` to calibrate again. You are never marked: not your face, hair,
-glasses, shirt or necklace (a dedicated face detector and a body zone keep them out). Only the object in your hand gets
-a box, and only that object goes to Claude, as a crop in which everything outside its outline is grey. Hands are found
-with Apple's Vision framework, faces with OpenCV's YuNet model.
+For the first five seconds after start the scene is calibrated: everything that stays put (lamp, door, shelf) is
+frozen. Then one Claude call names the whole background at once and says where each thing is ("Pendelleuchte",
+"Raumspartreppe", "Bücherregal"), from a single frame in which every person is painted grey. These markers (violet)
+never flicker and can never become the focus; press `R` to calibrate again. Without Claude the detector's own labels
+stay.
+
+Your hands get a cyan outline as soon as they are confirmed: Apple's Vision framework must be sure, see at least 6 of
+the 21 hand joints and find the hand in two frames in a row. Only the object your fingers lie on (at least three
+joints on it) gets a box (neon green), and only that object goes to Claude, as a crop in which everything outside its
+outline is grey. You are never marked otherwise: not your face, hair, glasses, shirt or necklace (OpenCV's YuNet face
+detector and a body zone keep them out). If two candidates look alike from one side, the card asks for the view that
+separates them, for example "Zeig mir bitte die Unterseite" for iPhone 14 (Lightning) and 15 (USB-C).
 
 Keys: `M` mutes the voice, `D` shows the telemetry (including which quality check a crop fails), `S` toggles the mirror
 view, `R` calibrates the scene again. Settings such as `OI_MODEL=claude-sonnet-5-5` (faster), `OI_LANGUAGE=en` or
