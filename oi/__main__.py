@@ -34,6 +34,14 @@ def open_browser_when_ready(url: str, port: int, opener: Callable[[str], object]
             time.sleep(0.1)
 
 
+def port_in_use(port: int) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+            return True
+    except OSError:
+        return False
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="python -m oi", description="Object Intelligence: see and identify.")
     parser.add_argument("--port", type=int, default=None, help="default 8766 (OI_PORT)")
@@ -46,6 +54,10 @@ def main(argv: list[str] | None = None) -> None:
     if args.port:
         settings = replace(settings, port=args.port)
     port = settings.port
+    if port_in_use(port):  # otherwise the browser would open an older server that is still running
+        print(f"Port {port} ist belegt: Läuft schon ein Object-Intelligence-Server? Beende ihn mit Ctrl+C "
+              f"oder `lsof -ti tcp:{port} | xargs kill`, dann starte neu.")
+        raise SystemExit(1)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     detector = YoloeDetector(settings)
