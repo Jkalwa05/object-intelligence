@@ -12,10 +12,10 @@ test("every text exists in German and English", () => {
 });
 
 test("every quality check has a readable name", () => {
-  for (const key of ["gate.ok", "gate.blurry", "gate.unsteady", "gate.cut", "gate.small", "gate.person", "gate.lower"]) {
+  for (const key of ["gate.ok", "gate.blurry", "gate.cut", "gate.small", "gate.person", "gate.lower"]) {
     expect(I18N_KEYS).toContain(key);
   }
-  expect(t("gate.unsteady", "de")).toBe("zu wackelig");
+  expect(t("gate.blurry", "de")).toBe("zu unscharf");
 });
 
 test("calibration text", () => expect(t("calibrating", "de")).toBe("Szene wird eingemessen …"));

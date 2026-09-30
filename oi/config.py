@@ -64,9 +64,8 @@ class Settings:
     crop_jpeg_quality: int = 90
     min_box_side_px: int = 120
     edge_margin: float = 0.01
-    steady_min: float = 0.6
-    steady_hold_s: float = 0.5
-    best_of_window_s: float = 0.4
+    best_of_window_s: float = 0.5  # the snapshot: the sharpest frame of the first half second goes out
+    capture_patience_s: float = 2.0  # if no frame was sharp enough by then, the sharpest one goes out anyway
     hint_after_s: float = 2.0
     claude_timeout_s: float = 20.0
     log_calls: bool = True

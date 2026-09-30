@@ -1,7 +1,8 @@
-"""View collector: quality gate, view fingerprints and the best crop of each view (spec §2.4).
+"""View collector: quality gate, view fingerprints and the best crop of each view (spec §2.4, §10).
 
-Pure logic on image arrays. For the focus object it decides when a crop is good enough for Claude, releases the
-sharpest crop of a short window, and tells whether that crop shows a view that has not been sent yet.
+Pure logic on image arrays. A hand-held object is never still, so nobody is asked to hold it still: the collector
+takes a snapshot from the video, the sharpest frame of a short window (motion blurs, so the sharpest frame is the
+stillest one), and tells whether it shows a view that has not been sent yet.
 """
 
 from __future__ import annotations
@@ -15,7 +16,9 @@ import numpy as np
 from oi.config import Settings
 from oi.contracts import Track
 
-GateFailure = Literal["cut", "small", "blurry", "unsteady", "person", "lower"]
+GateFailure = Literal["cut", "small", "blurry", "person", "lower"]
+HINTED: frozenset[GateFailure] = frozenset({"cut", "small", "person", "lower"})  # what the user can change
+EPS = 1e-6  # tolerance for time comparisons
 
 
 def sharpness(gray: np.ndarray) -> float:
@@ -113,7 +116,6 @@ class ViewCollector:
 
     def __init__(self, settings: Settings) -> None:
         self._s = settings
-        self._steady_since: float | None = None
         self._fail_since: float | None = None
         self._armed = True
         self._forced = False
@@ -123,46 +125,17 @@ class ViewCollector:
         self._sent: list[_SentView] = []
         self._next_view_id = 1
 
-    def offer(self, track: Track, image: np.ndarray, steady: float, now: float,
-              blocked: GateFailure | None = None) -> ViewResult:
-        """`blocked`: the privacy veto's reason ("person", or "lower" for a held object in front of the face)."""
-        s = self._s
-        if steady >= s.steady_min:
-            if self._steady_since is None:
-                self._steady_since = now
-        else:
-            self._steady_since = None
+    def offer(self, track: Track, image: np.ndarray, now: float, blocked: GateFailure | None = None) -> ViewResult:
+        """`blocked`: the privacy veto's reason ("person", or "lower" for a held object in front of the face).
 
-        failing, sharp, crop, gray = (blocked, None, None, None) if blocked else self._gate(track, image, now)
-        if failing is not None:
-            if self._fail_since is None:
-                self._fail_since = now
-            hint = failing if now - self._fail_since >= s.hint_after_s else None
-            self._window_start, self._best, self._armed = None, None, True
-            return ViewResult(ready=None, failing=failing, hint=hint, sharpness=sharp)
-        self._fail_since = None
-
-        x1, y1, x2, y2 = track.box
-        fingerprint, aspect = dhash(gray), (x2 - x1) / (y2 - y1)
-        if not self._armed and (self._forced or (self._last_released is not None and hamming(
-                fingerprint, self._last_released) >= s.dhash_min_distance)):
-            self._armed = True
-        if not self._armed:
-            return ViewResult(ready=None, failing=None, hint=None, sharpness=sharp)
-
-        if self._window_start is None:
-            self._window_start, self._best = now, None
-        if self._best is None or sharp > self._best[0]:
-            left, top, _, _ = _crop_bounds(image.shape, track.box, s.crop_margin)
-            widen = round(s.mask_dilate * max(x2 - x1, y2 - y1))
-            self._best = (sharp, keep_only_object(crop, track.polygon, (left, top), widen), fingerprint, aspect)
-        if now - self._window_start < s.best_of_window_s:
-            return ViewResult(ready=None, failing=None, hint=None, sharpness=sharp)
-
-        ready = self._release(*self._best)
-        self._armed, self._forced, self._window_start, self._best = False, False, None, None
-        self._last_released = ready.dhash
-        return ViewResult(ready=ready, failing=None, hint=None, sharpness=sharp)
+        Every frame that shows the whole object is a candidate, blurry ones too; frames that are cut off, too small
+        or blocked are skipped without losing what was collected. Half a second after the first candidate the
+        sharpest one goes out, if it is sharp enough; after two seconds the sharpest one goes out anyway."""
+        failing, sharp, crop, gray = (blocked, None, None, None) if blocked else self._gate(track, image)
+        hint = self._hint(failing, now)
+        if crop is not None and gray is not None and sharp is not None:
+            self._collect(track, image, crop, gray, sharp, now)
+        return ViewResult(ready=self._take(now), failing=failing, hint=hint, sharpness=sharp)
 
     def mark_sent(self, crop: ReadyCrop) -> None:
         if crop.is_new_view:
@@ -177,7 +150,46 @@ class ViewCollector:
         """Release the next good crop even if it shows a view that was already sent (\"Neu prüfen\")."""
         self._forced = True
 
-    def _gate(self, track: Track, image: np.ndarray, now: float
+    def _hint(self, failing: GateFailure | None, now: float) -> GateFailure | None:
+        """A hint only for what the user can change, and only once it lasted 2 s."""
+        if failing not in HINTED:
+            self._fail_since = None
+            return None
+        if self._fail_since is None:
+            self._fail_since = now
+        return failing if now - self._fail_since >= self._s.hint_after_s - EPS else None
+
+    def _collect(self, track: Track, image: np.ndarray, crop: np.ndarray, gray: np.ndarray, sharp: float,
+                 now: float) -> None:
+        s = self._s
+        x1, y1, x2, y2 = track.box
+        fingerprint, aspect = dhash(gray), (x2 - x1) / (y2 - y1)
+        if not self._armed and (self._forced or (self._last_released is not None and hamming(
+                fingerprint, self._last_released) >= s.dhash_min_distance)):
+            self._armed = True
+        if not self._armed:
+            return
+        if self._window_start is None:
+            self._window_start = now
+        if self._best is None or sharp > self._best[0]:
+            left, top, _, _ = _crop_bounds(image.shape, track.box, s.crop_margin)
+            widen = round(s.mask_dilate * max(x2 - x1, y2 - y1))
+            self._best = (sharp, keep_only_object(crop, track.polygon, (left, top), widen), fingerprint, aspect)
+
+    def _take(self, now: float) -> ReadyCrop | None:
+        s = self._s
+        if self._best is None or self._window_start is None:
+            return None
+        waited = now - self._window_start
+        if waited < s.best_of_window_s - EPS or (self._best[0] < s.min_sharpness
+                                                 and waited < s.capture_patience_s - EPS):
+            return None
+        ready = self._release(*self._best)
+        self._armed, self._forced, self._window_start, self._best = False, False, None, None
+        self._last_released = ready.dhash
+        return ready
+
+    def _gate(self, track: Track, image: np.ndarray
               ) -> tuple[GateFailure | None, float | None, np.ndarray | None, np.ndarray | None]:
         s = self._s
         h, w = image.shape[:2]
@@ -190,11 +202,7 @@ class ViewCollector:
         crop = crop_box(image, track.box, s.crop_margin)
         gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
         sharp = sharpness(gray)
-        if sharp < s.min_sharpness:
-            return "blurry", sharp, crop, gray
-        if self._steady_since is None or now - self._steady_since < s.steady_hold_s:
-            return "unsteady", sharp, crop, gray
-        return None, sharp, crop, gray
+        return ("blurry" if sharp < s.min_sharpness else None), sharp, crop, gray
 
     def _release(self, sharp: float, crop: np.ndarray, fingerprint: int, aspect: float) -> ReadyCrop:
         s = self._s

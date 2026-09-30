@@ -125,7 +125,7 @@ class Pipeline:
             blocked = None
             if privacy_veto(focus, people, self._s, self._head_zone):
                 blocked = "lower" if self._focus.held(focus.id, frame.t) else "person"
-            result = state.collector.offer(focus, frame.image, self._focus.steady(focus.id), frame.t, blocked)
+            result = state.collector.offer(focus, frame.image, frame.t, blocked)
             self._telemetry.set_sharpness(result.sharpness)
             self._telemetry.set_gate(result.failing)
             if result.hint is not None and self._hints_wanted(state):

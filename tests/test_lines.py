@@ -46,11 +46,14 @@ def test_category_line():
 @pytest.mark.parametrize("reason,de,en", [
     ("cut", "Bitte ganz ins Bild.", "Please bring it fully into view."),
     ("small", "Bitte etwas näher.", "Please come a bit closer."),
-    ("blurry", "Halt es bitte ruhig.", "Please hold it still."),
-    ("unsteady", "Halt es bitte ruhig.", "Please hold it still."),
 ])
 def test_hint_lines(reason, de, en):
     assert (lines.hint_line(reason, "de"), lines.hint_line(reason, "en")) == (de, en)
+
+
+def test_nobody_is_asked_to_hold_still():
+    assert "blurry" not in lines._HINT_KEYS  # a snapshot is taken from the video instead
+    assert all("ruhig" not in text and "still" not in text for texts in lines._TEXTS.values() for text in texts.values())
 
 
 def test_status_and_notice_texts():

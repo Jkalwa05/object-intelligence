@@ -19,7 +19,6 @@ _TEXTS: dict[str, dict[str, str]] = {
         "category": "{description}, ein bestimmtes Produkt erkenne ich nicht.",
         "cut": "Bitte ganz ins Bild.",
         "small": "Bitte etwas näher.",
-        "still": "Halt es bitte ruhig.",
         "person": "Personen und Gesichter identifiziere ich nicht.",
         "lower": "Halt es bitte tiefer, nicht vors Gesicht.",
         "error": "Identifikation gerade nicht möglich.",
@@ -39,7 +38,6 @@ _TEXTS: dict[str, dict[str, str]] = {
         "category": "{description}, I can't recognize a specific product.",
         "cut": "Please bring it fully into view.",
         "small": "Please come a bit closer.",
-        "still": "Please hold it still.",
         "person": "I don't identify people or faces.",
         "lower": "Please hold it lower, not in front of your face.",
         "error": "Identification is not available right now.",
@@ -51,8 +49,7 @@ _TEXTS: dict[str, dict[str, str]] = {
     },
 }
 
-_HINT_KEYS: dict[GateFailure, str] = {"cut": "cut", "small": "small", "blurry": "still", "unsteady": "still",
-                                     "person": "person", "lower": "lower"}
+_HINT_KEYS: dict[GateFailure, str] = {"cut": "cut", "small": "small", "person": "person", "lower": "lower"}
 
 
 def _capitalize(text: str) -> str:

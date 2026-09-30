@@ -39,37 +39,53 @@ def test_encode_limits_long_edge():
 
 @pytest.mark.parametrize("box,reason", [((2, 100, 300, 400), "cut"), ((500, 300, 560, 360), "small")])
 def test_gate_reasons(box, reason):
-    result = ViewCollector(Settings()).offer(trk(1, box), sharp_image(boxes=(box,)), steady=1.0, now=0.0)
+    result = ViewCollector(Settings()).offer(trk(1, box), sharp_image(boxes=(box,)), now=0.0)
     assert result.failing == reason and result.ready is None
 
 
-def test_gate_blurry_and_unsteady():
-    blurry = ViewCollector(Settings()).offer(trk(1, BOX), blurry_image(boxes=(BOX,)), steady=1.0, now=0.0)
-    assert blurry.failing == "blurry"
-    shaky = ViewCollector(Settings()).offer(trk(1, BOX), sharp_image(boxes=(BOX,)), steady=0.3, now=0.0)
-    assert shaky.failing == "unsteady"
+def test_blurry_frame_is_only_reported():
+    result = ViewCollector(Settings()).offer(trk(1, BOX), blurry_image(boxes=(BOX,)), now=0.0)
+    assert (result.failing, result.hint, result.ready) == ("blurry", None, None)
 
 
-def offer_series(collector, image, start, end, steady=1.0):
+def offer_series(collector, image, start, end):
     results, i = [], 0
     while (t := start + i * 0.1) <= end + 1e-9:
-        results.append((t, collector.offer(trk(1, BOX), image, steady=steady, now=t)))
+        results.append((t, collector.offer(trk(1, BOX), image, now=t)))
         i += 1
     return results
 
 
-def test_releases_once_after_hold_and_window():
+def test_releases_once_after_the_window():
     results = offer_series(ViewCollector(Settings()), sharp_image(boxes=(BOX,)), 0.0, 2.0)
     released = [t for t, r in results if r.ready is not None]
-    assert len(released) == 1 and 0.9 - 1e-9 <= released[0] <= 1.0 + 1e-9
+    assert released == [pytest.approx(0.5)]
+
+
+def test_a_shaky_video_still_gets_its_snapshot():
+    # Live test 2026-10-01: a hand-held phone is never still for a whole second, so nothing was ever sent. The video
+    # is fine as it is: the sharpest frame of a short window is the stillest one, and it goes out without a hint.
+    collector, results = ViewCollector(Settings()), []
+    for i in range(8):
+        image = sharp_image(boxes=(BOX,)) if i == 3 else blurry_image(boxes=(BOX,))
+        results.append(collector.offer(trk(1, BOX), image, now=i * 0.1))
+    ready = [r.ready for r in results if r.ready]
+    assert len(ready) == 1 and ready[0].sharpness == max(r.sharpness for r in results)
+    assert all(r.hint is None for r in results)
+
+
+def test_only_blurry_frames_still_give_a_snapshot_after_two_seconds():
+    results = offer_series(ViewCollector(Settings()), blurry_image(boxes=(BOX,)), 0.0, 3.0)
+    assert [t for t, r in results if r.ready is not None] == [pytest.approx(2.0)]
+    assert all(r.hint is None for _, r in results)
 
 
 def test_release_is_the_sharpest_of_its_window():
     collector, seen = ViewCollector(Settings()), []
     for i in range(10):
         image = sharp_image(boxes=(BOX,), cell=4 if i % 2 else 8)
-        result = collector.offer(trk(1, BOX), image, steady=1.0, now=i * 0.1)
-        if i >= 5 and result.sharpness is not None:
+        result = collector.offer(trk(1, BOX), image, now=i * 0.1)
+        if result.sharpness is not None:
             seen.append(result.sharpness)
         if result.ready is not None:
             assert result.ready.sharpness == max(seen)
@@ -91,10 +107,11 @@ def test_new_view_after_turning():
     assert (again.is_new_view, again.view_id) == (False, 1)
 
 
-def test_hint_after_two_seconds():
-    by_step = [r for _, r in offer_series(ViewCollector(Settings()), blurry_image(boxes=(BOX,)), 0.0, 2.0)]
-    assert by_step[19].hint is None
-    assert by_step[20].hint == "blurry"
+def test_hints_only_for_what_the_user_can_change():
+    cut, collector = (2, 100, 300, 400), ViewCollector(Settings())
+    by_step = [collector.offer(trk(1, cut), sharp_image(boxes=(cut,)), now=i * 0.1) for i in range(21)]
+    assert by_step[19].hint is None and by_step[20].hint == "cut"
+    assert all(r.hint is None for _, r in offer_series(ViewCollector(Settings()), blurry_image(boxes=(BOX,)), 0.0, 3.0))
 
 
 def test_quality_q_mapping():
@@ -106,7 +123,7 @@ def test_quality_q_mapping():
 def test_privacy_block_never_releases_and_hints():
     collector = ViewCollector(Settings())
     image = sharp_image(boxes=(BOX,))
-    results = [collector.offer(trk(1, BOX), image, steady=1.0, now=i * 0.1, blocked="person") for i in range(22)]
+    results = [collector.offer(trk(1, BOX), image, now=i * 0.1, blocked="person") for i in range(22)]
     assert all(r.ready is None and r.failing == "person" for r in results)
     assert results[19].hint is None and results[20].hint == "person"
 
@@ -118,7 +135,7 @@ def test_released_crop_contains_only_the_object():
     track = Track(id=1, box=BOX, polygon=[(400, 200), (700, 200), (700, 500), (400, 500)], label="cup", score=0.9,
                   age_frames=10, first_seen_ts=0.0)
     collector = ViewCollector(Settings())
-    ready = next(r.ready for r in (collector.offer(track, image, 1.0, i * 0.1) for i in range(12)) if r.ready)
+    ready = next(r.ready for r in (collector.offer(track, image, i * 0.1) for i in range(12)) if r.ready)
     crop = cv2.imdecode(np.frombuffer(ready.jpeg, np.uint8), cv2.IMREAD_GRAYSCALE)  # crop starts at (364, 164)
     assert abs(float(crop[3:18, 60:300].mean()) - 128) < 15  # the bright band is painted grey
     assert float(crop[60:300, 60:300].std()) > 20  # the object keeps its texture

@@ -458,3 +458,15 @@ async def test_a_face_missed_in_the_last_frame_is_still_greyed():
     await pipeline.wait_idle()
     sent = cv2.imdecode(np.frombuffer(identifier.scene_requests[0].jpeg, np.uint8), cv2.IMREAD_COLOR)
     assert abs(int(sent[150, 550].mean()) - 128) <= 3
+
+
+async def test_a_shaky_hand_held_object_is_identified_without_nagging():
+    from tests.helpers import blurry_image
+    identifier = FakeIdentifier(script=[obs(I14)])
+    pipeline, rec, _ = make([[CUP, HAND]], identifier)
+    for i in range(15):  # a video: now and then one sharp frame between blurred ones
+        image = sharp_image(boxes=(BOX,)) if i % 4 == 0 else blurry_image(boxes=(BOX,))
+        await pipeline.handle_frame(Frame(frame_id=i, t=i * 0.1, image=image))
+    await pipeline.wait_idle()
+    assert len(identifier.requests) == 1 and rec.of("identity")[-1].status == "ready"
+    assert all(m.hint is None for m in rec.of("tracks"))
