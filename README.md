@@ -87,3 +87,7 @@ npm --prefix web test       # browser logic (geometry, card placement, state, vo
 3. 3D: generic, generated or exact models, honestly labelled
 4. Questions and voice: "How heavy is it?", answered only from the profile
 5. Polish and portfolio
+
+## License
+
+[AGPL-3.0](LICENSE). The detector, YOLOE by Ultralytics, is itself licensed under AGPL-3.0.
