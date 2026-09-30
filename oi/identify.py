@@ -248,6 +248,10 @@ async def choose_identifier(s: Settings, fake: bool,
         return ClaudeIdentifier(s, client), lines.notice_text("unreachable", s.language), "hybrid"
     except anthropic.NotFoundError:
         return None, lines.notice_text("model_missing", s.language, model=s.model), "lokal"
-    except (anthropic.AnthropicError, TypeError):
+    except (anthropic.AuthenticationError, anthropic.PermissionDeniedError, TypeError):
+        return None, lines.notice_text("no_key", s.language), "lokal"
+    except anthropic.APIStatusError:  # overloaded, rate limited or a server error right now: keep Claude
+        return ClaudeIdentifier(s, client), lines.notice_text("unreachable", s.language), "hybrid"
+    except anthropic.AnthropicError:  # no credentials at all
         return None, lines.notice_text("no_key", s.language), "lokal"
     return ClaudeIdentifier(s, client), None, "hybrid"

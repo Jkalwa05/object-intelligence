@@ -154,3 +154,13 @@ def test_format_history():
     assert format_history([], "de") == "none"
     text = format_history([obs(cand("Apple", "iPhone 14", ev=("Apple-Logo",)), cand("Apple", "iPhone 13"))], "de")
     assert text.startswith("1) Apple iPhone 14 | Apple iPhone 13") and "evidence: Apple-Logo" in text
+
+
+class _Overloaded(anthropic.InternalServerError):
+    def __init__(self) -> None:
+        Exception.__init__(self, "overloaded")
+
+
+async def test_overloaded_startup_keeps_claude():
+    identifier, notice, mode = await choose_identifier(Settings(), False, lambda: FakeClient(retrieve_error=_Overloaded()))
+    assert isinstance(identifier, ClaudeIdentifier) and (notice, mode) == ("Claude gerade nicht erreichbar.", "hybrid")
