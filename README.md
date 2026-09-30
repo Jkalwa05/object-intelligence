@@ -5,8 +5,8 @@ you are holding, and identifies it as precisely as the visible evidence honestly
 alike, it says so, and it asks for the one view that would tell them apart ("Show me the bottom side: Lightning or
 USB-C?").
 
-This is sub-project 1 of 5 ("see and identify"). Sourced facts, 3D models, voice questions and polish follow in
-their own sub-projects.
+Sub-project 1 ("see and identify") is complete. 3D models, voice questions and the final polish follow in their own
+sub-projects.
 
 ## Principles
 
@@ -73,7 +73,9 @@ the 21 hand joints and find the hand in two frames in a row. Only the object you
 joints on it) gets a box (neon green), and only that object goes to Claude, as a crop in which everything outside its
 outline is grey. You are never marked otherwise: not your face, hair, glasses, shirt or necklace (OpenCV's YuNet face
 detector and a body zone keep them out). If two candidates look alike from one side, the card asks for the view that
-separates them, for example "Zeig mir bitte die Unterseite" for iPhone 14 (Lightning) and 15 (USB-C).
+separates them, for example "Zeig mir bitte die Unterseite" for iPhone 14 (Lightning) and 15 (USB-C). Nobody has to
+hold still: a snapshot, the sharpest frame of half a second, is taken from the video. If the tracker loses the object
+for a moment and gives it a new number, card, result and call count stay (same size and colours, gone at most 3 s).
 
 Keys: `M` mutes the voice, `D` shows the telemetry (including which quality check a crop fails), `S` toggles the mirror
 view, `R` calibrates the scene again. Settings such as `OI_MODEL=claude-sonnet-5-5` (faster), `OI_LANGUAGE=en` or
@@ -97,10 +99,10 @@ npm --prefix web test       # browser logic (geometry, card placement, state, vo
 
 ## Roadmap
 
-1. **See and identify** (this repository, now)
-2. Facts with sources: an object profile where every value has a citation
+1. **See and identify** (complete)
+2. ~~Facts with sources~~ (dropped on 2026-10-01)
 3. 3D: generic, generated or exact models, honestly labelled
-4. Questions and voice: "How heavy is it?", answered only from the profile
+4. Questions and voice: ask about the object you hold
 5. Polish and portfolio
 
 ## License

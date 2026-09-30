@@ -1,5 +1,8 @@
 # Abnahme Teilprojekt 1: Sehen & Identifizieren
 
+> **Abgenommen am 2026-10-01** durch Jonas' Live-Test mit iPhone, Hand und Raum. Die Liste unten wurde auf seinen
+> Wunsch nicht einzeln abgehakt; sie bleibt als Vorlage für spätere Tests.
+
 Start: `uv run python -m oi`, Kamera im Browser erlauben, mit `D` die Telemetrie einblenden.
 Jeden Gegenstand ganz normal in der Hand ins Bild halten (Stillhalten ist nicht nötig), dann langsam drehen. Wenn
 das System um eine Ansicht bittet, diese zeigen.

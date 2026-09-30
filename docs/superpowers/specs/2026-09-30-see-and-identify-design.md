@@ -1,13 +1,15 @@
 # Object Intelligence, Teilprojekt 1: Sehen & Identifizieren
 
-Stand: 2026-09-30 · Status: freigegeben und umgesetzt (auf `main`), Anpassungen nach den Live-Tests in §8 bis §10
+Stand: 2026-10-01 · Status: **abgeschlossen** (auf `main`, abgenommen durch Jonas' Live-Test), Anpassungen nach den
+Live-Tests in §8 bis §11
 
 Object Intelligence ist ein voll funktionsfähiges Programm und Portfolio-Projekt: Man hält einen beliebigen Gegenstand vor die
-Mac-Kamera, und das System sagt, *was* es ist, *wie sicher* es ist und *woher* die Infos stammen, zeigt ein 3D-Modell
-und beantwortet Fragen. Keine feste Objektliste (Open-Vocabulary). Das Gesamtprojekt ist in fünf Teilprojekte zerlegt,
-jedes mit eigener Spec und eigenem Plan:
+Mac-Kamera, und das System sagt, *was* es ist und *wie sicher* es ist, zeigt ein 3D-Modell und beantwortet Fragen.
+Keine feste Objektliste (Open-Vocabulary). Das Gesamtprojekt ist in Teilprojekte zerlegt, jedes mit eigener Spec und
+eigenem Plan:
 
-1. **Sehen & Identifizieren** (diese Spec) · 2. Wissen mit Quellen · 3. 3D · 4. Fragen & Sprache · 5. Politur & Portfolio
+1. **Sehen & Identifizieren** (diese Spec, abgeschlossen) · ~~2. Wissen mit Quellen~~ (gestrichen am 2026-10-01) ·
+3. 3D · 4. Fragen & Sprache · 5. Politur & Portfolio
 
 Teilprojekt 1 legt die Datenformate fest, an die die anderen andocken (`oi/contracts.py`, Contract-Version 1).
 
@@ -29,7 +31,7 @@ was kostet es? Richtwerte, keine harten Schranken:
 - Das erste Ergebnis kommt ≤ 6 s nach dem Ruhighalten.
 - Ein Objekt kostet ≤ 10 Cent.
 
-**Nicht im Umfang:** Fakten mit Quellen und Barcode-Lesen (Teilprojekt 2), 3D (3), Mikrofon und Fragen (4). Ebenfalls
+**Nicht im Umfang:** Fakten mit Quellen und Barcode-Lesen (Teilprojekt 2, inzwischen gestrichen), 3D (3), Mikrofon und Fragen (4). Ebenfalls
 nicht dabei: ein Objekt-Gedächtnis über das Verlassen des Bildes hinaus, Hosting, mehrere Nutzer und Mobilgeräte.
 Aufnahmen, Wiedergabe und Testsets aus Videos will der Owner ausdrücklich nicht. Die App läuft immer live.
 
@@ -463,3 +465,27 @@ es nicht: Ein Standbild des gehaltenen Handys hatte 451 bei einer Schwelle von 6
   „Personen und Gesichter …“ und „tiefer“. Ruhe und Schärfe erscheinen nur noch in der Telemetrie („zu unscharf“).
 - **Neue Ansichten** und das Aufruf-Limit bleiben unverändert: Ein neuer Aufruf kommt nur für eine Ansicht mit
   dHash-Abstand ≥ 14 zu allen gesendeten Ansichten, höchstens 4 pro Objekt.
+
+## 11. Nachtrag 2026-10-01: Wiedererkennung nach neuer Tracking-Nummer, Abschluss
+
+Im Live-Test bekam das iPhone in 8 Minuten 10 Tracking-Nummern. Jede Nummer begann die Analyse von vorn, das waren
+13 Aufrufe für ein Handy.
+
+- **Regel.** Ein frischer Fokus ohne Aufruf übernimmt Identität, gesendete Ansichten und Aufrufzähler des zuletzt
+  identifizierten Fokus-Objekts, wenn alle vier Bedingungen gelten:
+  - Das alte Objekt ist nicht mehr im Bild.
+  - Es wurde vor höchstens 3 s zuletzt gehalten.
+  - Die neue Box ist höchstens doppelt oder halb so groß.
+  - Die Farbsignatur passt: HSV-Histogramm 8×4×4 innerhalb der Umrisslinie, Korrelation ≥ 0,5 (`oi/appearance.py`).
+- **Farben sind nur die letzte Prüfung.** Gemessen an 17 echten Ausschnitten trennen sie Objekte nicht: dasselbe
+  iPhone von vorn und hinten 0,04, Lampe gegen iPhone bis 0,85. Im Zweifel wird neu analysiert, statt einem
+  Objekt einen fremden Namen zu geben.
+- **Browser.** Ein laufender Aufruf meldet sein Ergebnis an die neue Nummer. `identity.previous_id` sagt dem Browser,
+  dass es dasselbe Objekt ist:
+  - Die Stimme wiederholt nichts.
+  - Die Karte blendet nur bei einem neuen Namen neu ein.
+  - Die Box gleitet weiter, statt neu einzurasten.
+  - Die Stimme bricht nur noch ab, wenn ein anderes Objekt in den Fokus kommt, nicht bei einem kurzen Aussetzer.
+- **Abschluss.** Jonas hat Teilprojekt 1 am 2026-10-01 im Live-Test mit iPhone, Hand und Raum abgenommen („mehr als
+  zufrieden“). Die formale Checkliste (`docs/acceptance/sp1-checklist.md`) wurde auf seinen Wunsch nicht einzeln
+  abgehakt. Teilprojekt 2 (Wissen mit Quellen) ist gestrichen, weiter geht es mit Teilprojekt 3 (3D).
