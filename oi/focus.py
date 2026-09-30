@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 
 from oi.config import Settings
 from oi.contracts import Track
@@ -15,6 +16,11 @@ NEW_FULL_S, NEW_ZERO_S = 2.0, 6.0
 EMA_ALPHA = 0.5
 HELD_MEMORY_S = 2.0  # a hand that was seen on the object within 2 s still counts (hand detection flickers)
 MAX_HELD_RATIO = 8.0  # a held object is at most 8 times the size of the hand box (not the stairs behind the hand)
+MIN_FINGER_JOINTS = 3  # held: at least 3 joints of the hand lie on the object, not just the boxes touching
+JOINT_MARGIN = 0.10  # the object box widened by 10 % per side: fingers wrap around its edges
+BACKGROUND_IOU = 0.5  # a detection this similar to a frozen background box is that background
+
+Box = tuple[float, float, float, float]
 
 
 def split_tracks(tracks: list[Track], s: Settings) -> tuple[list[Track], list[Track]]:
@@ -38,6 +44,16 @@ def _overlap(a: tuple[float, float, float, float], b: tuple[float, float, float,
 
 def _center(box: tuple[float, float, float, float]) -> tuple[float, float]:
     return (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+
+
+def _iou(a: Box, b: Box) -> float:
+    inter = _overlap(a, b)
+    union = _area(a) + _area(b) - inter
+    return inter / union if union > 0 else 0.0
+
+
+def is_background(box: Box, background: Sequence[Box]) -> bool:
+    return any(_iou(box, b) >= BACKGROUND_IOU for b in background)
 
 
 class FocusSelector:
@@ -65,8 +81,9 @@ class FocusSelector:
         return now - self._last_held.get(track_id, float("-inf")) <= HELD_MEMORY_S
 
     def update(self, visible: list[Track], hands: list[Track], frame_w: int, frame_h: int, now: float,
-               people: list[Track] = ()) -> int | None:
+               people: list[Track] = (), background: Sequence[Box] = ()) -> int | None:
         """`people`: raw person and face detections, so regions on a person's body or face never get focus.
+        `background`: the frozen boxes of the scene calibration; what matches one of them is never held.
 
         Only held objects are the focus, and only while a hand was on them within the last 2 s; regions on a face
         never are. `pin` (not used by the browser any more) overrides both."""
@@ -74,7 +91,9 @@ class FocusSelector:
         ids = {t.id for t in visible}
         for t in visible:
             self._track_motion(t, diag, now)
-            if self._touches_hand(t, hands):
+            if is_background(t.box, background):
+                self._last_held.pop(t.id, None)
+            elif self._touches_hand(t, hands):
                 self._last_held[t.id] = now
         for gone in set(self._last) - ids:
             del self._last[gone], self._velocity[gone], self._steady[gone]
@@ -125,9 +144,20 @@ class FocusSelector:
 
     @staticmethod
     def _touches_hand(t: Track, hands: list[Track]) -> bool:
+        """Hands with joints (Apple Vision) hold what their fingers lie on; a bare hand box only needs to overlap."""
         area = _area(t.box)
-        return any(_overlap(t.box, h.box) > 0.10 * min(area, _area(h.box)) and area <= MAX_HELD_RATIO * _area(h.box)
-                   for h in hands)
+        x1, y1, x2, y2 = t.box
+        dx, dy = (x2 - x1) * JOINT_MARGIN, (y2 - y1) * JOINT_MARGIN
+        for h in hands:
+            if area > MAX_HELD_RATIO * _area(h.box):
+                continue
+            if h.joints:
+                on = sum(1 for x, y in h.joints if x1 - dx <= x <= x2 + dx and y1 - dy <= y <= y2 + dy)
+                if on >= MIN_FINGER_JOINTS:
+                    return True
+            elif _overlap(t.box, h.box) > 0.10 * min(area, _area(h.box)):
+                return True
+        return False
 
     def _track_motion(self, t: Track, diag: float, now: float) -> None:
         cx, cy = _center(t.box)

@@ -126,3 +126,31 @@ def test_big_background_is_not_held_by_a_nearby_hand():
     hand_in_front_of_stairs = trk(9, (900, 300, 1050, 450), label="hand")
     fs = FocusSelector(Settings())
     assert all(fs.update([STAIRS], [hand_in_front_of_stairs], W, H, t) is None for t in times(0.0, 10))
+
+
+# --- live test 2026-09-30: the lamp and stair parts behind the hand were taken for held objects ---------------------
+
+from oi.hands import hand_track  # noqa: E402
+
+JOINTS = [(600, 500), (570, 470), (560, 440), (555, 410), (550, 390), (590, 450), (590, 410), (590, 385),
+          (610, 450), (612, 405), (614, 380), (630, 455), (634, 415), (636, 392)]
+HAND = hand_track(JOINTS, 1.0, 0, W, H)
+PHONE = trk(20, (560, 380, 660, 520), label="gadget")  # the fingers lie on it
+STAIR_PART = trk(21, (640, 440, 720, 540), label="paper towel")  # overlaps the hand's box, but no finger is on it
+
+
+def test_held_means_fingers_on_the_object_not_boxes_touching():
+    assert FocusSelector(Settings()).update([STAIR_PART], [HAND], W, H, 10.0) is None
+    fs = FocusSelector(Settings())
+    assert fs.update([PHONE, STAIR_PART], [HAND], W, H, 10.0) == PHONE.id
+    assert not fs.held(STAIR_PART.id, 10.0)
+
+
+def test_calibrated_background_never_becomes_the_focus():
+    lamp = trk(22, (560, 380, 660, 520), label="lamp")  # the hand is right in front of it
+    background = [(565.0, 385.0, 662.0, 515.0)]  # its frozen box from the calibration, a little off
+    fs = FocusSelector(Settings())
+    assert fs.update([lamp], [HAND], W, H, 10.0, background=background) is None
+    assert not fs.held(lamp.id, 10.0)
+    assert FocusSelector(Settings()).update([PHONE], [HAND], W, H, 10.0, background=[(0.0, 0.0, 300.0, 300.0)]) \
+        == PHONE.id  # other background elsewhere changes nothing

@@ -27,6 +27,7 @@ _TEXTS: dict[str, dict[str, str]] = {
         "no_key": "Kein API-Key: nur lokale Erkennung.",
         "model_missing": "Modell {model} nicht gefunden: nur lokale Erkennung.",
         "unreachable": "Claude gerade nicht erreichbar.",
+        "scene_local": "Den Hintergrund konnte Claude gerade nicht benennen, ich zeige die lokalen Namen.",
     },
     "en": {
         "certain": "This is {name}.",
@@ -46,6 +47,7 @@ _TEXTS: dict[str, dict[str, str]] = {
         "no_key": "No API key: local detection only.",
         "model_missing": "Model {model} not found: local detection only.",
         "unreachable": "Claude is not reachable right now.",
+        "scene_local": "Claude could not name the background right now, showing the local names.",
     },
 }
 
@@ -101,5 +103,5 @@ def paused_line(lang: Lang) -> str:
     return _TEXTS[lang]["paused"]
 
 
-def notice_text(key: Literal["no_key", "model_missing", "unreachable"], lang: Lang, **kw: str) -> str:
+def notice_text(key: Literal["no_key", "model_missing", "unreachable", "scene_local"], lang: Lang, **kw: str) -> str:
     return _TEXTS[lang][key].format(**kw)

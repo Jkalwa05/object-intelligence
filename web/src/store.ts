@@ -52,6 +52,12 @@ export function applyConnection(s: HudState, connection: ConnectionStatus): HudS
   return { ...s, connection, tracks: null };
 }
 
+// Which scene banner to show: the calibration, then Claude naming the background, then none.
+export function sceneBanner(s: HudState): "calibrating" | "naming" | null {
+  if (s.scene?.calibrating) return "calibrating";
+  return s.scene?.naming ? "naming" : null;
+}
+
 // The hint for the focus object, shown as a banner as well as spoken (the voice may be muted).
 export function focusHint(s: HudState): string | null {
   return s.tracks?.hint ?? null;

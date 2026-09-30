@@ -76,3 +76,23 @@ def test_inside_a_person_box_is_on_the_person():
     from oi.privacy import on_person
     chain = trk(7, (560, 400, 700, 480), label="necklace")
     assert on_person(chain, [PERSON], frame_h=720)
+
+
+def test_scene_image_hides_every_person_before_it_leaves_the_mac():
+    import numpy as np
+    from oi.privacy import mask_people
+    image = np.full((720, 1280, 3), 200, np.uint8)
+    face = trk(-1, (500, 100, 600, 220), label="face")
+    person = trk(3, (900, 50, 1100, 400), label="person")
+    masked = mask_people(image, [face, person])
+    assert (masked[70:720, 400:700] == 128).all()  # the face widened to the shoulders, down to the frame bottom
+    assert (masked[50:400, 900:1100] == 128).all()
+    assert (masked[0:60, 0:390] == 200).all() and (masked[410:720, 710:890] == 200).all()  # the room stays
+    assert (image == 200).all()  # the camera frame itself is untouched
+
+
+def test_scene_mask_clips_at_the_frame_edges():
+    import numpy as np
+    from oi.privacy import mask_people
+    masked = mask_people(np.full((720, 1280, 3), 200, np.uint8), [trk(-1, (0, 0, 80, 90), label="face")])
+    assert (masked[0:720, 0:160] == 128).all() and (masked[:, 161:] == 200).all()

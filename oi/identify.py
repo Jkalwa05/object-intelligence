@@ -1,7 +1,9 @@
 """Identification (spec §2.5): the Claude request, parsing its answer, a free fake, and the startup probe.
 
-Only the focus crop is sent, never the whole frame. Limits such as "at most 4 candidates" are enforced after the
-answer arrives (by truncating), not in the JSON schema, so a paid call is never rejected over one extra candidate.
+Identification sees only the focus crop. The one exception is the scene call after a calibration (spec §9): it gets
+the whole frame, with every person painted grey first (privacy.mask_people). Limits such as "at most 4 candidates"
+are enforced after the answer arrives (by truncating), not in the JSON schema, so a paid call is never rejected over
+one extra candidate.
 """
 
 from __future__ import annotations
@@ -15,11 +17,10 @@ from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
 import anthropic
-from pydantic import ValidationError
 
 from oi import lines
 from oi.config import Lang, Settings
-from oi.contracts import Candidate, Depth, NextView, Observation
+from oi.contracts import Candidate, Depth, NextView, Observation, SceneItemWire
 
 MAX_TOKENS = 16000
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
@@ -70,6 +71,28 @@ OBSERVATION_SCHEMA: dict[str, Any] = {
 }
 
 
+SCENE_MAX_ITEMS = 15
+SCENE_PROMPT = """You name the objects in one camera image of a room, so that a heads-up display can label them.
+- A flat grey area hides a person. Never describe it or guess anything about who it is.
+- Name every clearly visible object or piece of furniture, at most {max_items}, the most prominent first.
+- Each name is short and as specific as the visible evidence allows, for example {examples}. Write the names in {language}.
+- box is [x1, y1, x2, y2] in integers from 0 to 1000 relative to the image width and height (x to the right, y down), tight around the object."""
+SCENE_EXAMPLES = {"de": '"Pendelleuchte", "Raumspartreppe" or "Aktenordner"',
+                  "en": '"pendant lamp", "space-saving staircase" or "ring binder"'}
+SCENE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"items": {"type": "array", "items": {
+        "type": "object",
+        "properties": {"name": {"type": "string"}, "box": {"type": "array", "items": {"type": "integer"}}},
+        "required": ["name", "box"],
+        "additionalProperties": False,
+    }}},
+    "required": ["items"],
+    "additionalProperties": False,
+}
+MIN_SCENE_BOX = 5  # of 1000: anything thinner is no object
+
+
 @dataclass(frozen=True)
 class IdentifyRequest:
     jpeg: bytes
@@ -89,6 +112,22 @@ class IdentifyResult:
     model: str
 
 
+@dataclass(frozen=True)
+class SceneRequest:
+    jpeg: bytes  # the whole frame, people already painted grey
+    language: Lang
+
+
+@dataclass(frozen=True)
+class SceneResult:
+    items: list[SceneItemWire]  # boxes normalized to 0..1
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    latency_s: float
+    model: str
+
+
 class IdentifyError(Exception):
     def __init__(self, reason: Literal["refusal", "schema", "timeout", "api", "connection"]) -> None:
         super().__init__(reason)
@@ -99,6 +138,8 @@ class Identifier(Protocol):
     model_label: str
 
     async def identify(self, req: IdentifyRequest) -> IdentifyResult: ...
+
+    async def describe_scene(self, req: SceneRequest) -> SceneResult: ...
 
 
 def format_history(observations: list[Observation], lang: Lang) -> str:
@@ -122,16 +163,16 @@ def request_text(req: IdentifyRequest) -> str:
     return "\n".join(text)
 
 
-def build_request(s: Settings, req: IdentifyRequest) -> dict[str, Any]:
-    output_config: dict[str, Any] = {"format": {"type": "json_schema", "schema": OBSERVATION_SCHEMA}}
+def _request(s: Settings, system: str, jpeg: bytes, text: str, schema: dict[str, Any]) -> dict[str, Any]:
+    output_config: dict[str, Any] = {"format": {"type": "json_schema", "schema": schema}}
     request: dict[str, Any] = {
         "model": s.model,
         "max_tokens": MAX_TOKENS,
-        "system": SYSTEM_PROMPT.format(language="German" if req.language == "de" else "English"),
+        "system": system,
         "messages": [{"role": "user", "content": [
             {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
-                                         "data": base64.standard_b64encode(req.jpeg).decode()}},
-            {"type": "text", "text": request_text(req)},
+                                         "data": base64.standard_b64encode(jpeg).decode()}},
+            {"type": "text", "text": text},
         ]}],
         "output_config": output_config,
     }
@@ -140,6 +181,21 @@ def build_request(s: Settings, req: IdentifyRequest) -> dict[str, Any]:
         request["betas"] = [FALLBACK_BETA]
         request["fallbacks"] = "default"
     return request
+
+
+def _language(lang: Lang) -> str:
+    return "German" if lang == "de" else "English"
+
+
+def build_request(s: Settings, req: IdentifyRequest) -> dict[str, Any]:
+    return _request(s, SYSTEM_PROMPT.format(language=_language(req.language)), req.jpeg, request_text(req),
+                    OBSERVATION_SCHEMA)
+
+
+def build_scene_request(s: Settings, req: SceneRequest) -> dict[str, Any]:
+    system = SCENE_PROMPT.format(max_items=SCENE_MAX_ITEMS, examples=SCENE_EXAMPLES[req.language],
+                                 language=_language(req.language))
+    return _request(s, system, req.jpeg, "Name the objects.", SCENE_SCHEMA)
 
 
 def cost_usd(model: str, input_tokens: int, output_tokens: int, prices: Any) -> float:
@@ -159,6 +215,25 @@ def parse_observation(text: str) -> Observation:
         raise IdentifyError("schema") from error
 
 
+def parse_scene(text: str) -> list[SceneItemWire]:
+    """Claude's scene answer as display items: boxes clipped to the image and ordered, junk dropped, at most 15."""
+    try:
+        raw = json.loads(text)["items"]
+        items = []
+        for entry in raw:
+            name, box = str(entry.get("name", "")).strip(), entry.get("box")
+            if not name or not isinstance(box, list) or len(box) != 4:
+                continue
+            x1, y1, x2, y2 = (min(1000.0, max(0.0, float(v))) for v in box)
+            (x1, x2), (y1, y2) = sorted((x1, x2)), sorted((y1, y2))
+            if x2 - x1 < MIN_SCENE_BOX or y2 - y1 < MIN_SCENE_BOX:
+                continue
+            items.append(SceneItemWire(label=name, box=(x1 / 1000, y1 / 1000, x2 / 1000, y2 / 1000)))
+        return items[:SCENE_MAX_ITEMS]
+    except (ValueError, TypeError, AttributeError, KeyError) as error:
+        raise IdentifyError("schema") from error
+
+
 class ClaudeIdentifier:
     def __init__(self, settings: Settings, client: anthropic.AsyncAnthropic | None = None) -> None:
         self._s = settings
@@ -166,7 +241,21 @@ class ClaudeIdentifier:
         self.model_label = settings.model
 
     async def identify(self, req: IdentifyRequest) -> IdentifyResult:
-        request = build_request(self._s, req)
+        text, usage, latency = await self._call(build_request(self._s, req))
+        observation = parse_observation(text)
+        return IdentifyResult(observation=observation, input_tokens=usage.input_tokens,
+                              output_tokens=usage.output_tokens,
+                              cost_usd=cost_usd(self._s.model, usage.input_tokens, usage.output_tokens, self._s.prices),
+                              latency_s=latency, model=self._s.model)
+
+    async def describe_scene(self, req: SceneRequest) -> SceneResult:
+        text, usage, latency = await self._call(build_scene_request(self._s, req))
+        return SceneResult(items=parse_scene(text), input_tokens=usage.input_tokens, output_tokens=usage.output_tokens,
+                           cost_usd=cost_usd(self._s.model, usage.input_tokens, usage.output_tokens, self._s.prices),
+                           latency_s=latency, model=self._s.model)
+
+    async def _call(self, request: dict[str, Any]) -> tuple[str, Any, float]:
+        """(answer text, usage, latency); every failure becomes an IdentifyError."""
         client = self._client.with_options(timeout=self._s.claude_timeout_s)
         started = time.monotonic()
         try:
@@ -186,12 +275,7 @@ class ClaudeIdentifier:
         if response.stop_reason == "max_tokens":
             raise IdentifyError("schema")
         text = next((block.text for block in response.content if getattr(block, "type", None) == "text"), "")
-        observation = parse_observation(text)
-        usage = response.usage
-        return IdentifyResult(observation=observation, input_tokens=usage.input_tokens,
-                              output_tokens=usage.output_tokens,
-                              cost_usd=cost_usd(self._s.model, usage.input_tokens, usage.output_tokens, self._s.prices),
-                              latency_s=latency, model=self._s.model)
+        return text, response.usage, latency
 
 
 def canned_observation(coarse_label: str, lang: Lang) -> Observation:
@@ -214,10 +298,13 @@ class FakeIdentifier:
 
     model_label = "fake"
 
-    def __init__(self, script: Sequence[Observation | IdentifyError] | None = None, delay_s: float = 0.0) -> None:
+    def __init__(self, script: Sequence[Observation | IdentifyError] | None = None, delay_s: float = 0.0,
+                 scene: Sequence[SceneItemWire] | IdentifyError | None = None) -> None:
         self._script = list(script) if script is not None else None
         self._delay = delay_s
+        self._scene = scene
         self.requests: list[IdentifyRequest] = []
+        self.scene_requests: list[SceneRequest] = []
 
     async def identify(self, req: IdentifyRequest) -> IdentifyResult:
         self.requests.append(req)
@@ -232,6 +319,16 @@ class FakeIdentifier:
             observation = item
         return IdentifyResult(observation=observation, input_tokens=0, output_tokens=0, cost_usd=0.0,
                               latency_s=self._delay, model=self.model_label)
+
+    async def describe_scene(self, req: SceneRequest) -> SceneResult:
+        """The scripted scene, or no items at all: canned names would only pretend to see the room."""
+        self.scene_requests.append(req)
+        if self._delay:
+            await asyncio.sleep(self._delay)
+        if isinstance(self._scene, IdentifyError):
+            raise self._scene
+        return SceneResult(items=list(self._scene or []), input_tokens=0, output_tokens=0, cost_usd=0.0,
+                           latency_s=self._delay, model=self.model_label)
 
 
 async def choose_identifier(s: Settings, fake: bool,

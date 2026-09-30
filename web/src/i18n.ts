@@ -20,6 +20,7 @@ const TEXTS = {
     en: "Opened in another tab. Reload this page to continue here." },
   muted: { de: "Stimme aus (M)", en: "Voice off (M)" },
   calibrating: { de: "Szene wird eingemessen …", en: "Calibrating the scene …" },
+  naming: { de: "Hintergrund wird erkannt …", en: "Recognising the background …" },
   "tel.fpsVideo": { de: "Video", en: "Video" },
   "tel.fpsProcessed": { de: "Verarbeitet", en: "Processed" },
   "tel.detMs": { de: "Detektor", en: "Detector" },

@@ -164,3 +164,64 @@ class _Overloaded(anthropic.InternalServerError):
 async def test_overloaded_startup_keeps_claude():
     identifier, notice, mode = await choose_identifier(Settings(), False, lambda: FakeClient(retrieve_error=_Overloaded()))
     assert isinstance(identifier, ClaudeIdentifier) and (notice, mode) == ("Claude gerade nicht erreichbar.", "hybrid")
+
+
+# --- the scene: one call names and locates the background -----------------------------------------------------------
+
+from oi.identify import SceneRequest, build_scene_request, parse_scene  # noqa: E402
+
+SCENE_REQ = SceneRequest(jpeg=b"\xff\xd8room", language="de")
+
+
+def test_scene_request_sends_one_image_and_asks_for_names_and_boxes():
+    request = build_scene_request(Settings(), SCENE_REQ)
+    images = [b for b in request["messages"][0]["content"] if b["type"] == "image"]
+    assert len(images) == 1 and images[0]["source"]["data"] == base64.standard_b64encode(SCENE_REQ.jpeg).decode()
+    assert "grey" in request["system"] and "German" in request["system"] and "0 to 1000" in request["system"]
+    assert request["output_config"]["format"]["schema"]["properties"]["items"]["items"]["required"] == ["name", "box"]
+    assert request["fallbacks"] == "default"
+
+
+def test_scene_answer_is_cleaned_up():
+    text = json.dumps({"items": [
+        {"name": " Pendelleuchte ", "box": [367, 38, 475, 338]},
+        {"name": "Treppe", "box": [976, 955, 798, 230]},  # corners swapped
+        {"name": "Regal", "box": [-20, 0, 285, 1200]},  # reaches outside the image
+        {"name": "", "box": [1, 2, 300, 400]},  # no name
+        {"name": "Punkt", "box": [500, 500, 501, 501]},  # no area
+        {"name": "Kaputt", "box": [1, 2, 3]},
+    ] + [{"name": f"Box {i}", "box": [0, 0, 100, 100]} for i in range(20)]})
+    items = parse_scene(text)
+    assert [(i.label, i.box) for i in items[:3]] == [("Pendelleuchte", (0.367, 0.038, 0.475, 0.338)),
+                                                    ("Treppe", (0.798, 0.23, 0.976, 0.955)),
+                                                    ("Regal", (0.0, 0.0, 0.285, 1.0))]
+    assert len(items) == 15
+
+
+def test_scene_answer_that_is_no_json_is_a_schema_error():
+    with pytest.raises(IdentifyError) as error:
+        parse_scene("no json")
+    assert error.value.reason == "schema"
+
+
+async def test_scene_call_reports_cost_like_an_identification():
+    client = FakeClient(reply=response(json.dumps({"items": [{"name": "Pendelleuchte", "box": [367, 38, 475, 338]}]})))
+    result = await ClaudeIdentifier(Settings(), client).describe_scene(SCENE_REQ)
+    assert [i.label for i in result.items] == ["Pendelleuchte"]
+    assert result.cost_usd == pytest.approx(0.018) and result.model == "claude-opus-5-5"
+
+
+async def test_scene_call_failures_raise_identify_error():
+    with pytest.raises(IdentifyError) as error:
+        await ClaudeIdentifier(Settings(), FakeClient(error=_Offline())).describe_scene(SCENE_REQ)
+    assert error.value.reason == "connection"
+
+
+async def test_fake_scene_answers_from_its_script():
+    from oi.contracts import SceneItemWire
+    lamp = SceneItemWire(label="Pendelleuchte", box=(0.4, 0.0, 0.5, 0.3))
+    fake = FakeIdentifier(scene=[lamp])
+    assert (await fake.describe_scene(SCENE_REQ)).items == [lamp] and fake.scene_requests == [SCENE_REQ]
+    assert (await FakeIdentifier().describe_scene(SCENE_REQ)).items == []
+    with pytest.raises(IdentifyError):
+        await FakeIdentifier(scene=IdentifyError("api")).describe_scene(SCENE_REQ)

@@ -1,7 +1,8 @@
-"""The pipeline: one frame in, tracks and identities out (spec §2.1–§2.6).
+"""The pipeline: one frame in, tracks and identities out (spec §2.1–§2.6, §8, §9).
 
 Detection and tracking run on every frame; identification runs in the background and the frame loop never waits
 for it. All timing logic uses the browser's capture time, so the behaviour does not depend on server load.
+When the scene calibration ends, one Claude call names the frozen background, with every person painted grey.
 """
 
 from __future__ import annotations
@@ -12,18 +13,22 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+import cv2
+import numpy as np
+
 from oi import lines
 from oi.belief import Belief
 from oi.config import Settings
 from oi.contracts import (BeliefState, FocusMsg, IdentityMsg, Level, NoticeMsg, RecalibrateMsg, RecheckMsg,
                           SceneItemWire, SceneMsg, ServerMsg, Status, Track, TracksMsg, WireTrack)
 from oi.faces import FaceFinder
-from oi.hands import HandFinder
+from oi.hands import HandConfirmer, HandFinder
 from oi.focus import FocusSelector, split_tracks
-from oi.identify import Identifier, IdentifyError, IdentifyRequest, IdentifyResult, format_history, request_text
+from oi.identify import (Identifier, IdentifyError, IdentifyRequest, IdentifyResult, SceneRequest, SceneResult,
+                         format_history, request_text)
 from oi.ingest import Frame, FrameFormatError, FrameSlot, decode_frame
 from oi.perception import Detector
-from oi.privacy import on_person, privacy_veto
+from oi.privacy import mask_people, on_person, privacy_veto
 from oi.scene import SceneMap
 from oi.telemetry import CallLog, CallRecord, Telemetry
 from oi.trigger import Decision, TriggerInput, decide
@@ -33,6 +38,15 @@ log = logging.getLogger(__name__)
 
 Emit = Callable[[ServerMsg], Awaitable[None]]
 FORGET_AFTER_S = 30.0
+SCENE_WIDTH = 1280  # the scene image for Claude is at most this wide
+SCENE_JPEG_QUALITY = 85
+PRIVATE_MEMORY_S = 2.0  # everyone seen in the last 2 s of the calibration is greyed, even if missed in the last frame
+
+Box = tuple[float, float, float, float]
+
+
+def _normalized(box: Box, w: int, h: int) -> Box:
+    return round(box[0] / w, 4), round(box[1] / h, 4), round(box[2] / w, 4), round(box[3] / h, 4)
 
 
 @dataclass
@@ -45,6 +59,18 @@ class _TrackState:
     in_flight: bool = False
     forced: bool = False
     paused_sent: bool = False
+
+
+def _scene_jpeg(image: np.ndarray, private: list[Track]) -> bytes:
+    """The whole frame for the scene call: every person zone flat grey, at most 1280 pixels wide."""
+    masked = mask_people(image, private)
+    h, w = masked.shape[:2]
+    if w > SCENE_WIDTH:
+        masked = cv2.resize(masked, (SCENE_WIDTH, round(h * SCENE_WIDTH / w)), interpolation=cv2.INTER_AREA)
+    ok, jpeg = cv2.imencode(".jpg", masked, [cv2.IMWRITE_JPEG_QUALITY, SCENE_JPEG_QUALITY])
+    if not ok:
+        raise ValueError("JPEG encoding failed")
+    return jpeg.tobytes()
 
 
 class Pipeline:
@@ -62,8 +88,12 @@ class Pipeline:
         self._head_zone = faces is None  # with real face boxes the coarse head-zone rule is not needed
         self._focus = FocusSelector(settings, head_zone=self._head_zone)
         self._states: dict[int, _TrackState] = {}
+        self._confirmer = HandConfirmer()
         self._scene = SceneMap()
         self._scene_announced = False
+        self._scene_generation = 0  # a new calibration makes a late answer for the old scene worthless
+        self._background: list[Box] = []  # frozen background boxes in pixels: never the focus
+        self._private: list[tuple[float, list[Track]]] = []  # recent person zones during the calibration
         self._tasks: set[asyncio.Task[None]] = set()
         self._in_flight = 0
         self._calls_logged = 0
@@ -73,16 +103,18 @@ class Pipeline:
         tracks = await asyncio.to_thread(self._detector.detect, frame.image, frame.t)
         self._telemetry.frame_processed((time.perf_counter() - started) * 1000.0)
         h, w = frame.image.shape[:2]
-        self._frame_w = w
+        self._frame_w, self._frame_h = w, h
         visible, hands = split_tracks(tracks, self._s)
-        if self._hands is not None:
-            hands += await asyncio.to_thread(self._hands.find, frame.image)
+        if self._hands is not None:  # Apple Vision's checked hands replace YOLOE's rare "hand" labels
+            hands = self._confirmer.confirm(await asyncio.to_thread(self._hands.find, frame.image))
         people_labels = set(self._s.person_labels) | set(self._s.face_labels)
         people = [t for t in tracks if t.label.lower() in people_labels]
         faces = await asyncio.to_thread(self._faces.find, frame.image) if self._faces is not None else []
         people += faces
-        focus_id = self._focus.update(visible, hands, w, h, frame.t, people=people)
-        await self._calibrate_scene(visible, people, focus_id, h, frame.t)
+        focus_id = self._focus.update(visible, hands, w, h, frame.t, people=people, background=self._background)
+        excluded = {label.lower() for label in self._s.excluded_labels}
+        private = people + [t for t in tracks if t.label.lower() in excluded and t not in people]
+        await self._calibrate_scene(frame, visible, people, private, focus_id)
         for track in visible:
             self._remember(track, frame.t)
 
@@ -108,12 +140,16 @@ class Pipeline:
         await self._emit(TracksMsg(frame_id=frame.frame_id, w=w, h=h, focus_id=focus_id,
                                    tracks=[WireTrack.from_track(t, w, h) for t in visible if t.id == focus_id],
                                    hint=hint,
-                                   faces=[WireTrack.from_track(f, w, h).box for f in faces]))
+                                   faces=[WireTrack.from_track(f, w, h).box for f in faces],
+                                   hands=[WireTrack.from_track(hand, w, h) for hand in hands]))
 
     async def on_client_message(self, message: FocusMsg | RecheckMsg | RecalibrateMsg) -> None:
         if isinstance(message, RecalibrateMsg):
             self._scene.reset()
             self._scene_announced = False
+            self._scene_generation += 1
+            self._background = []
+            self._private = []
         elif isinstance(message, FocusMsg):
             self._focus.pin(message.track_id)
         elif (state := self._states.get(message.track_id)) is not None:
@@ -144,22 +180,68 @@ class Pipeline:
             task.cancel()
         await asyncio.gather(*list(self._tasks), return_exceptions=True)
 
-    async def _calibrate_scene(self, visible: list[Track], people: list[Track], focus_id: int | None, frame_h: int,
-                               now: float) -> None:
-        """Collect the background during calibration: never the person, nothing worn, nothing held."""
+    async def _calibrate_scene(self, frame: Frame, visible: list[Track], people: list[Track], private: list[Track],
+                               focus_id: int | None) -> None:
+        """Collect the background during calibration: never the person, nothing worn, nothing held. When the scene
+        freezes, Claude names it (people painted grey); without Claude the detector's labels stay."""
         if not self._scene.calibrating:
             return
         if not self._scene_announced:
             self._scene_announced = True
             await self._emit(SceneMsg(calibrating=True, items=[]))
+        now = frame.t
+        h, w = frame.image.shape[:2]
+        self._private = [(t, zones) for t, zones in self._private if now - t <= PRIVATE_MEMORY_S] + [(now, private)]
         background = [t for t in visible if t.id != focus_id and not self._focus.held(t.id, now)
-                      and not on_person(t, people, frame_h) and not privacy_veto(t, people, self._s, self._head_zone)]
-        if self._scene.observe(background, now):
-            w = self._frame_w
-            items = [SceneItemWire(label=i.label, box=(round(i.box[0] / w, 4), round(i.box[1] / frame_h, 4),
-                                                       round(i.box[2] / w, 4), round(i.box[3] / frame_h, 4)))
-                     for i in self._scene.items]
-            await self._emit(SceneMsg(calibrating=False, items=items))
+                      and not on_person(t, people, h) and not privacy_veto(t, people, self._s, self._head_zone)]
+        if not self._scene.observe(background, now):
+            return
+        self._background = [i.box for i in self._scene.items]
+        local = [SceneItemWire(label=i.label, box=_normalized(i.box, w, h)) for i in self._scene.items]
+        if self._identifier is None or self._telemetry.calls_session >= self._s.max_calls_session:
+            await self._emit(SceneMsg(calibrating=False, items=local))
+            return
+        await self._emit(SceneMsg(calibrating=False, naming=True, items=[]))
+        everyone = [t for _, zones in self._private for t in zones]
+        task = asyncio.create_task(self._name_scene(self._scene_generation, _scene_jpeg(frame.image, everyone), local))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def _name_scene(self, generation: int, jpeg: bytes, local: list[SceneItemWire]) -> None:
+        assert self._identifier is not None
+        self._telemetry.call_started()
+        try:
+            result = await self._identifier.describe_scene(SceneRequest(jpeg=jpeg, language=self._s.language))
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001 - any failure falls back to the detector's own labels
+            if not isinstance(error, IdentifyError):
+                log.exception("naming the scene failed")
+            self._telemetry.call_failed()
+            self._write_scene_log(jpeg, None, error.reason if isinstance(error, IdentifyError) else "api")
+            if generation == self._scene_generation:
+                await self._emit(SceneMsg(calibrating=False, items=local))
+                await self._emit(NoticeMsg(level="info", text=lines.notice_text("scene_local", self._s.language)))
+            return
+        self._telemetry.call_finished(result.latency_s, result.cost_usd)
+        self._write_scene_log(jpeg, result, None)
+        if generation != self._scene_generation:
+            return
+        w, h = self._frame_w, self._frame_h
+        self._background += [(i.box[0] * w, i.box[1] * h, i.box[2] * w, i.box[3] * h) for i in result.items]
+        await self._emit(SceneMsg(calibrating=False, items=result.items))
+
+    def _write_scene_log(self, jpeg: bytes, result: SceneResult | None, error: str | None) -> None:
+        if self._call_log is None:
+            return
+        self._calls_logged += 1
+        self._call_log.write(CallRecord(
+            n=self._calls_logged, track_id=0, jpeg=jpeg, request_text="scene",
+            observation={"items": [i.model_dump(mode="json") for i in result.items]} if result else None, error=error,
+            input_tokens=result.input_tokens if result else 0, output_tokens=result.output_tokens if result else 0,
+            cost_usd=result.cost_usd if result else 0.0, latency_s=result.latency_s if result else 0.0,
+            model=result.model if result else (self._identifier.model_label if self._identifier else "–"),
+            level_after=None))
 
     # --- identification -----------------------------------------------------------------------------------------
 

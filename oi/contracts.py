@@ -73,6 +73,7 @@ class Track(_Model):
     score: float
     age_frames: int
     first_seen_ts: float
+    joints: list[tuple[float, float]] = Field(default_factory=list)  # hands only: the visible joints, in pixels
 
 
 class RankedCandidate(_Model):
@@ -136,6 +137,7 @@ class TracksMsg(_ServerMsg):
     tracks: list[WireTrack]
     hint: str | None
     faces: list[tuple[float, float, float, float]] = Field(default_factory=list)  # normalized, the card avoids them
+    hands: list[WireTrack] = Field(default_factory=list)  # confirmed hands; polygon is the outline to draw
 
 
 class IdentityMsg(_ServerMsg):
@@ -183,10 +185,12 @@ class SceneItemWire(_Model):
 
 
 class SceneMsg(_ServerMsg):
-    """The frozen background: sent with calibrating=True when a calibration starts and once more when it ends."""
+    """The frozen background: sent with calibrating=True when a calibration starts, with naming=True while Claude names
+    the frozen scene, and once more with the final items."""
 
     type: Literal["scene"] = "scene"
     calibrating: bool
+    naming: bool = False
     items: list[SceneItemWire]
 
 
@@ -223,8 +227,10 @@ def protocol_examples() -> list[dict]:
     """One example of every server message, written to tests/fixtures/protocol-examples.json."""
     track = WireTrack(id=17, box=(0.1, 0.2, 0.3, 0.6), polygon=[(0.1, 0.2), (0.3, 0.2), (0.3, 0.6)],
                       label="cell phone", score=0.91)
+    hand = WireTrack(id=-101, box=(0.2, 0.4, 0.35, 0.7), polygon=[(0.2, 0.4), (0.35, 0.45), (0.3, 0.7)],
+                     label="hand", score=1.0)
     messages: list[_ServerMsg] = [
-        TracksMsg(ts=1.0, seq=1, frame_id=42, w=1280, h=720, focus_id=17, tracks=[track], hint=None),
+        TracksMsg(ts=1.0, seq=1, frame_id=42, w=1280, h=720, focus_id=17, tracks=[track], hint=None, hands=[hand]),
         IdentityMsg(ts=1.1, seq=2, track_id=17, status="ready", level=Level.LIKELY, display_name="Apple iPhone 14",
                     candidates=[RankedCandidate(name="Apple iPhone 14", share=0.67),
                                 RankedCandidate(name="Apple iPhone 13", share=0.33)],
@@ -234,6 +240,7 @@ def protocol_examples() -> list[dict]:
                      sharpness_focus=142.0, calls_session=1, cost_session_usd=0.02, model="claude-opus-5-5",
                      mode="hybrid", language="de"),
         NoticeMsg(ts=1.3, seq=4, level="warn", text="Kein API-Key: nur lokale Erkennung."),
-        SceneMsg(ts=1.4, seq=5, calibrating=False, items=[SceneItemWire(label="lamp", box=(0.4, 0.02, 0.55, 0.25))]),
+        SceneMsg(ts=1.4, seq=5, calibrating=False, naming=False,
+                 items=[SceneItemWire(label="Pendelleuchte", box=(0.4, 0.02, 0.55, 0.25))]),
     ]
     return [m.model_dump(mode="json") for m in messages]

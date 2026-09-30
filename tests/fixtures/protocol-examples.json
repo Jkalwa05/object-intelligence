@@ -35,7 +35,34 @@
       }
     ],
     "hint": null,
-    "faces": []
+    "faces": [],
+    "hands": [
+      {
+        "id": -101,
+        "box": [
+          0.2,
+          0.4,
+          0.35,
+          0.7
+        ],
+        "polygon": [
+          [
+            0.2,
+            0.4
+          ],
+          [
+            0.35,
+            0.45
+          ],
+          [
+            0.3,
+            0.7
+          ]
+        ],
+        "label": "hand",
+        "score": 1.0
+      }
+    ]
   },
   {
     "ts": 1.1,
@@ -92,9 +119,10 @@
     "seq": 5,
     "type": "scene",
     "calibrating": false,
+    "naming": false,
     "items": [
       {
-        "label": "lamp",
+        "label": "Pendelleuchte",
         "box": [
           0.4,
           0.02,

@@ -10,3 +10,11 @@ export function smoothRect(prev: Rect, target: Rect, dtMs: number, tauMs = 80): 
     h: prev.h + (target.h - prev.h) * a,
   };
 }
+
+// Outlines (hands) glide the same way, point by point; a different number of points means a new shape: jump.
+export function smoothPoints(prev: [number, number][], target: [number, number][], dtMs: number, tauMs = 80):
+  [number, number][] {
+  if (prev.length !== target.length) return target;
+  const a = 1 - Math.exp(-dtMs / tauMs);
+  return target.map(([x, y], i) => [prev[i][0] + (x - prev[i][0]) * a, prev[i][1] + (y - prev[i][1]) * a]);
+}

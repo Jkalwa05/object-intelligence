@@ -3,7 +3,7 @@ import type { IdentityMsg, NoticeMsg, TracksMsg } from "./protocol";
 import { applyServerMessage, initialState } from "./store";
 
 const tracks = (seq: number): TracksMsg =>
-  ({ type: "tracks", ts: 0, seq, frame_id: seq, w: 1280, h: 720, focus_id: 1, tracks: [], hint: null, faces: [] });
+  ({ type: "tracks", ts: 0, seq, frame_id: seq, w: 1280, h: 720, focus_id: 1, tracks: [], hint: null, faces: [], hands: [] });
 const identity = (trackId: number, line: string): IdentityMsg => ({
   type: "identity", ts: 0, seq: 0, track_id: trackId, status: "ready", level: "likely", display_name: "X",
   candidates: [], evidence: [], view_request: null, final: false, calls_used: 1, line,
@@ -46,10 +46,20 @@ test("the focus hint is shown on screen too", async () => {
 
 test("the frozen scene is kept until a new connection calibrates again", async () => {
   const { applyConnection } = await import("./store");
-  const scene = { type: "scene" as const, ts: 0, seq: 1, calibrating: false,
+  const scene = { type: "scene" as const, ts: 0, seq: 1, calibrating: false, naming: false,
     items: [{ label: "lamp", box: [0.4, 0.02, 0.55, 0.25] as [number, number, number, number] }] };
   let s = applyServerMessage(initialState, scene);
   expect(s.scene?.items[0].label).toBe("lamp");
   s = applyConnection(s, "open");
   expect(s.scene).toBeNull();
+});
+
+test("the scene banner follows calibration, then naming, then nothing", async () => {
+  const { sceneBanner } = await import("./store");
+  const scene = (calibrating: boolean, naming: boolean) =>
+    applyServerMessage(initialState, { type: "scene", ts: 0, seq: 1, calibrating, naming, items: [] });
+  expect(sceneBanner(initialState)).toBeNull();
+  expect(sceneBanner(scene(true, false))).toBe("calibrating");
+  expect(sceneBanner(scene(false, true))).toBe("naming");
+  expect(sceneBanner(scene(false, false))).toBeNull();
 });

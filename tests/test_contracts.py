@@ -49,3 +49,14 @@ def test_scene_and_recalibrate_messages():
     message = SceneMsg(calibrating=False, items=[SceneItemWire(label="lamp", box=(0.1, 0.1, 0.2, 0.2))])
     assert message.model_dump(mode="json")["type"] == "scene"
     assert parse_client_message('{"type":"recalibrate"}') == RecalibrateMsg()
+
+
+def test_scene_naming_and_hand_outlines_travel_to_the_browser():
+    from oi.contracts import SceneMsg, TracksMsg, WireTrack
+    assert SceneMsg(calibrating=False, items=[]).naming is False  # default: nothing is being named
+    assert SceneMsg(calibrating=False, naming=True, items=[]).model_dump(mode="json")["naming"] is True
+    hand = WireTrack(id=-101, box=(0.4, 0.5, 0.6, 0.9), polygon=[(0.4, 0.5), (0.6, 0.5), (0.5, 0.9)], label="hand",
+                     score=1.0)
+    message = TracksMsg(frame_id=1, w=1280, h=720, focus_id=None, tracks=[], hint=None, hands=[hand])
+    assert message.model_dump(mode="json")["hands"][0]["polygon"][2] == [0.5, 0.9]
+    assert TracksMsg(frame_id=1, w=1280, h=720, focus_id=None, tracks=[], hint=None).hands == []

@@ -1,11 +1,11 @@
-// The canvas over the video: corner brackets, focus outline, scan line and the line to the info card (spec §3).
-// Drawn every animation frame from the store, without React re-rendering.
+// The canvas over the video: your hands, the object in your hand with its scan line and the line to the info card,
+// and the frozen background (spec §3, §9). Drawn every animation frame from the store, without React re-rendering.
 
 import { useEffect, useRef, type RefObject } from "react";
 import { useHud } from "../store";
 import { toScreen, toScreenPoints, videoContentRect, type Rect } from "./geometry";
 import { CardPlacer, type Side } from "./placement";
-import { smoothRect } from "./smoothing";
+import { smoothPoints, smoothRect } from "./smoothing";
 
 const SNAP_MS = 200;
 const SNAP_PX = 8;
@@ -13,13 +13,17 @@ const SCAN_MS = 2400;
 const ARM = 14;
 const FALLBACK_CARD = { w: 300, h: 200 };
 
-const white = (alpha: number) => `rgba(255,255,255,${alpha})`;
+type Rgb = readonly [number, number, number];
+const HAND: Rgb = [46, 230, 255]; // cyan: your hand
+const FOCUS: Rgb = [124, 255, 90]; // neon green: the object in your hand, the one Claude analyses
+const SCENE: Rgb = [185, 156, 255]; // violet: the frozen background
+const rgba = ([r, g, b]: Rgb, alpha: number) => `rgba(${r},${g},${b},${alpha})`;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
-function drawBrackets(ctx: CanvasRenderingContext2D, r: Rect, inset: number, alpha: number) {
+function drawBrackets(ctx: CanvasRenderingContext2D, r: Rect, inset: number, color: string) {
   const x = r.x - inset, y = r.y - inset, w = r.w + 2 * inset, h = r.h + 2 * inset;
   const arm = Math.min(ARM, w / 3, h / 3);
-  ctx.strokeStyle = white(alpha);
+  ctx.strokeStyle = color;
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(x, y + arm); ctx.lineTo(x, y); ctx.lineTo(x + arm, y);
@@ -30,7 +34,7 @@ function drawBrackets(ctx: CanvasRenderingContext2D, r: Rect, inset: number, alp
 }
 
 function drawOutline(ctx: CanvasRenderingContext2D, points: [number, number][], dx: number, dy: number) {
-  ctx.strokeStyle = white(0.9);
+  ctx.strokeStyle = rgba(FOCUS, 0.9);
   ctx.lineWidth = 1;
   ctx.beginPath();
   points.forEach(([x, y], i) => (i ? ctx.lineTo(x + dx, y + dy) : ctx.moveTo(x + dx, y + dy)));
@@ -40,11 +44,28 @@ function drawOutline(ctx: CanvasRenderingContext2D, points: [number, number][], 
 
 function drawScan(ctx: CanvasRenderingContext2D, r: Rect, now: number) {
   const y = r.y + r.h * ((now % SCAN_MS) / SCAN_MS);
-  ctx.strokeStyle = white(0.8);
+  ctx.strokeStyle = rgba(FOCUS, 0.8);
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(r.x, y);
   ctx.lineTo(r.x + r.w, y);
+  ctx.stroke();
+}
+
+// A hand: a soft closed curve through the midpoints of its outline, lightly filled.
+function drawHand(ctx: CanvasRenderingContext2D, points: [number, number][]) {
+  const n = points.length;
+  if (n < 3) return;
+  const mid = (i: number): [number, number] =>
+    [(points[i][0] + points[(i + 1) % n][0]) / 2, (points[i][1] + points[(i + 1) % n][1]) / 2];
+  ctx.beginPath();
+  ctx.moveTo(...mid(n - 1));
+  points.forEach(([x, y], i) => ctx.quadraticCurveTo(x, y, ...mid(i)));
+  ctx.closePath();
+  ctx.fillStyle = rgba(HAND, 0.1);
+  ctx.fill();
+  ctx.strokeStyle = rgba(HAND, 0.95);
+  ctx.lineWidth = 2;
   ctx.stroke();
 }
 
@@ -55,7 +76,7 @@ function drawLabel(ctx: CanvasRenderingContext2D, text: string, r: Rect) {
   ctx.beginPath();
   ctx.roundRect(r.x, y, w, h, 6);
   ctx.fill();
-  ctx.fillStyle = white(0.85);
+  ctx.fillStyle = rgba(SCENE, 0.95);
   ctx.fillText(text, r.x + 6, y + 13);
 }
 
@@ -67,7 +88,7 @@ function drawLeader(ctx: CanvasRenderingContext2D, box: Rect, card: Rect, side: 
       : side === "left" ? [[box.x, clamp(rowY, box.y, box.y + box.h)], [card.x + card.w, rowY]]
         : side === "below" ? [[box.x + box.w / 2, box.y + box.h], [midX, card.y]]
           : [[box.x + box.w / 2, box.y], [midX, card.y + card.h]];
-  ctx.strokeStyle = white(0.6);
+  ctx.strokeStyle = rgba(FOCUS, 0.6);
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(...from);
@@ -83,6 +104,7 @@ interface Props {
 export default function Overlay({ video, card }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const rects = useRef(new Map<number, Rect>());
+  const handShapes = useRef<[number, number][][]>([]);
 
   useEffect(() => {
     const placer = new CardPlacer();
@@ -118,9 +140,16 @@ export default function Overlay({ video, card }: Props) {
       // the frozen background: static, never smoothed, never updated until the next calibration
       for (const item of s.scene?.calibrating ? [] : s.scene?.items ?? []) {
         const r = toScreen(item.box, content, s.mirrored);
-        drawBrackets(ctx, r, 0, 0.35);
+        drawBrackets(ctx, r, 0, rgba(SCENE, 0.55));
         drawLabel(ctx, item.label, r);
       }
+      // your hands, as soon as they are confirmed; each outline glides like the boxes do
+      handShapes.current = msg.hands.map((hand, i) => {
+        const target = toScreenPoints(hand.polygon, content, s.mirrored);
+        const shape = smoothPoints(handShapes.current[i] ?? target, target, dt);
+        drawHand(ctx, shape);
+        return shape;
+      });
       const seen = new Set<number>();
       let focusRect: Rect | null = null;
       for (const t of msg.tracks) { // the server sends only the object in your hand
@@ -129,7 +158,7 @@ export default function Overlay({ video, card }: Props) {
         const r = smoothRect(rects.current.get(t.id) ?? target, target, dt);
         rects.current.set(t.id, r);
         focusRect = r;
-        drawBrackets(ctx, r, SNAP_PX * (1 - Math.min(1, (now - focusSince) / SNAP_MS)), 1);
+        drawBrackets(ctx, r, SNAP_PX * (1 - Math.min(1, (now - focusSince) / SNAP_MS)), rgba(FOCUS, 1));
         if (t.polygon.length > 2) {
           drawOutline(ctx, toScreenPoints(t.polygon, content, s.mirrored), r.x - target.x, r.y - target.y);
         }

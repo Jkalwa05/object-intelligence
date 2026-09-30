@@ -19,3 +19,5 @@ test("every quality check has a readable name", () => {
 });
 
 test("calibration text", () => expect(t("calibrating", "de")).toBe("Szene wird eingemessen …"));
+
+test("naming text", () => expect(t("naming", "de")).toBe("Hintergrund wird erkannt …"));

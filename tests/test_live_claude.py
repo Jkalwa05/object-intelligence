@@ -1,12 +1,13 @@
-"""A real Claude call (about 2 cents). Runs only with `uv run pytest -m claude`."""
+"""Real Claude calls (about 2 cents each). Run only with `uv run pytest -m claude`."""
 
 import cv2
+import numpy as np
 import pytest
 from ultralytics.utils import ASSETS
 
 from oi.config import Settings
 from oi.contracts import Observation
-from oi.identify import ClaudeIdentifier, IdentifyRequest
+from oi.identify import ClaudeIdentifier, IdentifyRequest, SceneRequest
 from oi.views import encode_for_claude
 
 
@@ -19,4 +20,19 @@ async def test_real_call_returns_valid_observation():
     assert isinstance(result.observation, Observation)
     assert result.cost_usd > 0 and result.latency_s > 0
     print(f"\n{result.model}: {result.observation.model_dump_json()}\n"
+          f"tokens {result.input_tokens}/{result.output_tokens}, ${result.cost_usd:.4f}, {result.latency_s:.1f} s")
+
+
+@pytest.mark.claude
+async def test_real_scene_call_names_and_places_the_objects():
+    image = np.full((720, 1280, 3), 235, np.uint8)
+    cv2.circle(image, (320, 216), 70, (40, 40, 220), -1)  # a red ball, centre at (0.25, 0.3)
+    cv2.rectangle(image, (770, 360), (1150, 650), (200, 120, 30), -1)  # a blue box, centre at (0.75, 0.7)
+    jpeg = cv2.imencode(".jpg", image)[1].tobytes()
+    result = await ClaudeIdentifier(Settings.from_env()).describe_scene(SceneRequest(jpeg=jpeg, language="de"))
+    centres = [((i.box[0] + i.box[2]) / 2, (i.box[1] + i.box[3]) / 2) for i in result.items]
+    assert any(abs(x - 0.25) < 0.1 and abs(y - 0.3) < 0.1 for x, y in centres)
+    assert any(abs(x - 0.75) < 0.1 and abs(y - 0.7) < 0.1 for x, y in centres)
+    assert result.cost_usd > 0
+    print(f"\n{result.model}: {[(i.label, i.box) for i in result.items]}\n"
           f"tokens {result.input_tokens}/{result.output_tokens}, ${result.cost_usd:.4f}, {result.latency_s:.1f} s")

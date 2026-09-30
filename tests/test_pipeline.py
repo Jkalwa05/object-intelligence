@@ -328,3 +328,133 @@ async def test_recalibrate_starts_a_new_scene():
     await pipeline.handle_frame(Frame(frame_id=20, t=10.0, image=sharp_image()))
     scenes = [m for m in rec.messages if isinstance(m, SceneMsg)]
     assert [s.calibrating for s in scenes] == [True, False, True]
+
+
+# --- live test 2026-09-30: Claude names the whole background in one call; the background never gets focus ------------
+
+LAMP = trk(20, (1000, 20, 1200, 180), label="lamp")
+
+
+def _named():
+    from oi.contracts import SceneItemWire
+    return [SceneItemWire(label="Pendelleuchte", box=(0.78, 0.03, 0.94, 0.25))]
+
+
+async def _calibrate(pipeline, image, n=12, start=0.0):
+    for i in range(n):
+        await pipeline.handle_frame(Frame(frame_id=i, t=start + i * 0.5, image=image))
+
+
+async def test_scene_is_named_by_one_claude_call_with_the_person_greyed():
+    import cv2
+    import numpy as np
+    identifier = FakeIdentifier(scene=_named())
+    settings = Settings()
+    rec = Recorder()
+    telemetry = Telemetry(settings, "hybrid", "fake")
+    pipeline = Pipeline(settings, FakeDetector([[LAMP]]), identifier, telemetry, None, rec,
+                        faces=FakeFaces([(500, 100, 600, 220)]))
+    await _calibrate(pipeline, np.full((720, 1280, 3), 200, np.uint8))
+    await pipeline.wait_idle()
+    scenes = rec.of("scene")
+    assert [(s.calibrating, s.naming) for s in scenes] == [(True, False), (False, True), (False, False)]
+    assert scenes[-1].items == _named()
+    assert len(identifier.scene_requests) == 1 and telemetry.calls_session == 1
+    sent = cv2.imdecode(np.frombuffer(identifier.scene_requests[0].jpeg, np.uint8), cv2.IMREAD_COLOR)
+    assert sent.shape == (720, 1280, 3)
+    assert abs(int(sent[500, 550].mean()) - 128) <= 3  # below the face: the body is grey before it leaves the Mac
+    assert abs(int(sent[150, 550].mean()) - 128) <= 3  # the face itself
+    assert abs(int(sent[50, 100].mean()) - 200) <= 3  # the room is not
+
+
+async def test_scene_falls_back_to_local_names_when_claude_fails():
+    identifier = FakeIdentifier(scene=IdentifyError("connection"))
+    settings = Settings()
+    rec = Recorder()
+    pipeline = Pipeline(settings, FakeDetector([[LAMP]]), identifier, Telemetry(settings, "hybrid", "fake"), None, rec)
+    await _calibrate(pipeline, sharp_image())
+    await pipeline.wait_idle()
+    last = rec.of("scene")[-1]
+    assert (last.naming, [i.label for i in last.items]) == (False, ["lamp"])
+    assert rec.of("notice")[-1].text == lines.notice_text("scene_local", "de")
+
+
+async def test_no_scene_call_without_claude_or_once_the_budget_is_used_up():
+    settings = Settings(max_calls_session=0)
+    identifier = FakeIdentifier(scene=_named())
+    rec = Recorder()
+    pipeline = Pipeline(settings, FakeDetector([[LAMP]]), identifier, Telemetry(settings, "hybrid", "fake"), None, rec)
+    await _calibrate(pipeline, sharp_image())
+    await pipeline.wait_idle()
+    assert identifier.scene_requests == [] and [i.label for i in rec.of("scene")[-1].items] == ["lamp"]
+
+
+async def test_a_new_calibration_drops_the_answer_for_the_old_one():
+    from oi.contracts import RecalibrateMsg
+    identifier = FakeIdentifier(scene=_named(), delay_s=0.05)
+    settings = Settings()
+    rec = Recorder()
+    pipeline = Pipeline(settings, FakeDetector([[LAMP]]), identifier, Telemetry(settings, "hybrid", "fake"), None, rec)
+    await _calibrate(pipeline, sharp_image())
+    await pipeline.on_client_message(RecalibrateMsg())
+    await pipeline.handle_frame(Frame(frame_id=50, t=20.0, image=sharp_image()))
+    await pipeline.wait_idle()
+    assert rec.of("scene")[-1].calibrating  # the late answer described the old scene
+
+
+async def test_background_from_the_calibration_never_becomes_the_focus():
+    lamp = trk(20, BOX, label="lamp")  # hangs exactly where the hand will be
+    identifier = FakeIdentifier(script=[obs(I14)])
+    settings = Settings()
+    rec = Recorder()
+    detector = FakeDetector([[lamp]] * 11 + [[lamp, HAND]])
+    pipeline = Pipeline(settings, detector, identifier, Telemetry(settings, "hybrid", "fake"), None, rec)
+    image = sharp_image(boxes=(BOX,))
+    await _calibrate(pipeline, image, n=11)
+    await feed(pipeline, image, 20, start=6.0, first_id=20)
+    await pipeline.wait_idle()
+    assert identifier.requests == [] and all(m.focus_id is None for m in rec.of("tracks"))
+
+
+class FakeHands:
+    def __init__(self, joints):
+        from oi.hands import hand_track
+        self._hand = hand_track(joints, 1.0, 0, 1280, 720)
+
+    def find(self, image):
+        return [self._hand]
+
+
+async def test_tracks_carry_the_outline_of_every_confirmed_hand():
+    joints = [(600, 500), (570, 470), (560, 440), (555, 410), (550, 390), (590, 450), (590, 410), (590, 385),
+              (610, 450), (612, 405), (614, 380), (630, 455)]
+    settings = Settings()
+    rec = Recorder()
+    pipeline = Pipeline(settings, FakeDetector([[CUP]]), None, Telemetry(settings, "lokal", "–"), None, rec,
+                        hands=FakeHands(joints))
+    await feed(pipeline, sharp_image(boxes=(BOX,)), 2)
+    first, second = rec.of("tracks")
+    assert first.hands == []  # seen once: not yet a hand
+    assert [h.label for h in second.hands] == ["hand"] and len(second.hands[0].polygon) == 16
+    assert all(0 <= x <= 1 and 0 <= y <= 1 for x, y in second.hands[0].polygon)
+
+
+async def test_a_face_missed_in_the_last_frame_is_still_greyed():
+    import cv2
+    import numpy as np
+
+    class FlakyFaces(FakeFaces):  # the face detector misses the face exactly when the scene freezes
+        calls = 0
+
+        def find(self, image):
+            self.calls += 1
+            return [] if self.calls == 11 else self._faces
+
+    identifier = FakeIdentifier(scene=_named())
+    settings = Settings()
+    pipeline = Pipeline(settings, FakeDetector([[LAMP]]), identifier, Telemetry(settings, "hybrid", "fake"), None,
+                        Recorder(), faces=FlakyFaces([(500, 100, 600, 220)]))
+    await _calibrate(pipeline, np.full((720, 1280, 3), 200, np.uint8), n=11)
+    await pipeline.wait_idle()
+    sent = cv2.imdecode(np.frombuffer(identifier.scene_requests[0].jpeg, np.uint8), cv2.IMREAD_COLOR)
+    assert abs(int(sent[150, 550].mean()) - 128) <= 3

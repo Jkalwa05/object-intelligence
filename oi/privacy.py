@@ -6,6 +6,10 @@ looks at geometry: the focus box may not cover most of a person, sit in a person
 
 from __future__ import annotations
 
+import math
+
+import numpy as np
+
 from oi.config import Settings
 from oi.contracts import Track
 
@@ -31,22 +35,37 @@ BODY_WIDEN = 1.0  # shoulders: the body zone is the face box widened by one face
 ON_BODY_SHARE = 0.50  # half of a box lies on the body: worn (shirt, necklace), not something in the background
 
 
-def on_person(track: Track, people: list[Track], frame_h: float) -> bool:
-    """True if the track lies mostly on a person: inside a person box, or in the body zone below a face
-    (the face box widened to the shoulders, from the hairline down to the bottom of the frame)."""
-    area = _area(track.box)
-    if not area:
-        return False
+GREY = 128
+
+
+def person_zones(people: list[Track], frame_h: float) -> list[Box]:
+    """Where people are: every person box, and for every face the body zone below it (the face box widened to the
+    shoulders, from the hairline down to the bottom of the frame)."""
+    zones = []
     for other in people:
         x1, y1, x2, y2 = other.box
         if other.label.lower() == "face":
             w, h = x2 - x1, y2 - y1
-            zone = (x1 - BODY_WIDEN * w, y1 - FACE_WIDEN * h, x2 + BODY_WIDEN * w, frame_h)
+            zones.append((x1 - BODY_WIDEN * w, y1 - FACE_WIDEN * h, x2 + BODY_WIDEN * w, frame_h))
         else:
-            zone = other.box
-        if _overlap(track.box, zone) >= ON_BODY_SHARE * area:
-            return True
-    return False
+            zones.append(other.box)
+    return zones
+
+
+def on_person(track: Track, people: list[Track], frame_h: float) -> bool:
+    """True if the track lies mostly on a person (see `person_zones`)."""
+    area = _area(track.box)
+    return bool(area) and any(_overlap(track.box, zone) >= ON_BODY_SHARE * area
+                              for zone in person_zones(people, frame_h))
+
+
+def mask_people(image: np.ndarray, people: list[Track]) -> np.ndarray:
+    """A copy of the frame in which every person zone is flat grey: the only way a whole frame may leave the Mac."""
+    out = image.copy()
+    h, w = out.shape[:2]
+    for x1, y1, x2, y2 in person_zones(people, h):
+        out[max(0, math.floor(y1)):min(h, math.ceil(y2)), max(0, math.floor(x1)):min(w, math.ceil(x2))] = GREY
+    return out
 
 
 def privacy_veto(focus: Track, tracks: list[Track], s: Settings, head_zone: bool = True) -> bool:

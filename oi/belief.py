@@ -111,6 +111,8 @@ class Belief:
         indistinct = not latest.distinguishable and len(ranking) > 1
         if self._decisive(top):
             return _Verdict(Level.CERTAIN, True, ranking, total, False)
+        if indistinct and latest.next_view is not None:  # another view can still separate them: keep asking for it
+            return _Verdict(Level.UNSURE, False, ranking, total, False)
         if indistinct:
             return _Verdict(Level.UNSURE, True, ranking, total, True)
         # Ruling (ledger, final review): Claude's own "low" blocks the two-view rule as well; a slightly tilted

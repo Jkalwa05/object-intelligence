@@ -57,6 +57,19 @@ def test_iphone_example_ends_indistinguishable():
     assert state.line == "Apple iPhone 14 oder Apple iPhone 13, von außen kaum zu unterscheiden."
 
 
+def test_look_alikes_with_a_separating_view_ask_for_it():
+    # Live test 2026-09-30: from the back Claude called iPhone 14 and 15 indistinguishable, but named the bottom
+    # (Lightning or USB-C) as the view that separates them. The card must ask for it instead of giving up.
+    b = Belief("de")
+    b.add(obs(I15, I14, dist=False, view="die Unterseite", reason="USB-C oder Lightning"), 1, 1.0)
+    state = b.snapshot(1)
+    assert (state.level, state.final) == (Level.UNSURE, False)
+    assert state.view_request.view == "die Unterseite"
+    assert state.line == "Apple iPhone 15 oder Apple iPhone 14? Zeig mir bitte die Unterseite."
+    b.add(obs(I15, I14, dist=False, view="die Unterseite", reason="USB-C oder Lightning"), 2, 1.0)
+    assert (b.snapshot(2).level, b.snapshot(2).final) == (Level.UNSURE, False)  # agreeing look-alikes prove nothing
+
+
 def test_readable_model_name_is_decisive():
     b = Belief("de")
     b.add(obs(cand("Myprotein", "Essential BCAA"), readable=("MYPROTEIN", "Essential BCAA 2:1:1"), cat="Dose"), 1, 0.5)
