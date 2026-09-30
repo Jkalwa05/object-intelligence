@@ -168,6 +168,10 @@ class ViewCollector:
             self._sent.append(_SentView(crop.dhash, crop.aspect, crop.view_id))
             self._next_view_id = crop.view_id + 1
 
+    def rearm(self) -> None:
+        """The released crop could not be sent (a call was running): release again with the next good window."""
+        self._armed = True
+
     def force_next(self) -> None:
         """Release the next good crop even if it shows a view that was already sent (\"Neu prüfen\")."""
         self._forced = True

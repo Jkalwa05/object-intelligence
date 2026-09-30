@@ -76,7 +76,7 @@ class Pipeline:
             blocked = privacy_veto(focus, tracks, self._s)  # all raw detections, people included
             result = state.collector.offer(focus, frame.image, self._focus.steady(focus.id), frame.t, blocked)
             self._telemetry.set_sharpness(result.sharpness)
-            if result.hint is not None:
+            if result.hint is not None and self._can_still_call(state):
                 hint = lines.hint_line(result.hint, self._s.language)
             if result.ready is not None:
                 await self._consider(focus, state, result.ready)
@@ -136,6 +136,8 @@ class Pipeline:
             task = asyncio.create_task(self._identify(track.id, state, ready))
             self._tasks.add(task)
             task.add_done_callback(self._tasks.discard)
+        elif decision == Decision.BUSY:
+            state.collector.rearm()
         elif decision == Decision.SESSION_CAP:
             paused = lines.paused_line(self._s.language)
             if not state.paused_sent:
@@ -173,6 +175,12 @@ class Pipeline:
         finally:
             state.in_flight = False
             self._in_flight -= 1
+
+    def _can_still_call(self, state: _TrackState) -> bool:
+        """Hints ask the user to do something; they make no sense once no call can start for this object."""
+        if self._telemetry.calls_session >= self._s.max_calls_session:
+            return False
+        return state.forced or not (state.belief.is_final or state.calls >= self._s.max_calls_object)
 
     def _snapshot(self, state: _TrackState) -> BeliefState:
         if not state.belief.observations:

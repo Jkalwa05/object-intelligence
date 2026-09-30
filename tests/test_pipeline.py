@@ -154,3 +154,40 @@ async def test_person_region_is_never_sent():
     await pipeline.wait_idle()
     assert identifier.requests == []
     assert rec.of("tracks")[20].hint == lines.hint_line("person", "de")
+
+
+async def test_view_shown_during_call_is_sent_afterwards():
+    identifier = FakeIdentifier(script=[obs(I14, I13)], delay_s=0.3)
+    pipeline, _, _ = make([[CUP]], identifier)
+    await feed(pipeline, sharp_image(boxes=(BOX,)), 10)  # view A, the call starts at t 0.9
+    turned = sharp_image(boxes=(BOX,), mirrored=True)
+    await feed(pipeline, turned, 8, start=1.0, first_id=10)  # view B while the call is running
+    await pipeline.wait_idle()
+    await feed(pipeline, turned, 6, start=1.8, first_id=18)  # the call is back: view B goes out now
+    await pipeline.wait_idle()
+    assert len(identifier.requests) == 2
+
+
+async def test_recheck_during_analysis_is_not_lost():
+    decisive = obs(cand("Myprotein", "Essential BCAA"), readable=("Essential BCAA",), cat="Dose")
+    identifier = FakeIdentifier(script=[decisive], delay_s=0.3)
+    pipeline, _, _ = make([[CUP]], identifier)
+    image = sharp_image(boxes=(BOX,))
+    await feed(pipeline, image, 10)
+    await pipeline.on_client_message(RecheckMsg(track_id=CUP.id))
+    await feed(pipeline, image, 6, start=1.0, first_id=10)
+    await pipeline.wait_idle()
+    await feed(pipeline, image, 6, start=1.6, first_id=16)
+    await pipeline.wait_idle()
+    assert len(identifier.requests) == 2
+
+
+async def test_no_hints_once_nothing_can_be_called():
+    from tests.helpers import blurry_image
+    decisive = obs(cand("Myprotein", "Essential BCAA"), readable=("Essential BCAA 2:1:1",), cat="Dose")
+    pipeline, rec, _ = make([[CUP]], FakeIdentifier(script=[decisive]))
+    await feed(pipeline, sharp_image(boxes=(BOX,)), 13)
+    await pipeline.wait_idle()
+    assert rec.of("identity")[-1].final
+    await feed(pipeline, blurry_image(boxes=(BOX,)), 25, start=1.3, first_id=13)
+    assert all(m.hint is None for m in rec.of("tracks"))

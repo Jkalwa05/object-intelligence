@@ -15,8 +15,8 @@ BASE = TriggerInput(is_focus=True, ready=NEW, final=False, in_flight_track=False
 @pytest.mark.parametrize("change,expected", [
     ({"is_focus": False}, Decision.WAIT),                          # rule 1
     ({"ready": None}, Decision.WAIT),                              # rule 1
-    ({"in_flight_track": True}, Decision.WAIT),                    # rule 2
-    ({"in_flight_total": 2}, Decision.WAIT),                       # rule 2
+    ({"in_flight_track": True}, Decision.BUSY),                    # rule 2
+    ({"in_flight_total": 2}, Decision.BUSY),                       # rule 2
     ({"calls_session": 150}, Decision.SESSION_CAP),                # rule 3
     ({"forced": True, "ready": SAME}, Decision.CALL),              # rule 4
     ({"final": True}, Decision.WAIT),                              # rule 5

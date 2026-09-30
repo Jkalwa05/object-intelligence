@@ -12,6 +12,7 @@ from oi.views import ReadyCrop
 class Decision(StrEnum):
     CALL = "call"
     WAIT = "wait"
+    BUSY = "busy"  # a call is running: keep the view and try again later
     OBJECT_CAP = "object_cap"
     SESSION_CAP = "session_cap"
 
@@ -32,7 +33,7 @@ def decide(i: TriggerInput, s: Settings) -> Decision:
     if not i.is_focus or i.ready is None:
         return Decision.WAIT
     if i.in_flight_track or i.in_flight_total >= s.max_concurrent_calls:
-        return Decision.WAIT
+        return Decision.BUSY
     if i.calls_session >= s.max_calls_session:
         return Decision.SESSION_CAP
     if i.forced:
