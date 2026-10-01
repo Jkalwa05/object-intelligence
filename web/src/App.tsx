@@ -3,10 +3,11 @@ import { openCamera, startCapture } from "./camera/capture";
 import Banner from "./hud/Banner";
 import InfoCard from "./hud/InfoCard";
 import Overlay from "./hud/Overlay";
+import ProfilePanel from "./hud/ProfilePanel";
 import Telemetry from "./hud/Telemetry";
 import { connect, type Connection } from "./net/socket";
 import type { Lang, RecalibrateMsg, RecheckMsg } from "./protocol";
-import { useHud } from "./store";
+import { focusProfile, useHud } from "./store";
 import { SpeechGate, pickVoice } from "./voice/speech";
 import "./styles.css";
 
@@ -43,6 +44,10 @@ function useVoice() {
         if (identity.previous_id !== null) gate.carry(identity.previous_id, focusId); // same object, new number
         say(gate.consider({ trackId: focusId, line: identity.line, kind: "result" }, now, focusId, s.muted), lang);
       }
+      const profile = focusProfile(s);
+      if (profile && profile !== focusProfile(prev) && profile.line) {
+        say(gate.consider({ trackId: focusId, line: profile.line, kind: "result" }, now, focusId, s.muted), lang);
+      }
       if (s.tracks !== prev.tracks && s.tracks?.hint) {
         say(gate.consider({ trackId: focusId, line: s.tracks.hint, kind: "hint" }, now, focusId, s.muted), lang);
       }
@@ -55,6 +60,10 @@ export default function App() {
   const card = useRef<HTMLDivElement>(null);
   const connection = useRef<Connection | null>(null);
   const mirrored = useHud((s) => s.mirrored);
+  const showCard = useHud((s) => {
+    const id = s.tracks?.focus_id;
+    return id != null && s.identities[id] !== undefined;
+  });
   const [cameraAttempt, setCameraAttempt] = useState(0);
 
   useEffect(() => {
@@ -106,7 +115,10 @@ export default function App() {
     <main className="stage">
       <video ref={video} className={mirrored ? "video mirrored" : "video"} autoPlay playsInline muted />
       <Overlay video={video} card={card} />
-      <InfoCard cardRef={card} onRecheck={(trackId) => send({ type: "recheck", track_id: trackId })} />
+      <div ref={card} className={showCard ? "hud-group" : "hud-group hidden"}>
+        <InfoCard onRecheck={(trackId) => send({ type: "recheck", track_id: trackId })} />
+        <ProfilePanel />
+      </div>
       <Telemetry video={video} />
       <Banner onRetryCamera={() => setCameraAttempt((n) => n + 1)} />
     </main>

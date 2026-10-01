@@ -1,11 +1,12 @@
 import { create } from "zustand";
 import type { ConnectionStatus } from "./net/socket";
-import type { IdentityMsg, NoticeMsg, SceneMsg, ServerMsg, TelemetryMsg, TracksMsg } from "./protocol";
+import type { IdentityMsg, NoticeMsg, ProfileMsg, SceneMsg, ServerMsg, TelemetryMsg, TracksMsg } from "./protocol";
 
 export interface HudState {
   tracks: TracksMsg | null;
   scene: SceneMsg | null;
   identities: Record<number, IdentityMsg>;
+  profiles: Record<string, ProfileMsg>; // by product name
   telemetry: TelemetryMsg | null;
   notices: NoticeMsg[];
   connection: ConnectionStatus;
@@ -19,6 +20,7 @@ export const initialState: HudState = {
   tracks: null,
   scene: null,
   identities: {},
+  profiles: {},
   telemetry: null,
   notices: [],
   connection: "closed",
@@ -42,13 +44,15 @@ export function applyServerMessage(s: HudState, m: ServerMsg): HudState {
       return { ...s, notices: [...s.notices, m].slice(-MAX_NOTICES) };
     case "scene":
       return { ...s, scene: m };
+    case "profile":
+      return { ...s, profiles: { ...s.profiles, [m.product]: m } };
   }
 }
 
 // A new connection means a fresh server pipeline whose track IDs start again at 1: old identities must not stick
 // to new objects, and boxes of a closed connection must not stay frozen on screen.
 export function applyConnection(s: HudState, connection: ConnectionStatus): HudState {
-  if (connection === "open") return { ...s, connection, identities: {}, notices: [], scene: null };
+  if (connection === "open") return { ...s, connection, identities: {}, notices: [], scene: null, profiles: {} };
   return { ...s, connection, tracks: null };
 }
 
@@ -56,6 +60,14 @@ export function applyConnection(s: HudState, connection: ConnectionStatus): HudS
 export function sceneBanner(s: HudState): "calibrating" | "naming" | null {
   if (s.scene?.calibrating) return "calibrating";
   return s.scene?.naming ? "naming" : null;
+}
+
+// The profile next to the card: the focus product's own one, only while it is likely or certain.
+export function focusProfile(s: HudState): ProfileMsg | null {
+  const id = s.tracks?.focus_id;
+  const identity = id == null ? undefined : s.identities[id];
+  if (!identity || (identity.level !== "likely" && identity.level !== "certain")) return null;
+  return s.profiles[identity.display_name] ?? null;
 }
 
 // The hint for the focus object, shown as a banner as well as spoken (the voice may be muted).

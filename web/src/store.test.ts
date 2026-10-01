@@ -63,3 +63,15 @@ test("the scene banner follows calibration, then naming, then nothing", async ()
   expect(sceneBanner(scene(false, true))).toBe("naming");
   expect(sceneBanner(scene(false, false))).toBeNull();
 });
+
+test("the profile panel shows the focus product's own profile while it is likely or certain", async () => {
+  const { focusProfile } = await import("./store");
+  const profile = { type: "profile" as const, ts: 0, seq: 0, product: "X", status: "ready" as const, summary: "S",
+    facts: [], released: null, launch_price: null, trivia: [], line: "S" };
+  let s = applyServerMessage(applyServerMessage(initialState, tracks(1)), identity(1, "Das ist wahrscheinlich X."));
+  expect(focusProfile(s)).toBeNull();
+  s = applyServerMessage(s, profile);
+  expect(focusProfile(s)?.summary).toBe("S");
+  expect(focusProfile(applyServerMessage(s, { ...identity(1, "X oder Y?"), level: "unsure" }))).toBeNull();
+  expect(focusProfile(applyServerMessage(s, { ...identity(1, "Das ist Z."), display_name: "Z" }))).toBeNull();
+});

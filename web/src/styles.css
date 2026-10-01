@@ -50,17 +50,29 @@ body {
   border-radius: var(--radius);
 }
 
-.card {
+/* the info card and the profile move together; the Overlay places the group next to the held object */
+.hud-group {
   position: absolute;
   left: 0;
   top: 0;
-  width: 300px;
-  padding: 14px 16px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
   will-change: transform;
 }
 
-.card.hidden {
+.hud-group.hidden {
   display: none;
+}
+
+.hud-group[data-side="left"] {
+  flex-direction: row-reverse;
+}
+
+.card,
+.profile {
+  width: 300px;
+  padding: 14px 16px;
 }
 
 .card-body {
@@ -146,6 +158,70 @@ body {
   font: inherit;
   font-size: 12px;
   cursor: pointer;
+}
+
+.profile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.tag {
+  padding: 1px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 10px;
+}
+
+.profile-summary,
+.profile-note {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.profile-note {
+  opacity: 0.75;
+}
+
+.facts {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+
+.facts div {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 8px;
+}
+
+.facts dt,
+.profile-meta b {
+  font-weight: 400;
+  opacity: 0.6;
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.profile-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+
+.trivia {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .telemetry {

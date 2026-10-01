@@ -179,6 +179,7 @@ export default function Overlay({ video, card }: Props) {
         const faces = msg.faces.map((f) => toScreen(f, content, s.mirrored));
         const pos = placer.place(focusRect, size, { w: vw, h: vh }, now, faces);
         el.style.transform = `translate(${Math.round(pos.x)}px, ${Math.round(pos.y)}px)`;
+        el.dataset.side = pos.side; // left of the object: the card stays next to it, the profile goes outside
         drawLeader(ctx, focusRect, { x: pos.x, y: pos.y, ...size }, pos.side);
       }
     };

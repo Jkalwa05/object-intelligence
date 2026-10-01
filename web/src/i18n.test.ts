@@ -21,3 +21,8 @@ test("every quality check has a readable name", () => {
 test("calibration text", () => expect(t("calibrating", "de")).toBe("Szene wird eingemessen …"));
 
 test("naming text", () => expect(t("naming", "de")).toBe("Hintergrund wird erkannt …"));
+
+test("profile texts", () => {
+  expect(t("profile.byClaude", "de")).toBe("laut Claude");
+  expect(t("profile.unknown", "de")).toBe("Zu diesem Produkt weiß ich nichts Genaues.");
+});

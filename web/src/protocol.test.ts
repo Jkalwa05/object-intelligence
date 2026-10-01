@@ -5,7 +5,7 @@ import { isServerMsg } from "./protocol";
 test("fixture messages are valid", () => {
   const url = new URL("../../tests/fixtures/protocol-examples.json", import.meta.url);
   const messages: unknown[] = JSON.parse(readFileSync(url, "utf8"));
-  expect(messages.length).toBe(5);
+  expect(messages.length).toBe(6);
   for (const message of messages) expect(isServerMsg(message)).toBe(true);
 });
 
@@ -22,4 +22,12 @@ test("tracks need the hand outlines and the scene its naming flag", () => {
   expect(isServerMsg(tracks)).toBe(false);
   expect(isServerMsg({ ...tracks, hands: [] })).toBe(true);
   expect(isServerMsg({ type: "scene", ts: 1, seq: 1, calibrating: false, items: [] })).toBe(false);
+});
+
+test("a profile needs every field the panel shows", () => {
+  const profile = { type: "profile", ts: 1, seq: 1, product: "X", status: "ready", summary: "S", facts: [],
+    released: null, launch_price: null, trivia: [], line: "S" };
+  expect(isServerMsg(profile)).toBe(true);
+  const { trivia: _, ...withoutTrivia } = profile;
+  expect(isServerMsg(withoutTrivia)).toBe(false);
 });

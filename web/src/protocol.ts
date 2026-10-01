@@ -94,7 +94,27 @@ export interface SceneMsg {
   items: SceneItem[];
 }
 
-export type ServerMsg = TracksMsg | IdentityMsg | TelemetryMsg | NoticeMsg | SceneMsg;
+export interface ProfileFact {
+  label: string;
+  value: string;
+}
+
+// Sub-project 2: Claude's own knowledge about one product, no sources, always shown as "laut Claude".
+export interface ProfileMsg {
+  type: "profile";
+  ts: number;
+  seq: number;
+  product: string; // the display name the profile belongs to
+  status: "loading" | "ready" | "unknown" | "error";
+  summary: string;
+  facts: ProfileFact[];
+  released: string | null;
+  launch_price: string | null;
+  trivia: string[];
+  line: string; // what the voice says once
+}
+
+export type ServerMsg = TracksMsg | IdentityMsg | TelemetryMsg | NoticeMsg | SceneMsg | ProfileMsg;
 
 export interface FocusMsg {
   type: "focus";
@@ -118,6 +138,7 @@ const REQUIRED: Record<ServerMsg["type"], string[]> = {
     "cost_session_usd", "model", "gate_focus", "mode", "language"],
   notice: ["level", "text"],
   scene: ["calibrating", "naming", "items"],
+  profile: ["product", "status", "summary", "facts", "released", "launch_price", "trivia", "line"],
 };
 
 export function isServerMsg(x: unknown): x is ServerMsg {
