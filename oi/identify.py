@@ -12,6 +12,8 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import math
+import re
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -21,7 +23,8 @@ import anthropic
 
 from oi import lines
 from oi.config import Lang, Settings
-from oi.contracts import Candidate, Depth, NextView, Observation, ProductProfile, ProfileFact, SceneItemWire
+from oi.contracts import (Candidate, Depth, NextView, Observation, ProductProfile, ProductShape, ProfileFact,
+                          SceneItemWire, ShapePart)
 
 MAX_TOKENS = 16000
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
@@ -122,6 +125,43 @@ PROFILE_SCHEMA: dict[str, Any] = {
 }
 MAX_FACTS, MAX_TRIVIA = 8, 2
 
+SHAPE_PROMPT = """You build a simplified 3D model of one product for a heads-up display, from your own knowledge and the photo.
+- The photo shows the object a person holds; everything that is not the object is grey. Use it for the proportions and colours of this specimen.
+- Build it from at most 16 primitive parts in millimetres, true to the real product's size. The object's centre is the origin, x points right, y up, z towards the viewer. position_mm is the centre of a part; rotation_deg turns the part around x, then y, then z.
+- shape and size_mm: box and rounded_box: width, height, depth (rounded_box also radius_mm for its corners); cylinder: diameter, height, diameter (standing along y); cone: bottom diameter, height, top diameter (0 for a point); sphere: diameters along x, y, z; capsule: diameter, total length, diameter (along y).
+- Show the product upright in its usual orientation with its front towards the viewer. Use its characteristic parts (body, screen, camera, buttons, handles, shade, base), not tiny details.
+- color is "#rrggbb", the part's real colour. size_mm at the top level is the overall width, height and depth.
+- If you do not know this kind of object's shape at all, set known to false and leave parts empty.
+- Write the part names in {language}."""
+_VEC3: dict[str, Any] = {"type": "array", "items": {"type": "number"}}
+SHAPE_KINDS = ("box", "rounded_box", "cylinder", "cone", "sphere", "capsule")
+SHAPE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "known": {"type": "boolean"},
+        "size_mm": _VEC3,
+        "parts": {"type": "array", "items": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "shape": {"type": "string", "enum": list(SHAPE_KINDS)},
+                "size_mm": _VEC3,
+                "position_mm": _VEC3,
+                "rotation_deg": _VEC3,
+                "color": {"type": "string"},
+                "radius_mm": {"anyOf": [{"type": "number"}, {"type": "null"}]},
+            },
+            "required": ["name", "shape", "size_mm", "position_mm", "rotation_deg", "color", "radius_mm"],
+            "additionalProperties": False,
+        }},
+    },
+    "required": ["known", "size_mm", "parts"],
+    "additionalProperties": False,
+}
+MAX_PARTS = 16
+MAX_MM = 3000.0  # nothing anyone holds up to a webcam is bigger than 3 m
+NEUTRAL_GREY = "#9aa0a6"
+
 
 @dataclass(frozen=True)
 class IdentifyRequest:
@@ -175,6 +215,24 @@ class ProductResult:
     model: str
 
 
+@dataclass(frozen=True)
+class ShapeRequest:
+    product: str  # the model, e.g. "Apple iPhone 14"
+    category: str
+    jpeg: bytes  # the crop of the identification: only the object's pixels
+    language: Lang
+
+
+@dataclass(frozen=True)
+class ShapeResult:
+    shape: ProductShape
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    latency_s: float
+    model: str
+
+
 class IdentifyError(Exception):
     def __init__(self, reason: Literal["refusal", "schema", "timeout", "api", "connection"]) -> None:
         super().__init__(reason)
@@ -189,6 +247,8 @@ class Identifier(Protocol):
     async def describe_scene(self, req: SceneRequest) -> SceneResult: ...
 
     async def describe_product(self, req: ProductRequest) -> ProductResult: ...
+
+    async def describe_shape(self, req: ShapeRequest) -> ShapeResult: ...
 
 
 def format_history(observations: list[Observation], lang: Lang) -> str:
@@ -292,6 +352,55 @@ def parse_profile(text: str) -> ProductProfile:
         raise IdentifyError("schema") from error
 
 
+def build_shape_request(s: Settings, req: ShapeRequest) -> dict[str, Any]:
+    return _request(s, SHAPE_PROMPT.format(language=_language(req.language)), req.jpeg,
+                    f"Product: {req.product}\nCategory: {req.category}", SHAPE_SCHEMA)
+
+
+def _vec3(value: Any, low: float, high: float) -> tuple[float, float, float] | None:
+    """Three finite numbers clamped to [low, high], or None."""
+    if not isinstance(value, list) or len(value) != 3:
+        return None
+    numbers = [float(v) for v in value]
+    if not all(math.isfinite(v) for v in numbers):
+        return None
+    return tuple(min(high, max(low, v)) for v in numbers)  # type: ignore[return-value]
+
+
+def _part(raw: dict[str, Any]) -> ShapePart | None:
+    """One checked part, or None for an unknown shape or a part without volume."""
+    shape = raw.get("shape")
+    size = _vec3(raw.get("size_mm"), -1.0, MAX_MM)
+    position = _vec3(raw.get("position_mm"), -MAX_MM, MAX_MM)
+    rotation = _vec3(raw.get("rotation_deg"), -360.0, 360.0)
+    if shape not in SHAPE_KINDS or size is None or position is None or rotation is None:
+        return None
+    needs = size if shape != "cone" else size[:2]  # a cone may end in a point: its top diameter can be 0
+    if any(v <= 0 for v in needs) or size[2] < 0:
+        return None
+    color = raw.get("color") if isinstance(raw.get("color"), str) else ""
+    radius = raw.get("radius_mm")
+    rounded = shape == "rounded_box" and isinstance(radius, (int, float)) and radius > 0
+    return ShapePart(name=_clip(raw.get("name", ""), 40), shape=shape, size_mm=size, position_mm=position,
+                     rotation_deg=rotation, color=color if re.fullmatch(r"#[0-9a-fA-F]{6}", color) else NEUTRAL_GREY,
+                     radius_mm=min(float(radius), min(size) / 2) if rounded else None)
+
+
+def parse_shape(text: str) -> ProductShape:
+    """Claude's hologram, checked: clamped sizes and angles, unknown shapes and flat parts dropped, at most 16 parts.
+    Nothing left to draw counts as unknown."""
+    try:
+        data = json.loads(text)
+        parts = [p for p in (_part(raw) for raw in data["parts"] if isinstance(raw, dict)) if p is not None]
+        if not data["known"] or not parts:
+            return ProductShape(known=False, size_mm=None, parts=[])
+        size = _vec3(data.get("size_mm"), 0.0, MAX_MM)
+        return ProductShape(known=True, size_mm=size if size and all(v > 0 for v in size) else None,
+                            parts=parts[:MAX_PARTS])
+    except (ValueError, TypeError, AttributeError, KeyError) as error:
+        raise IdentifyError("schema") from error
+
+
 def parse_scene(text: str) -> list[SceneItemWire]:
     """Claude's scene answer as display items: boxes clipped to the image and ordered, junk dropped, at most 15."""
     try:
@@ -337,6 +446,12 @@ class ClaudeIdentifier:
                              output_tokens=usage.output_tokens,
                              cost_usd=cost_usd(self._s.model, usage.input_tokens, usage.output_tokens, self._s.prices),
                              latency_s=latency, model=self._s.model)
+
+    async def describe_shape(self, req: ShapeRequest) -> ShapeResult:
+        text, usage, latency = await self._call(build_shape_request(self._s, req))
+        return ShapeResult(shape=parse_shape(text), input_tokens=usage.input_tokens, output_tokens=usage.output_tokens,
+                           cost_usd=cost_usd(self._s.model, usage.input_tokens, usage.output_tokens, self._s.prices),
+                           latency_s=latency, model=self._s.model)
 
     async def _call(self, request: dict[str, Any]) -> tuple[str, Any, float]:
         """(answer text, usage, latency); every failure becomes an IdentifyError."""
@@ -384,14 +499,17 @@ class FakeIdentifier:
 
     def __init__(self, script: Sequence[Observation | IdentifyError] | None = None, delay_s: float = 0.0,
                  scene: Sequence[SceneItemWire] | IdentifyError | None = None,
-                 profile: ProductProfile | IdentifyError | None = None) -> None:
+                 profile: ProductProfile | IdentifyError | None = None,
+                 shape: ProductShape | IdentifyError | None = None) -> None:
         self._script = list(script) if script is not None else None
         self._delay = delay_s
         self._scene = scene
         self._profile = profile
+        self._shape = shape
         self.requests: list[IdentifyRequest] = []
         self.scene_requests: list[SceneRequest] = []
         self.product_requests: list[ProductRequest] = []
+        self.shape_requests: list[ShapeRequest] = []
 
     async def identify(self, req: IdentifyRequest) -> IdentifyResult:
         self.requests.append(req)
@@ -428,6 +546,17 @@ class FakeIdentifier:
                                                   trivia=[])
         return ProductResult(profile=profile, input_tokens=0, output_tokens=0, cost_usd=0.0, latency_s=self._delay,
                              model=self.model_label)
+
+    async def describe_shape(self, req: ShapeRequest) -> ShapeResult:
+        """The scripted hologram, or "I don't know its shape"."""
+        self.shape_requests.append(req)
+        if self._delay:
+            await asyncio.sleep(self._delay)
+        if isinstance(self._shape, IdentifyError):
+            raise self._shape
+        shape = self._shape or ProductShape(known=False, size_mm=None, parts=[])
+        return ShapeResult(shape=shape, input_tokens=0, output_tokens=0, cost_usd=0.0, latency_s=self._delay,
+                           model=self.model_label)
 
 
 async def choose_identifier(s: Settings, fake: bool,

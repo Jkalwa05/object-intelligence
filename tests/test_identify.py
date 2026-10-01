@@ -275,3 +275,62 @@ async def test_fake_profile_from_script_or_unknown():
     assert (await FakeIdentifier().describe_product(PRODUCT_REQ)).profile.known is False
     with pytest.raises(IdentifyError):
         await FakeIdentifier(profile=IdentifyError("api")).describe_product(PRODUCT_REQ)
+
+
+# --- hologram (sub-project 3): primitives in millimetres from Claude's knowledge and the crop ------------------------
+
+from oi.identify import ShapeRequest, build_shape_request, parse_shape  # noqa: E402
+
+SHAPE_REQ = ShapeRequest(product="Apple iPhone 14", category="Smartphone", jpeg=b"\xff\xd8crop", language="de")
+PART = {"name": "Gehäuse", "shape": "rounded_box", "size_mm": [71.5, 146.7, 7.8], "position_mm": [0, 0, 0],
+        "rotation_deg": [0, 0, 0], "color": "#9fc4e8", "radius_mm": 10}
+SHAPE = {"known": True, "size_mm": [71.5, 146.7, 7.8], "parts": [PART]}
+
+
+def test_shape_request_sends_the_crop_and_the_name():
+    request = build_shape_request(Settings(), SHAPE_REQ)
+    content = request["messages"][0]["content"]
+    assert [b["type"] for b in content] == ["image", "text"] and "Apple iPhone 14" in content[1]["text"]
+    assert "millimetres" in request["system"] and "German" in request["system"]
+    assert request["output_config"]["format"]["schema"]["required"] == ["known", "size_mm", "parts"]
+
+
+def test_shape_answer_is_checked_and_clamped():
+    parts = [PART,
+             {**PART, "name": "Riesig", "size_mm": [99999, 10, 10], "position_mm": [99999, 0, 0],
+              "rotation_deg": [720, 0, 0]},
+             {**PART, "name": "Kegel", "shape": "cone", "size_mm": [40, 60, 0], "radius_mm": None},
+             {**PART, "name": "Falsch", "shape": "pyramid"},
+             {**PART, "name": "Flach", "size_mm": [10, 0, 10]},
+             {**PART, "name": "Farbe", "color": "blau"},
+             {**PART, "name": "Rund", "radius_mm": 500}]
+    shape = parse_shape(json.dumps({"known": True, "size_mm": [71.5, 146.7, 7.8], "parts": parts}))
+    assert [p.name for p in shape.parts] == ["Gehäuse", "Riesig", "Kegel", "Farbe", "Rund"]
+    big = shape.parts[1]
+    assert (big.size_mm[0], big.position_mm[0], big.rotation_deg[0]) == (3000, 3000, 360)
+    assert shape.parts[2].size_mm == (40, 60, 0)  # a cone may end in a point
+    assert shape.parts[3].color == "#9aa0a6"  # no colour name, a neutral grey instead
+    assert shape.parts[4].radius_mm == pytest.approx(3.9)  # at most half the thinnest side
+
+
+def test_unknown_or_empty_shape_has_no_parts():
+    assert parse_shape(json.dumps({**SHAPE, "known": False})).parts == []
+    empty = parse_shape(json.dumps({**SHAPE, "parts": [{**PART, "shape": "pyramid"}]}))
+    assert (empty.known, empty.parts) == (False, [])
+    assert len(parse_shape(json.dumps({**SHAPE, "parts": [PART] * 20})).parts) == 16
+
+
+async def test_shape_call_reports_cost():
+    client = FakeClient(reply=response(json.dumps(SHAPE)))
+    result = await ClaudeIdentifier(Settings(), client).describe_shape(SHAPE_REQ)
+    assert result.shape.parts[0].shape == "rounded_box" and result.cost_usd == pytest.approx(0.018)
+
+
+async def test_fake_shape_from_script_or_unknown():
+    from oi.contracts import ProductShape
+    shape = ProductShape.model_validate(SHAPE)
+    fake = FakeIdentifier(shape=shape)
+    assert (await fake.describe_shape(SHAPE_REQ)).shape == shape and fake.shape_requests == [SHAPE_REQ]
+    assert (await FakeIdentifier().describe_shape(SHAPE_REQ)).shape.known is False
+    with pytest.raises(IdentifyError):
+        await FakeIdentifier(shape=IdentifyError("api")).describe_shape(SHAPE_REQ)
