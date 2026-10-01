@@ -831,3 +831,113 @@ async def test_an_entry_whose_object_is_gone_can_still_be_asked_about():
     request = identifier.ask_requests[0]
     assert (request.product, request.category, request.jpeg) == ("Pendelleuchte", None, None)
     assert rec.of("question")[-1].product == "Pendelleuchte"
+
+
+# --- sub-project 6: the precision model -----------------------------------------------------------------------------
+
+def _models(identifier, builder=None, store=None):
+    from oi.profiles import ProfileStore
+    settings = Settings()
+    rec = Recorder()
+    pipeline = Pipeline(settings, FakeDetector([[CUP, HAND]]), identifier, Telemetry(settings, "hybrid", "fake"), None,
+                        rec, profiles=ProfileStore(None), models=store, builder=builder)
+    return pipeline, rec
+
+
+def _builder(calls=None, store=None):
+    from oi.builder import ModelBuilder
+    from oi.modelcalls import FakeModelCalls
+    from oi.modelstore import ModelStore
+    from oi.scad import FakeCompiler
+    from oi.telemetry import SessionBudget
+    store = store if store is not None else ModelStore(None)
+    built = ModelBuilder(Settings(), calls or FakeModelCalls(), FakeCompiler(), store, SessionBudget(), None,
+                         render=lambda parts, size=512: [b"\x89PNG"] * 4)
+    return built, store
+
+
+CERTAIN = obs(I14, I13, readable=("iPhone 14",))  # the model name is readable: certain at once
+
+
+def _model_statuses(rec, name="Apple iPhone 14"):
+    return [m.status for m in rec.of("model") if m.product == name]
+
+
+async def test_a_certain_product_asks_the_builder_and_every_entry_hears_it():
+    from oi.contracts import RecheckMsg
+    blue = cand("Apple", "iPhone 14", depth="variant", variant="Blau")
+    certain_blue = obs(blue, I13, readable=("iPhone 14",))
+    built, store = _builder()
+    pipeline, rec = _models(FakeIdentifier(script=[certain_blue, certain_blue]), built, store)
+    await _identify_cup(pipeline)
+    await built.wait_idle()
+    assert _model_statuses(rec)[0] == "queued" and _model_statuses(rec)[-1] == "ready"
+    await pipeline.on_client_message(RecheckMsg(track_id=CUP.id))  # "Neu prüfen": the colour is confirmed now
+    await feed(pipeline, sharp_image(boxes=(BOX,)), 6, start=1.3, first_id=13)
+    await pipeline.wait_idle()
+    assert rec.of("identity")[-1].display_name == "Apple iPhone 14, Blau"
+    assert _model_statuses(rec, "Apple iPhone 14, Blau") == ["ready"]  # the same model, under the new name too
+    ready = [m for m in rec.of("model") if m.status == "ready"]
+    assert ready[-1].manifest.model == "Apple iPhone 14"
+
+
+async def test_a_likely_product_asks_nothing():
+    built, _ = _builder()
+    pipeline, rec = _models(FakeIdentifier(script=[obs(I14, I13)]), built)
+    await _identify_cup(pipeline)
+    await built.wait_idle()
+    assert rec.of("model") == [] and built.state("Apple iPhone 14") is None
+
+
+async def test_a_cached_model_is_ready_at_once_without_builder():
+    built, store = _builder()
+    await built.request("Apple iPhone 14", "Smartphone", None)
+    await built.wait_idle()
+    pipeline, rec = _models(FakeIdentifier(script=[CERTAIN]), None, store)
+    await _identify_cup(pipeline)
+    [message] = rec.of("model")
+    assert (message.product, message.status) == ("Apple iPhone 14", "ready") and message.manifest is not None
+
+
+async def test_a_reconnected_pipeline_gets_the_running_status_and_the_result():
+    import asyncio
+
+    from oi.modelcalls import FakeModelCalls
+
+    class SlowCalls(FakeModelCalls):
+        def __init__(self) -> None:
+            super().__init__()
+            self.go = asyncio.Event()
+
+        async def research(self, req):
+            await self.go.wait()
+            return await super().research(req)
+
+    calls = SlowCalls()
+    built, store = _builder(calls)
+    first, first_rec = _models(FakeIdentifier(script=[CERTAIN]), built, store)
+    await _identify_cup(first)
+    await first.aclose()  # the tab is reloaded while the model is researched
+    second, second_rec = _models(FakeIdentifier(script=[CERTAIN]), built, store)
+    await _identify_cup(second)
+    assert _model_statuses(second_rec) == ["researching"]
+    calls.go.set()
+    await built.wait_idle()
+    assert _model_statuses(second_rec)[-1] == "ready"
+    assert "ready" not in _model_statuses(first_rec)
+
+
+async def test_rebuild_message_reaches_the_builder():
+    from oi.contracts import RebuildMsg
+    from oi.modelcalls import FakeModelCalls
+    calls = FakeModelCalls(cad=IdentifyError("timeout"))
+    built, store = _builder(calls)
+    pipeline, rec = _models(FakeIdentifier(script=[CERTAIN]), built, store)
+    await _identify_cup(pipeline)
+    await built.wait_idle()
+    assert _model_statuses(rec)[-1] == "failed"
+    calls.cad = None
+    await pipeline.on_client_message(RebuildMsg(name="Apple iPhone 14"))
+    await built.wait_idle()
+    assert _model_statuses(rec)[-1] == "ready" and len(calls.cad_requests) == 2
+    await pipeline.on_client_message(RebuildMsg(name="Unbekannt"))  # no such entry: nothing happens

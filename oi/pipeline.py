@@ -19,9 +19,9 @@ import numpy as np
 from oi import appearance, lines
 from oi.belief import Belief, Product
 from oi.config import Settings
-from oi.contracts import (AnyClientMsg, AskMsg, BeliefState, ConfirmMsg, FocusMsg, IdentityMsg, Level, NoticeMsg,
-                          ProductProfile, ProfileMsg, QuestionMsg, RecalibrateMsg, SceneItemWire, SceneMsg,
-                          ServerMsg, Status, Track, TracksMsg, WireTrack)
+from oi.contracts import (AnyClientMsg, AskMsg, BeliefState, ConfirmMsg, FocusMsg, IdentityMsg, Level, ModelManifest,
+                          ModelMsg, ModelStatus, NoticeMsg, ProductProfile, ProfileMsg, QuestionMsg, RebuildMsg,
+                          RecalibrateMsg, SceneItemWire, SceneMsg, ServerMsg, Status, Track, TracksMsg, WireTrack)
 from oi.faces import FaceFinder
 from oi.hands import HandConfirmer, HandFinder
 from oi.focus import FocusSelector, split_tracks
@@ -31,6 +31,9 @@ from oi.identify import (AskRequest, AskResult, Identifier, IdentifyError, Ident
 from oi.ingest import Frame, FrameFormatError, FrameSlot, decode_frame
 from oi.perception import Detector
 from oi.privacy import label_in, mask_people, on_person, privacy_veto
+from oi.builder import ModelBuilder
+from oi.cache import normalize
+from oi.modelstore import ModelStore
 from oi.profiles import ProfileStore
 from oi.scene import SceneMap
 from oi.speech import RATE, Transcriber, decode_pcm
@@ -117,7 +120,8 @@ class Pipeline:
     def __init__(self, settings: Settings, detector: Detector, identifier: Identifier | None, telemetry: Telemetry,
                  call_log: CallLog | None, emit: Emit, faces: FaceFinder | None = None,
                  hands: HandFinder | None = None, profiles: ProfileStore | None = None,
-                 transcriber: Transcriber | None = None) -> None:
+                 transcriber: Transcriber | None = None, models: ModelStore | None = None,
+                 builder: ModelBuilder | None = None) -> None:
         self._s = settings
         self._detector = detector
         self._identifier = identifier
@@ -142,6 +146,11 @@ class Pipeline:
         self._profiles = profiles
         self._profiles_sent: set[str] = set()  # card names whose profile this connection has
         self._profiles_pending: dict[str, set[str]] = {}  # model being fetched -> card names waiting for it
+        self._models = models
+        self._builder = builder
+        self._model_names: dict[str, set[str]] = {}  # model -> sidebar entries that show it
+        self._model_of: dict[str, str] = {}  # sidebar entry -> model
+        self._unlisten = builder.listen(self._on_model) if builder is not None else None
         self._tasks: set[asyncio.Task[None]] = set()
         self._in_flight = 0
         self._calls_logged = 0
@@ -200,6 +209,9 @@ class Pipeline:
             self._focus.pin(message.track_id)
         elif isinstance(message, ConfirmMsg):
             await self._confirm(message)
+        elif isinstance(message, RebuildMsg):
+            if self._builder is not None and (model := self._model_of.get(message.name)) is not None:
+                await self._builder.rebuild(model)
         elif isinstance(message, AskMsg):
             self._questions += 1
             task = asyncio.create_task(self._ask(self._questions, message))
@@ -232,6 +244,8 @@ class Pipeline:
         await asyncio.sleep(0)  # let the finished tasks remove themselves
 
     async def aclose(self) -> None:
+        if self._unlisten is not None:
+            self._unlisten()
         for task in list(self._tasks):
             task.cancel()
         await asyncio.gather(*list(self._tasks), return_exceptions=True)
@@ -378,6 +392,7 @@ class Pipeline:
         await self._send_identity(state.track_id, "ready", self._snapshot(state))
         if (product := state.belief.product()) is not None:
             await self._want_profile(product)
+            await self._want_model(product, state.last_jpeg)
 
     async def _recognise_again(self, focus: Track, frame: Frame, visible_ids: set[int]) -> None:
         """The tracker sometimes loses the held object for a moment and gives it a new number. A fresh focus is the
@@ -461,6 +476,8 @@ class Pipeline:
             await self._send_identity(state.track_id, "ready", snapshot)
             if (product := state.belief.product()) is not None:
                 await self._want_profile(product)
+                if snapshot.level == Level.CERTAIN:
+                    await self._want_model(product, ready.jpeg)
             await self._want_compare(state)
         finally:
             state.in_flight = False
@@ -512,6 +529,32 @@ class Pipeline:
         for name in sorted(self._profiles_pending.pop(req.product, set())):
             self._profiles_sent.add(name)
             await self._emit(_profile_msg(name, result.profile))
+
+    # --- the precision model (sub-project 6) -----------------------------------------------------------------------
+
+    async def _want_model(self, product: Product, jpeg: bytes | None) -> None:
+        """A certain product: its precision model comes from the store at once, or the builder reports where it
+        stands, or it is asked to build it. Every sidebar name of the model hears all later progress."""
+        names = self._model_names.setdefault(normalize(product.model), set())
+        if product.name in names:
+            return
+        names.add(product.name)
+        self._model_of[product.name] = product.model
+        stored = self._models.get(product.model) if self._models is not None else None
+        if stored is not None:
+            await self._emit(ModelMsg(product=product.name, status="ready", round=stored.rounds, manifest=stored))
+            return
+        if self._builder is None:
+            return
+        if (state := self._builder.state(product.model)) is not None:
+            status, round_, manifest = state
+            await self._emit(ModelMsg(product=product.name, status=status, round=round_, manifest=manifest))
+            return
+        await self._builder.request(product.model, product.category, jpeg)
+
+    async def _on_model(self, model: str, status: ModelStatus, round_: int, manifest: ModelManifest | None) -> None:
+        for name in sorted(self._model_names.get(normalize(model), set())):
+            await self._emit(ModelMsg(product=name, status=status, round=round_, manifest=manifest))
 
     # --- one object seen twice (sub-project 3) ---------------------------------------------------------------------
 
@@ -570,6 +613,8 @@ class Pipeline:
         await self._send_identity(into.track_id, "analysing" if into.in_flight else "ready", snapshot)
         if (product := into.belief.product()) is not None:
             await self._want_profile(product)
+            if snapshot.level == Level.CERTAIN:
+                await self._want_model(product, into.last_jpeg)
 
     def _write_compare_log(self, state: _TrackState, req: SameRequest, result: SameResult | None,
                            error: str | None) -> None:

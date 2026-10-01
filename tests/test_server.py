@@ -168,3 +168,56 @@ def test_profile_reaches_the_browser_and_is_shared_between_connections():
                 ready += [m for m in seen if m["type"] == "profile" and m["status"] == "ready"]
     assert [m["product"] for m in ready] == ["Apple iPhone 14", "Apple iPhone 14"]
     assert len(identifier.product_requests) == 1
+
+
+# --- sub-project 6: the precision model -----------------------------------------------------------------------------
+
+def _stored_model():
+    from oi.contracts import MeasureSheet, ModelManifest, ModelPart
+    from oi.modelstore import ModelStore
+    store = ModelStore(None)
+    manifest = ModelManifest(model="Apple iPhone 14", slug="apple-iphone-14", size_mm=(71.5, 146.7, 7.8),
+                             sheet=MeasureSheet.estimated(), drawing_pages=[], notes="", verdict="good", rounds=1,
+                             cost_usd=0.9, created="2026-10-01T22:00:00",
+                             parts=[ModelPart(name="Gehäuse", color="#9fc4e8", file="part-01.stl", min_mm=(0, 0, 0),
+                                              max_mm=(1, 1, 1), triangles=12)])
+    store.put(manifest, [b"solid-bytes"], "cube(1);")
+    return store
+
+
+def test_model_files_are_served_and_nothing_else():
+    async def factory():
+        return None, None, "lokal"
+
+    app = create_app(Settings(log_calls=False), FakeDetector([]), factory, Path("/nonexistent"), models=_stored_model())
+    with TestClient(app) as client:
+        part = client.get("/models/apple-iphone-14/part-01.stl")
+        assert part.status_code == 200 and part.content == b"solid-bytes"
+        assert part.headers["content-type"].startswith("model/stl")
+        source = client.get("/models/apple-iphone-14/model.scad")
+        assert source.status_code == 200 and source.text == "cube(1);"
+        for path in ("/models/apple-iphone-14/manifest.json", "/models/apple-iphone-14/part-99.stl",
+                     "/models/unknown/part-01.stl", "/models/apple-iphone-14/..%2Fmanifest.json",
+                     "/models/APPLE/part-01.stl"):
+            assert client.get(path).status_code == 404, path
+
+
+def test_no_builder_in_fake_mode_but_one_with_claude_and_a_compiler():
+    from oi.identify import ClaudeIdentifier
+    from oi.scad import FakeCompiler
+    app, _ = app_with((FakeIdentifier(), None, "hybrid"))
+    with TestClient(app):
+        assert app.state.builder is None
+
+    async def factory():
+        return ClaudeIdentifier(Settings(), client=object()), None, "hybrid"
+
+    app = create_app(Settings(log_calls=False), FakeDetector([]), factory, Path("/nonexistent"),
+                     compiler=FakeCompiler())
+    with TestClient(app):
+        assert app.state.builder is not None
+    no_compiler = create_app(Settings(log_calls=False), FakeDetector([]), factory, Path("/nonexistent"),
+                             model_notice="3D-Modelle aus: Node.js fehlt")
+    with TestClient(no_compiler) as client, client.websocket_connect("/ws") as ws:
+        assert no_compiler.state.builder is None
+        assert next_of(ws, "notice")["text"] == "3D-Modelle aus: Node.js fehlt"

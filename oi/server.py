@@ -13,19 +13,23 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, WebSocket
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, WebSocket
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from oi.config import Settings
 from oi.contracts import NoticeMsg, ServerMsg, parse_client_message
 from oi.faces import FaceFinder
 from oi.hands import HandFinder
-from oi.identify import Identifier
+from oi.builder import ModelBuilder
+from oi.identify import ClaudeIdentifier, Identifier
 from oi.ingest import FrameFormatError, FrameSlot, parse_frame_message
 from oi.perception import Detector
+from oi.modelcalls import ClaudeModelCalls, ModelCalls
+from oi.modelstore import ModelStore
 from oi.pipeline import Pipeline
 from oi.profiles import ProfileStore
+from oi.scad import Compiler
 from oi.speech import Transcriber
 from oi.telemetry import CallLog, SessionBudget, Telemetry
 
@@ -62,18 +66,34 @@ async def _tick(pipeline: Pipeline, slot: FrameSlot) -> None:
         await pipeline.telemetry_tick(slot.dropped)
 
 
+def default_model_calls(identifier: Identifier | None, settings: Settings) -> ModelCalls | None:
+    """Precision models need the real Claude: the fake (tests, `--fake-claude`) and local mode build none."""
+    return ClaudeModelCalls(identifier, settings) if isinstance(identifier, ClaudeIdentifier) else None
+
+
 def create_app(settings: Settings, detector: Detector, identifier_factory: IdentifierFactory,
                static_dir: Path = Path("web/dist"), faces: FaceFinder | None = None,
                hands: HandFinder | None = None, profiles: ProfileStore | None = None,
-               transcriber: Transcriber | None = None) -> FastAPI:
-    """`profiles`: the store shared by every connection; None keeps it in memory (tests)."""
+               transcriber: Transcriber | None = None, models: ModelStore | None = None,
+               compiler: Compiler | None = None,
+               model_calls: Callable[[Identifier | None, Settings], ModelCalls | None] = default_model_calls,
+               model_notice: str | None = None) -> FastAPI:
+    """`profiles`, `models`: the stores shared by every connection; None keeps them in memory (tests). The
+    precision model's builder exists when there is a compiler and real Claude; `model_notice` says why not."""
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.identifier, app.state.notice, app.state.mode = await identifier_factory()
         app.state.active = None
         app.state.budget = SessionBudget()
         app.state.profiles = profiles if profiles is not None else ProfileStore(None)
+        app.state.models = models if models is not None else ModelStore(None)
+        calls = model_calls(app.state.identifier, settings)
+        app.state.builder = (ModelBuilder(settings, calls, compiler, app.state.models, app.state.budget,
+                                          CallLog(settings.runs_dir, settings.log_calls))
+                             if calls is not None and compiler is not None else None)
         yield
+        if app.state.builder is not None:
+            await app.state.builder.aclose()
 
     app = FastAPI(lifespan=lifespan)
 
@@ -99,10 +119,12 @@ def create_app(settings: Settings, detector: Detector, identifier_factory: Ident
                               budget=app.state.budget)
         pipeline = Pipeline(settings, detector, identifier, telemetry, CallLog(settings.runs_dir, settings.log_calls),
                             sender.send, faces=faces, hands=hands, profiles=app.state.profiles,
-                            transcriber=transcriber)
+                            transcriber=transcriber, models=app.state.models, builder=app.state.builder)
         slot = FrameSlot()
         if app.state.notice:
             await sender.send(NoticeMsg(level="warn", text=app.state.notice))
+        if model_notice:
+            await sender.send(NoticeMsg(level="info", text=model_notice))
         tasks = [asyncio.create_task(pipeline.run(slot)), asyncio.create_task(_tick(pipeline, slot))]
         try:
             while True:
@@ -124,6 +146,15 @@ def create_app(settings: Settings, detector: Detector, identifier_factory: Ident
             await pipeline.aclose()
             if app.state.active is ws:
                 app.state.active = None
+
+    @app.get("/models/{slug}/{name}")
+    async def model_file(slug: str, name: str) -> Response:
+        """A part (STL) or the OpenSCAD source of a stored precision model; only what its manifest lists."""
+        data = app.state.models.file(slug, name)
+        if data is None:
+            raise HTTPException(status_code=404)
+        kind = "model/stl" if name.endswith(".stl") else "text/plain; charset=utf-8"
+        return Response(content=data, media_type=kind)
 
     if (static_dir / "index.html").exists():
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="web")

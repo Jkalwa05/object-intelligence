@@ -41,3 +41,23 @@ def test_refuses_to_start_when_the_port_is_busy(monkeypatch, capsys):
     busy.close()
     assert stopped.value.code == 1
     assert f"Port {port}" in capsys.readouterr().out
+
+
+def test_model_setup_says_why_there_are_no_precision_models(tmp_path, monkeypatch):
+    from oi import __main__ as main
+    from oi.config import Settings
+    settings = Settings(model_cache=tmp_path / "models", models_dir=tmp_path)
+    assert main.model_setup(settings, fake=True) == (None, None, None)
+    monkeypatch.setattr(main, "compiler_problem", lambda: "Node.js fehlt")
+    store, compiler, notice = main.model_setup(settings, fake=False)
+    assert store is not None and compiler is None and notice == "3D-Modelle aus: Node.js fehlt"
+    monkeypatch.setattr(main, "compiler_problem", lambda: None)
+
+    def offline(models_dir):
+        raise OSError("no network")
+
+    monkeypatch.setattr(main, "ensure_bosl2", offline)
+    assert main.model_setup(settings, fake=False)[2] == "3D-Modelle aus: BOSL2 konnte nicht geladen werden"
+    monkeypatch.setattr(main, "ensure_bosl2", lambda models_dir: tmp_path)
+    store, compiler, notice = main.model_setup(settings, fake=False)
+    assert compiler is not None and notice is None
