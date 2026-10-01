@@ -58,6 +58,7 @@ body {
   right: 0;
   bottom: 0;
   display: grid;
+  grid-auto-rows: max-content; /* entries keep their full height: a long entry makes the sidebar scroll, not clip */
   gap: 8px;
   align-content: start;
   width: var(--sidebar-w);
