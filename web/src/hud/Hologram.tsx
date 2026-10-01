@@ -12,6 +12,8 @@ import { fitDistance, formatSize, partGeometry, type PartGeometry } from "./shap
 const FOV = 35;
 const EDGE = 0x7cff5a; // the neon green of the object in your hand
 const VIEW = new THREE.Vector3(0.55, 0.35, 0.8).normalize(); // a little from above and from the right
+const EDGE_ANGLE = 10; // degrees: low enough that the soft corners of a rounded box still get their outline
+const ROUND = 48; // segments around round parts: 7.5° steps stay below EDGE_ANGLE, so only their rims are drawn
 const NOTE = { loading: "hologram.loading", unknown: "hologram.unknown", error: "hologram.error", ready: null } as const;
 
 function geometryOf(g: PartGeometry): THREE.BufferGeometry {
@@ -22,11 +24,11 @@ function geometryOf(g: PartGeometry): THREE.BufferGeometry {
       return new RoundedBoxGeometry(g.args[0], g.args[1], g.args[2], 3, g.args[3]);
     case "cylinder":
     case "cone":
-      return new THREE.CylinderGeometry(g.args[0], g.args[1], g.args[2], 28, 1);
+      return new THREE.CylinderGeometry(g.args[0], g.args[1], g.args[2], ROUND, 1);
     case "sphere":
-      return new THREE.SphereGeometry(g.args[0], 20, 14);
+      return new THREE.SphereGeometry(g.args[0], ROUND, ROUND / 2);
     case "capsule":
-      return new THREE.CapsuleGeometry(g.args[0], g.args[1], 6, 20);
+      return new THREE.CapsuleGeometry(g.args[0], g.args[1], 8, ROUND);
   }
 }
 
@@ -47,7 +49,7 @@ export default function Hologram({ shape, lang }: { shape: ShapeMsg; lang: Lang 
     for (const part of shape.parts) {
       const g = partGeometry(part);
       const geometry = geometryOf(g);
-      const edges = new THREE.EdgesGeometry(geometry, 25);
+      const edges = new THREE.EdgesGeometry(geometry, EDGE_ANGLE);
       const fill = new THREE.MeshBasicMaterial({ color: g.color, transparent: true, opacity: 0.28, depthWrite: false });
       const line = new THREE.LineBasicMaterial({ color: EDGE, transparent: true, opacity: 0.9 });
       const piece = new THREE.Group();

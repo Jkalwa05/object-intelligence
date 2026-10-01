@@ -30,8 +30,8 @@ function Entry({ entry, onRecheck }: { entry: SidebarEntry; onRecheck(trackId: n
       {entry.expanded && (
         <div className="entry-body">
           <IdentityView identity={identity} lang={lang} onRecheck={entry.active ? onRecheck : undefined} />
-          {known && profile && <ProfileView profile={profile} lang={lang} />}
           {known && shape && <Suspense fallback={null}><Hologram shape={shape} lang={lang} /></Suspense>}
+          {known && profile && <ProfileView profile={profile} lang={lang} />}
         </div>
       )}
     </section>
