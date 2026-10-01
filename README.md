@@ -1,134 +1,185 @@
 # Object Intelligence
 
-Hold any object up to your Mac's camera. Object Intelligence finds and tracks everything in view, picks the object
-you are holding, and identifies it as precisely as the visible evidence honestly allows. When two products look
-alike, it says so, and it asks for the one view that would tell them apart ("Show me the bottom side: Lightning or
-USB-C?").
+Hold any object up to your Mac's camera. Object Intelligence finds the thing in your hand, tells you honestly how
+sure it is what it is, builds a true-to-scale hologram of it and answers questions you ask out loud.
 
-Sub-projects 1 ("see and identify"), 2 ("product profile") and 3 ("hologram") are complete. Voice questions and the
-final polish follow in their own sub-projects.
+![The hologram of a Sony DualShock 3 in full screen: measure lines for width, height and depth, a numbered tag on
+every part, next to the parts list and the product profile](docs/media/hologram-fullscreen.png)
+
+<img src="docs/media/sidebar.png" width="360" align="right" alt="The sidebar entry of the controller: certain, the
+evidence, a spoken question with its answer and sources, the hologram and the profile">
+
+Most "what is this?" tools send a photo to a model and print whatever comes back. Object Intelligence is built the
+other way round:
+
+- **A local pipeline does the seeing.** A detector and tracker run on every frame on the Mac. Apple Vision finds your
+  hand, and only the object your fingers lie on is identified.
+- **Claude does the knowing.** It gets a crop with nothing but the object. It returns structured evidence, not a
+  verdict.
+- **An evidence book decides.** It turns several views into an honest level: *certain*, *likely*, *unsure* or
+  *category only*. When two products look alike, the entry says so and asks for the side that tells them apart.
+
+Everything is in German by default (`OI_LANGUAGE=en` switches to English). The pictures in this README are rendered
+from real, cached answers of Claude for a DualShock 3; the photo of the object is left out of them.
+
+<br clear="right">
+
+## What it does
+
+The project was built in five sub-projects, each with its own design document:
+
+1. **See and identify.** YOLOE-26 (open vocabulary, prompt-free) and BoT-SORT track everything in view. Apple Vision
+   confirms your hands and outlines them. The object with at least three finger joints on it gets the green box.
+   - A snapshot, the sharpest frame of half a second, goes to Claude.
+   - The first seconds calibrate the background: lamps, shelves and stairs are named once and frozen. They never steal
+     the focus.
+   - Your face, hair, glasses, shirt and necklace are never marked.
+2. **Product profile.** Once an object is at least *likely*, it gets a short description and 4 to 8 technical facts.
+   Release date, launch price and a few things worth knowing follow. It all comes from Claude's own knowledge and is
+   always marked *laut Claude*.
+3. **Hologram and sidebar.** Claude describes the product as primitives in millimetres (boxes, rounded boxes,
+   cylinders, cones, spheres, capsules), and three.js builds a model to scale.
+   - Every identified object stays pinned in the sidebar. The one in your hand is expanded and linked to its box.
+   - Two tracks of the same physical object are merged after one small comparison.
+   - If an object stays *unsure*, you tap the right candidate and it becomes *certain*, marked *von dir bestätigt*.
+4. **Questions by voice.** Hold the space bar, ask ("Wie schwer ist dieser Controller?") and let go.
+   - Whisper (MLX) turns your voice into text on the Mac.
+   - Claude answers in one to three sentences. It searches the web only when the question needs something current,
+     such as a price, and then names its sources.
+   - The answer is read aloud.
+5. **Polish.** The interface is dark Apple glass.
+   - The hologram carries the photo of the object on the side that faces you.
+   - "⤢" opens it in full screen with measure lines for width, height and depth and a numbered tag on every part.
+     The parts list, the profile and the trivia sit beside it.
+   - You can start the whole program with a double-click.
 
 ## Principles
 
-- **Levels, not fake percentages.** The HUD says *certain*, *likely*, *unsure* or *category only*. A number that a
-  language model makes up ("87 %") is not a measured probability, so exact shares only appear in the telemetry
-  corner. A result becomes *certain* only through two independent views or a model name that is readable on the
-  object.
-- **Detection and identification are separate.** A local open-vocabulary detector (YOLOE-26, prompt-free) with
-  BoT-SORT tracking runs on every frame on the Mac GPU. Only the focus object goes to Claude, as a crop in which
-  everything outside the object's own outline is painted grey. A crop that could show a person is never sent: the
-  focus may not cover most of a person, sit in a person's head zone or lie over a face. The one whole frame that
-  leaves the Mac, for naming the background after a calibration, has every person painted grey first.
-- **Costs are bounded and visible.** At most 4 calls per object and 150 per session; every call is logged in `runs/`
-  with the crop, the answer, tokens, cost and latency. A measured call with Claude Opus 5.5 cost about 1.7 cents.
+- **Levels, not fake percentages.** A number a language model makes up ("87 %") is not a measured probability. The
+  interface shows levels, and exact shares appear only in the telemetry corner (`D`). A result becomes *certain* only
+  in three ways: through two independent views, through a model name readable on the object, or through your own tap.
+- **Privacy by construction.**
+  - What goes to Claude is the object alone: everything outside its outline is painted grey.
+  - A crop that could show a person is never sent. Faces are found locally (OpenCV YuNet) and never leave the Mac.
+  - The one whole frame that is sent, for naming the background, has every person painted grey first.
+  - Your voice is transcribed on the Mac; only the text of the question leaves it.
+- **Costs are bounded and visible.** At most 4 calls per object and 150 per session, answers included. Every call is
+  logged in `runs/` with its crop, answer, tokens, cost and latency. Profiles and holograms are cached per model in
+  `cache/`, so each costs one call, ever. Measured with Claude Opus 5.5:
+
+  | Call | Cost | Time |
+  |---|---|---|
+  | Identify the object in your hand | 1.3–1.7 ct | 6–10 s |
+  | Profile | about 1.2 ct | 6 s |
+  | Hologram | about 1.8 ct | 10 s |
+  | "Is this the same object?" | 0.4–0.5 ct | 3–5 s |
+  | Spoken question | about 3 ct | 4 s |
+  | Spoken question with web search | about 10 ct | 14–35 s |
+
+  A web search is expensive because the pages it finds add about 20,000 input tokens, so an answer may search only
+  once.
 
 ## How it works
 
+```mermaid
+flowchart LR
+  subgraph browser["Browser: React + TypeScript"]
+    camera["Camera"]
+    mic["Microphone, only while Space is held"]
+    hud["HUD canvas, sidebar, hologram (three.js), voice"]
+  end
+  subgraph mac["Your Mac: Python + FastAPI"]
+    detect["YOLOE-26 + BoT-SORT on every frame"]
+    people["Apple Vision hands, YuNet faces"]
+    focus["Focus: the object your fingers are on"]
+    snapshot["Sharpest snapshot, object pixels only"]
+    belief["Evidence book: honest level"]
+    whisper["Whisper (MLX): speech to text"]
+    cache[("cache/: profiles and shapes")]
+  end
+  claude[("Claude API")]
+
+  camera -- "JPEG frames, up to 12/s" --> detect
+  detect --> focus
+  people --> focus
+  focus --> snapshot
+  snapshot -- "object crop" --> claude
+  claude -- "evidence" --> belief
+  belief -- "identity" --> hud
+  detect -- "boxes and outlines" --> hud
+  mic -- "16 kHz audio" --> whisper
+  whisper -- "question text" --> claude
+  claude -- "profile, shape, answers" --> cache
+  cache --> hud
 ```
-Browser (web/, React + TypeScript)                  Python (oi/, FastAPI)
-┌───────────────────────────┐  binary: JPEG 1280×720  ┌───────────────────────────────────────┐
-│ camera (getUserMedia)     │ ─────── ≤ 12/s ───────▶ │ ingest:     only the newest frame     │
-│ video at 30–60 fps        │                         │ perception: YOLOE-26 PF + BoT-SORT    │
-│ HUD canvas + sidebar      │ ◀──── tracks ────────── │ focus:      which object is held      │
-│ telemetry, voice          │ ◀── identity, telemetry │ views:      sharp, new views only     │
-└───────────────────────────┘                         │ trigger:    when to ask Claude        │
-                                                      │ identify:   Claude, structured output │
-                                                      │ belief:     evidence → honest level   │
-                                                      └───────────────────────────────────────┘
-```
 
-The decision logic (focus, views, trigger, evidence book) is plain Python with unit tests; the detector and Claude
-sit behind small interfaces with fakes, so the whole pipeline is tested without a camera, a model or a network.
+The decision logic is plain Python with unit tests: focus, snapshots, trigger, evidence book, privacy rules and
+merging. The detector, Claude and Whisper sit behind small interfaces with fakes, so the whole pipeline is tested
+without a camera, a model or a network. Browser and server talk over one WebSocket with typed messages; a JSON
+fixture keeps both sides of the protocol in step.
 
-## Setup
+**Stack.**
+- **Server:** Python 3.12 with uv, FastAPI and uvicorn. Ultralytics YOLOE-26 with BoT-SORT, Apple Vision through
+  PyObjC, OpenCV YuNet and mlx-whisper (`whisper-large-v3-turbo`).
+- **Claude:** the Anthropic SDK with structured outputs and the web search tool.
+- **Browser:** React 19 with TypeScript, zustand, Vite and three.js; an AudioWorklet records the microphone.
+- **Tests:** pytest and Vitest.
 
-macOS on Apple Silicon, [uv](https://docs.astral.sh/uv/) and Node.js:
+## Start
+
+macOS on Apple Silicon with [uv](https://docs.astral.sh/uv/) and [Node.js](https://nodejs.org):
 
 ```bash
 uv sync
 npm --prefix web install
-npm --prefix web run build
 cp .env.example .env   # then put your Anthropic API key into .env (it never goes into git)
 ```
 
-The YOLOE weights (about 38 MB) download on the first start. Instead of `.env` you can also set `ANTHROPIC_API_KEY`
-or log in with `ant auth login`. Without any key the app runs in local mode: boxes, IDs and coarse labels only.
-
-## Run
+Then double-click **`Object Intelligence.command`** in Finder. It builds the browser part when needed, starts the
+server and opens http://127.0.0.1:8766. If the app is already running, it only opens the browser. From a terminal:
 
 ```bash
-uv run python -m oi                 # opens http://127.0.0.1:8766
-uv run python -m oi --fake-claude   # canned answers without API calls (tests)
-uv run python -m oi --no-browser --port 8766
+uv run python -m oi                 # the same, without the build step
+uv run python -m oi --no-browser --port 8799
 ```
 
-For the first five seconds after start the scene is calibrated: everything that stays put (lamp, door, shelf) is
-frozen. Then one Claude call names the whole background at once and says where each thing is ("Pendelleuchte",
-"Raumspartreppe", "Bücherregal"), from a single frame in which every person is painted grey. These markers (violet)
-never flicker and can never become the focus; press `R` to calibrate again. Without Claude the detector's own labels
-stay.
+On the first start the YOLOE weights download (about 38 MB), and so does the Whisper model (about 1.5 GB). The
+browser asks for the camera at once and for the microphone the first time you hold Space. Without an API key the app
+runs in local mode with boxes, IDs and coarse labels only.
 
-Your hands get a cyan outline as soon as they are confirmed: Apple's Vision framework must be sure, see at least 6 of
-the 21 hand joints and find the hand in two frames in a row. Only the object your fingers lie on (at least three
-joints on it) gets a box (neon green), and only that object goes to Claude, as a crop in which everything outside its
-outline is grey. You are never marked otherwise: not your face, hair, glasses, shirt or necklace (OpenCV's YuNet face
-detector and a body zone keep them out, and whatever lies in the body zone and reaches the bottom edge of the
-picture counts as worn, never as held). If two candidates look alike from one side, its entry asks for the view that
-separates them, for example "Zeig mir bitte die Unterseite" for iPhone 14 (Lightning) and 15 (USB-C). Nobody has to
-hold still: a snapshot, the sharpest frame of half a second, is taken from the video. If the tracker loses the object
-for a moment and gives it a new number, entry, result and call count stay (same size and colours, gone at most 3 s).
+| Key | |
+|---|---|
+| hold `Space` | ask a question about the object in your hand (or the last opened entry) |
+| `M` | voice on or off (answers to your questions are always read aloud) |
+| `D` | telemetry: frame rates, latencies, calls, costs and exact shares |
+| `S` | mirror view |
+| `R` | calibrate the background again |
+| `Esc` | close the full-screen hologram |
 
-Every identified object stays pinned in a sidebar on the right. The one in your hand is expanded on top, linked to
-its box by a thin green line; the others collapse and open again with a click. An expanded entry shows the
-identification, the hologram and the profile. If it stays *unsure* ("iPhone 14 or 15?"), tap the right candidate:
-it becomes *certain*, marked *von dir bestätigt*, and its profile and hologram follow.
-When a new object gets its first answer, Claude compares it once with the last three objects (small object-only
-crops): if it is one of them seen from another side, the two entries merge into one, and two sides together can make
-it *certain*. Objects in view at the same time are never merged.
-
-- **Hologram:** once an object is at least *likely*, Claude describes its shape as primitives in millimetres (from its
-  own knowledge and the object-only crop). The browser builds a true-to-scale model with three.js: neon-green edges,
-  turning slowly, draggable, with its size ("71,5 × 146,7 × 7,8 mm"), marked *vereinfacht · laut Claude*.
-- **Profile:** a short description (read aloud once when the voice is on), 4 to 8 technical facts, release date and
-  launch price, and one or two things worth knowing, from Claude's own knowledge. There are no sources, so it always
-  says *laut Claude*; if Claude does not know the exact model, it says so instead of guessing.
-
-Profiles and holograms cost one call each per model, ever: they are kept in `cache/`.
-
-There are no hints like "Bitte ganz ins Bild": whether the object gets a box is the feedback. The voice is off
-until you press `M`.
-
-Keys: `M` switches the voice on and off, `D` shows the telemetry (including which quality check a crop fails), `S` toggles the mirror
-view, `R` calibrates the scene again. Settings such as `OI_MODEL=claude-sonnet-5-5` (faster), `OI_LANGUAGE=en` or
-`OI_MIN_SHARPNESS` are read from the environment or `.env`. `--fake-claude` gives canned answers without any API call;
-it is meant for the automated tests, real identification needs Claude.
+Settings such as `OI_MODEL=claude-sonnet-5-5` (faster), `OI_LANGUAGE=en` or `OI_MAX_CALLS_SESSION` are read from the
+environment or `.env`.
 
 ## Tests
 
 ```bash
-uv run pytest               # all logic, no model, no network
+uv run pytest               # 268 tests: all logic, no model, no network
 uv run pytest -m model      # loads the real YOLOE weights
 uv run pytest -m claude     # one real Claude call, about 2 cents
-npm --prefix web test       # browser logic (geometry, sidebar state, hologram maths, voice rules)
+npm --prefix web test       # 52 tests: geometry, sidebar state, hologram maths, voice and labels
 ```
+
+`--fake-claude` gives canned answers without any API call. It exists for the automated tests; real identification
+needs Claude.
 
 ## Documents
 
-- Design: [`docs/superpowers/specs/2026-09-30-see-and-identify-design.md`](docs/superpowers/specs/2026-09-30-see-and-identify-design.md)
-- Plan: [`docs/superpowers/plans/2026-09-30-see-and-identify.md`](docs/superpowers/plans/2026-09-30-see-and-identify.md)
-- Acceptance checklist: [`docs/acceptance/sp1-checklist.md`](docs/acceptance/sp1-checklist.md)
-- Product profile (sub-project 2): [`docs/superpowers/specs/2026-10-01-product-profile-design.md`](docs/superpowers/specs/2026-10-01-product-profile-design.md),
-  plan [`docs/superpowers/plans/2026-10-01-product-profile.md`](docs/superpowers/plans/2026-10-01-product-profile.md)
-- Hologram and sidebar (sub-project 3): [`docs/superpowers/specs/2026-10-01-hologram-design.md`](docs/superpowers/specs/2026-10-01-hologram-design.md),
-  plan [`docs/superpowers/plans/2026-10-01-hologram.md`](docs/superpowers/plans/2026-10-01-hologram.md)
-
-## Roadmap
-
-1. **See and identify** (complete)
-2. **Product profile** (complete): Claude's own knowledge about the product, no sources, marked as such
-3. **Hologram** (complete): a simplified, true-to-scale 3D model per product in a sidebar; a real scan only if needed
-4. Questions and voice: ask about the object you hold
-5. Polish and portfolio
+| Sub-project | Design | Plan |
+|---|---|---|
+| 1 See and identify | [spec](docs/superpowers/specs/2026-09-30-see-and-identify-design.md) | [plan](docs/superpowers/plans/2026-09-30-see-and-identify.md), [acceptance](docs/acceptance/sp1-checklist.md) |
+| 2 Product profile | [spec](docs/superpowers/specs/2026-10-01-product-profile-design.md) | [plan](docs/superpowers/plans/2026-10-01-product-profile.md) |
+| 3 Hologram and sidebar | [spec](docs/superpowers/specs/2026-10-01-hologram-design.md) | [plan](docs/superpowers/plans/2026-10-01-hologram.md) |
+| 4 Questions by voice | [spec](docs/superpowers/specs/2026-10-01-questions-voice-design.md) | |
+| 5 Polish and portfolio | [spec](docs/superpowers/specs/2026-10-01-polish-design.md) | |
 
 ## License
 

@@ -28,13 +28,18 @@ Nicht gewählt wurde „Leiste merkt sich alles“: Nach dem Neuladen bleibt sie
 ## 3. Hologramm im Vollbild
 
 - **Öffnen und schließen.** Der Knopf „⤢“ am Hologramm öffnet eine Vollbild-Ansicht über allem. Esc oder „✕“
-  schließt sie.
+  schließt sie. Sie hängt nicht am Eintrag: Legt Jonas das Objekt weg, klappt der Eintrag zu, das Vollbild bleibt
+  offen (Zustand `fullscreen` im Store).
 - **Links:** das große Modell. Drehen und Zoomen gehen mit Maus bzw. Trackpad.
   - Maßlinien für Breite, Höhe und Tiefe an der Modellbox, mit Endstrichen und Beschriftung in mm.
-  - Jedes Teil trägt seinen Namen.
+  - Jedes Teil trägt ein Namensschild: einen nummerierten Punkt auf dem Teil und daneben den Namen. Würden sich
+    Schilder oder Punkte verdecken (etwa an einer Kamerainsel), rutscht der Name nach unten, und eine dünne Linie
+    führt zurück zum Punkt. Der Punkt des Gehäuses sitzt an seiner Unterkante, damit er nicht unter Logo oder
+    Display liegt.
 - **Rechts:** alle technischen Daten.
   - Name, Stufe und Gesamtmaße;
-  - alle Teile mit Form und Maßen (z. B. „Hauptkamera · Zylinder ⌀ 13 × 2 mm“);
+  - alle Teile als nummerierte Liste mit Form und Maßen (z. B. „3 Hauptkamera · Zylinder ⌀ 13 × 2 mm“); zeigt die
+    Maus auf eine Zeile, leuchtet das Schild am Modell auf;
   - die Steckbrief-Daten, Erscheinung, Startpreis und Wissenswertes.
 
 ## 4. Edles Apple-Glas
@@ -63,4 +68,5 @@ Das README beschreibt:
 - die Architektur als Mermaid-Diagramm;
 - die Grundsätze: ehrliche Unsicherheit, Datenschutz, gedeckelte Kosten;
 - den Technik-Stack, Start, Tests;
-- Platzhalter für Screenshots und Video (`docs/media/`).
+- Bilder in `docs/media/`: das Vollbild-Hologramm und die Seitenleiste, gerendert aus echten, gespeicherten
+  Claude-Antworten (DualShock 3) und ohne Kamerabild; ein Live-Video kann Jonas später ergänzen.

@@ -36,13 +36,17 @@ Aktuelles („Was kostet das heute gebraucht?“), sucht Claude im Web und nennt
    - der letzte Ausschnitt des Objekts (nur Objekt-Pixel),
    - der bisherige Frage-Antwort-Verlauf dieses Objekts.
 
-   Werkzeug ist die Websuche (`web_search_20260209`, höchstens 2 Suchen). Claude antwortet in 1–3 kurzen,
-   vorlesbaren Sätzen. Quellen kommen aus den Zitaten der Websuche (Titel und Link).
+   Werkzeug ist die Websuche (`web_search_20260209`, höchstens 1 Suche, Standort Deutschland). Claude antwortet in
+   1–3 kurzen, vorlesbaren Sätzen, mit Aufwand `medium` (mit `low` ließ Claude nötige Suchen aus); nach Preisen,
+   Verfügbarkeit und Neuigkeiten sucht es immer. Quellen kommen aus den Zitaten der Websuche (Titel und Link), und
+   wenn es keine Zitate gibt, aus den gefundenen Seiten (höchstens 3).
 4. **Anzeige.** Neue Server-Nachricht `question`: `product` (Name des Eintrags), `qid`, `status` (transcribing,
    thinking, ready, empty, error), `question`, `answer`, `sources`, `line`. Der Eintrag zeigt unter „FRAGEN“ den
    Verlauf; die Stimme liest `line` vor, auch wenn sie sonst aus ist.
-5. **Kosten.** Eine Antwort kostet ca. 1–2 Cent, mit Suche zusätzlich 1 Cent pro Suche und mehr Text. Antworten
-   zählen zum Sitzungsbudget und landen im Aufruf-Log (`track_id` −4).
+5. **Kosten.** Gemessen am 2026-10-01: eine Antwort ohne Suche ca. 3 Cent und 4 s; mit Suche ca. 10 Cent und 14 s
+   (einmal 35 s), weil die gefundenen Seiten rund 20 000 Eingabe-Tokens mitbringen (die Suche selbst kostet 1 Cent).
+   Deshalb nur eine Suche.
+   Antworten zählen zum Sitzungsbudget und landen im Aufruf-Log (`track_id` −4).
 
 ## 4. Datenschutz
 
