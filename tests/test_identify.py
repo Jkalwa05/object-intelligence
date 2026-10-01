@@ -429,3 +429,7 @@ def test_german_questions_search_from_germany_once():
     tool = request["tools"][0]
     assert tool["max_uses"] == 1
     assert tool["user_location"] == {"type": "approximate", "country": "DE", "timezone": "Europe/Berlin"}
+
+
+def test_the_hologram_faces_the_viewer_with_the_side_in_the_photo():
+    assert "faces the viewer" in build_shape_request(Settings(), SHAPE_REQ)["system"]
