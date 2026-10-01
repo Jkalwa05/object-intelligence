@@ -93,10 +93,15 @@ export interface SidebarEntry {
   expanded: boolean; // active, or opened by hand
 }
 
+type SidebarSlice = Pick<HudState, "identities" | "named" | "recent" | "open">;
+
 // The sidebar: the held object first and expanded (also while it is still being analysed), the others collapsed.
 export function sidebarEntries(s: HudState): SidebarEntry[] {
-  const id = s.tracks?.focus_id;
-  const held = id == null ? undefined : s.identities[id];
+  return entriesFor(s, s.tracks?.focus_id ?? null);
+}
+
+export function entriesFor(s: SidebarSlice, focusId: number | null): SidebarEntry[] {
+  const held = focusId === null ? undefined : s.identities[focusId];
   const entries: SidebarEntry[] = [];
   if (held) entries.push({ name: held.display_name, identity: held, active: true, expanded: true });
   for (const name of s.recent) {
@@ -107,7 +112,7 @@ export function sidebarEntries(s: HudState): SidebarEntry[] {
   return entries;
 }
 
-export function toggleEntry(s: HudState, name: string): HudState {
+export function toggleEntry<S extends Pick<HudState, "open">>(s: S, name: string): S {
   return { ...s, open: s.open.includes(name) ? s.open.filter((n) => n !== name) : [...s.open, name] };
 }
 

@@ -1,22 +1,19 @@
-// The product profile next to the info card (sub-project 2): Claude's own knowledge, no sources, always marked as such.
+// The product profile (sub-project 2) inside a sidebar entry: Claude's own knowledge, no sources, marked as such.
 
 import { t } from "../i18n";
-import { focusProfile, useHud } from "../store";
+import type { Lang, ProfileMsg } from "../protocol";
 
-export default function ProfilePanel() {
-  const profile = useHud(focusProfile);
-  const lang = useHud((s) => s.telemetry?.language ?? "de");
-  if (!profile) return null;
-  const note = { loading: "profile.loading", unknown: "profile.unknown", error: "profile.error", ready: null } as const;
-  const noteKey = note[profile.status];
+const NOTE = { loading: "profile.loading", unknown: "profile.unknown", error: "profile.error", ready: null } as const;
 
+export default function ProfileView({ profile, lang }: { profile: ProfileMsg; lang: Lang }) {
+  const note = NOTE[profile.status];
   return (
-    <aside className="profile glass" aria-live="polite">
+    <div className="entry-part" aria-live="polite">
       <div className="profile-head">
         <span className="card-level">{t("profile.title", lang)}</span>
         <span className="tag">{t("profile.byClaude", lang)}</span>
       </div>
-      {noteKey && <p className="profile-note">{t(noteKey, lang)}</p>}
+      {note && <p className="profile-note">{t(note, lang)}</p>}
       {profile.status === "ready" && (
         <div key={profile.product} className="card-body">
           <p className="profile-summary">{profile.summary}</p>
@@ -41,6 +38,6 @@ export default function ProfilePanel() {
           )}
         </div>
       )}
-    </aside>
+    </div>
   );
 }

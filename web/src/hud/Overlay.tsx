@@ -1,17 +1,17 @@
-// The canvas over the video: your hands, the object in your hand with its scan line and the line to the info card,
-// and the frozen background (spec §3, §9). Drawn every animation frame from the store, without React re-rendering.
+// The canvas over the video: your hands, the object in your hand with its scan line, its name tag and a line to its
+// entry in the sidebar, and the frozen background (spec §3, §9, sub-project 3). Drawn every animation frame from the
+// store, without React re-rendering.
 
 import { useEffect, useRef, type RefObject } from "react";
+import { t, type I18nKey } from "../i18n";
 import { useHud } from "../store";
 import { toScreen, toScreenPoints, videoContentRect, type Rect } from "./geometry";
-import { CardPlacer, type Side } from "./placement";
 import { smoothPoints, smoothRect } from "./smoothing";
 
 const SNAP_MS = 200;
 const SNAP_PX = 8;
 const SCAN_MS = 2400;
 const ARM = 14;
-const FALLBACK_CARD = { w: 300, h: 200 };
 
 type Rgb = readonly [number, number, number];
 const HAND: Rgb = [46, 230, 255]; // cyan: your hand
@@ -80,34 +80,40 @@ function drawLabel(ctx: CanvasRenderingContext2D, text: string, r: Rect) {
   ctx.fillText(text, r.x + 6, y + 13);
 }
 
-function drawLeader(ctx: CanvasRenderingContext2D, box: Rect, card: Rect, side: Side) {
-  const midX = clamp(box.x + box.w / 2, card.x, card.x + card.w);
-  const rowY = card.y + 18;
-  const [from, to]: [number, number][] =
-    side === "right" ? [[box.x + box.w, clamp(rowY, box.y, box.y + box.h)], [card.x, rowY]]
-      : side === "left" ? [[box.x, clamp(rowY, box.y, box.y + box.h)], [card.x + card.w, rowY]]
-        : side === "below" ? [[box.x + box.w / 2, box.y + box.h], [midX, card.y]]
-          : [[box.x + box.w / 2, box.y], [midX, card.y + card.h]];
-  ctx.strokeStyle = rgba(FOCUS, 0.6);
+// The name of the object in your hand, just above its box.
+function drawTag(ctx: CanvasRenderingContext2D, text: string, r: Rect) {
+  ctx.font = "600 12px -apple-system, system-ui, sans-serif";
+  const w = ctx.measureText(text).width + 14, h = 20, y = Math.max(0, r.y - h - 6);
+  ctx.fillStyle = "rgba(22,22,28,0.7)";
+  ctx.beginPath();
+  ctx.roundRect(r.x, y, w, h, 6);
+  ctx.fill();
+  ctx.fillStyle = rgba(FOCUS, 1);
+  ctx.fillText(text, r.x + 7, y + 14);
+}
+
+// From the box to the right edge, at the height of the object's entry in the sidebar.
+function drawLink(ctx: CanvasRenderingContext2D, box: Rect, y: number, right: number) {
+  const from: [number, number] = [box.x + box.w, clamp(y, box.y, box.y + box.h)];
+  ctx.strokeStyle = rgba(FOCUS, 0.55);
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(...from);
-  ctx.lineTo(...to);
+  ctx.lineTo(from[0] + (right - from[0]) * 0.6, y);
+  ctx.lineTo(right, y);
   ctx.stroke();
 }
 
 interface Props {
   video: RefObject<HTMLVideoElement | null>;
-  card: RefObject<HTMLDivElement | null>;
 }
 
-export default function Overlay({ video, card }: Props) {
+export default function Overlay({ video }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const rects = useRef(new Map<number, Rect>());
   const handShapes = useRef<[number, number][][]>([]);
 
   useEffect(() => {
-    const placer = new CardPlacer();
     let raf = 0;
     let last = performance.now();
     let focusId: number | null = null;
@@ -173,19 +179,22 @@ export default function Overlay({ video, card }: Props) {
       for (const id of [...rects.current.keys()]) if (!seen.has(id)) rects.current.delete(id);
       if (focusRect && msg.focus_id !== null) lastFocus = { id: msg.focus_id, rect: focusRect };
 
-      const el = card.current;
-      if (focusRect && el && msg.focus_id !== null && s.identities[msg.focus_id]) {
-        const size = el.offsetWidth ? { w: el.offsetWidth, h: el.offsetHeight } : FALLBACK_CARD;
-        const faces = msg.faces.map((f) => toScreen(f, content, s.mirrored));
-        const pos = placer.place(focusRect, size, { w: vw, h: vh }, now, faces);
-        el.style.transform = `translate(${Math.round(pos.x)}px, ${Math.round(pos.y)}px)`;
-        el.dataset.side = pos.side; // left of the object: the card stays next to it, the profile goes outside
-        drawLeader(ctx, focusRect, { x: pos.x, y: pos.y, ...size }, pos.side);
+      const identity = msg.focus_id === null ? undefined : s.identities[msg.focus_id];
+      if (focusRect && identity) {
+        const lang = s.telemetry?.language ?? "de";
+        const level = identity.status === "analysing" ? t("analysing", lang)
+          : identity.level ? t(`level.${identity.level}` as I18nKey, lang) : "";
+        drawTag(ctx, level ? `${identity.display_name} · ${level}` : identity.display_name, focusRect);
+        const head = document.querySelector(".entry.active .entry-head");
+        if (head) {
+          const entry = head.getBoundingClientRect(), stage = c.getBoundingClientRect();
+          drawLink(ctx, focusRect, entry.top + entry.height / 2 - stage.top, vw);
+        }
       }
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [video, card]);
+  }, [video]);
 
   return <canvas ref={canvas} className="overlay" />;
 }

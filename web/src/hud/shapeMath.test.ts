@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { ShapePart } from "../protocol";
-import { fitDistance, formatSize, partGeometry } from "./hologram";
+import { fitDistance, formatSize, partGeometry } from "./shapeMath";
 
 const part = (shape: ShapePart["shape"], size: [number, number, number], extra: Partial<ShapePart> = {}): ShapePart =>
   ({ name: "Teil", shape, size_mm: size, position_mm: [1, 2, 3], rotation_deg: [90, 0, 45], color: "#9fc4e8",

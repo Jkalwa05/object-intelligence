@@ -7,6 +7,7 @@
   --text: #fff;
   --line: rgba(255, 255, 255, 0.5);
   --accent: #7cff5a; /* the object in your hand; the overlay uses the same green, cyan for hands, violet for the scene */
+  --sidebar-w: 360px;
 }
 
 * {
@@ -23,7 +24,7 @@ body {
 
 .stage {
   position: fixed;
-  inset: 0;
+  inset: 0 var(--sidebar-w) 0 0; /* the camera picture never hides behind the sidebar */
 }
 
 .video,
@@ -50,34 +51,90 @@ body {
   border-radius: var(--radius);
 }
 
-/* the info card and the profile move together; the Overlay places the group next to the held object */
-.hud-group {
-  position: absolute;
-  left: 0;
+/* the sidebar: every identified object pinned as an entry; the one in your hand expanded on top */
+.sidebar {
+  position: fixed;
   top: 0;
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  will-change: transform;
-}
-
-.hud-group.hidden {
-  display: none;
-}
-
-.hud-group[data-side="left"] {
-  flex-direction: row-reverse;
-}
-
-.card,
-.profile {
-  width: 300px;
-  padding: 14px 16px;
-}
-
-.profile {
-  max-height: calc(100vh - 24px); /* never taller than the window */
+  right: 0;
+  bottom: 0;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  width: var(--sidebar-w);
+  padding: 12px;
   overflow-y: auto;
+  background: #0b0b0f;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-title {
+  padding: 2px 4px 4px;
+}
+
+.entry {
+  overflow: hidden;
+}
+
+.entry.active {
+  box-shadow: inset 0 0 0 1px rgba(124, 255, 90, 0.55);
+}
+
+.entry-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.entry-name {
+  flex: 1;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.entry-state {
+  color: var(--accent);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+
+.entry-chevron {
+  opacity: 0.6;
+}
+
+.entry-body {
+  display: grid;
+  gap: 12px;
+  padding: 0 12px 12px;
+}
+
+.entry-part {
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.hologram-canvas {
+  display: block;
+  width: 100%;
+  height: 220px;
+  cursor: grab;
+}
+
+.hologram-size {
+  margin: 4px 0 0;
+  font-size: 12px;
+  text-align: center;
+  opacity: 0.8;
 }
 
 .card-body {

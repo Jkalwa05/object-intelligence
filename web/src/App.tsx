@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { openCamera, startCapture } from "./camera/capture";
 import Banner from "./hud/Banner";
-import InfoCard from "./hud/InfoCard";
 import Overlay from "./hud/Overlay";
-import ProfilePanel from "./hud/ProfilePanel";
+import Sidebar from "./hud/Sidebar";
 import Telemetry from "./hud/Telemetry";
 import { connect, type Connection } from "./net/socket";
 import type { Lang, RecalibrateMsg, RecheckMsg } from "./protocol";
@@ -53,13 +52,8 @@ function useVoice() {
 
 export default function App() {
   const video = useRef<HTMLVideoElement>(null);
-  const card = useRef<HTMLDivElement>(null);
   const connection = useRef<Connection | null>(null);
   const mirrored = useHud((s) => s.mirrored);
-  const showCard = useHud((s) => {
-    const id = s.tracks?.focus_id;
-    return id != null && s.identities[id] !== undefined;
-  });
   const [cameraAttempt, setCameraAttempt] = useState(0);
 
   useEffect(() => {
@@ -108,15 +102,14 @@ export default function App() {
   const send = (message: RecheckMsg) => connection.current?.send(JSON.stringify(message));
 
   return (
-    <main className="stage">
-      <video ref={video} className={mirrored ? "video mirrored" : "video"} autoPlay playsInline muted />
-      <Overlay video={video} card={card} />
-      <div ref={card} className={showCard ? "hud-group" : "hud-group hidden"}>
-        <InfoCard onRecheck={(trackId) => send({ type: "recheck", track_id: trackId })} />
-        <ProfilePanel />
-      </div>
-      <Telemetry video={video} />
-      <Banner onRetryCamera={() => setCameraAttempt((n) => n + 1)} />
-    </main>
+    <>
+      <main className="stage">
+        <video ref={video} className={mirrored ? "video mirrored" : "video"} autoPlay playsInline muted />
+        <Overlay video={video} />
+        <Telemetry video={video} />
+        <Banner onRetryCamera={() => setCameraAttempt((n) => n + 1)} />
+      </main>
+      <Sidebar onRecheck={(trackId) => send({ type: "recheck", track_id: trackId })} />
+    </>
   );
 }
