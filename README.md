@@ -5,8 +5,8 @@ you are holding, and identifies it as precisely as the visible evidence honestly
 alike, it says so, and it asks for the one view that would tell them apart ("Show me the bottom side: Lightning or
 USB-C?").
 
-Sub-projects 1 ("see and identify") and 2 ("product profile") are complete. 3D models, voice questions and the final
-polish follow in their own sub-projects.
+Sub-projects 1 ("see and identify"), 2 ("product profile") and 3 ("hologram") are complete. Voice questions and the
+final polish follow in their own sub-projects.
 
 ## Principles
 
@@ -29,7 +29,7 @@ Browser (web/, React + TypeScript)                  Python (oi/, FastAPI)
 ┌───────────────────────────┐  binary: JPEG 1280×720  ┌───────────────────────────────────────┐
 │ camera (getUserMedia)     │ ─────── ≤ 12/s ───────▶ │ ingest:     only the newest frame     │
 │ video at 30–60 fps        │                         │ perception: YOLOE-26 PF + BoT-SORT    │
-│ HUD canvas + info card    │ ◀──── tracks ────────── │ focus:      which object is held      │
+│ HUD canvas + sidebar      │ ◀──── tracks ────────── │ focus:      which object is held      │
 │ telemetry, voice          │ ◀── identity, telemetry │ views:      sharp, new views only     │
 └───────────────────────────┘                         │ trigger:    when to ask Claude        │
                                                       │ identify:   Claude, structured output │
@@ -73,16 +73,23 @@ the 21 hand joints and find the hand in two frames in a row. Only the object you
 joints on it) gets a box (neon green), and only that object goes to Claude, as a crop in which everything outside its
 outline is grey. You are never marked otherwise: not your face, hair, glasses, shirt or necklace (OpenCV's YuNet face
 detector and a body zone keep them out, and whatever lies in the body zone and reaches the bottom edge of the
-picture counts as worn, never as held). If two candidates look alike from one side, the card asks for the view that
+picture counts as worn, never as held). If two candidates look alike from one side, its entry asks for the view that
 separates them, for example "Zeig mir bitte die Unterseite" for iPhone 14 (Lightning) and 15 (USB-C). Nobody has to
 hold still: a snapshot, the sharpest frame of half a second, is taken from the video. If the tracker loses the object
-for a moment and gives it a new number, card, result and call count stay (same size and colours, gone at most 3 s).
+for a moment and gives it a new number, entry, result and call count stay (same size and colours, gone at most 3 s).
 
-Once an object is at least *likely*, a second glass panel next to the card shows its profile from Claude's own
-knowledge: a short description (read aloud once), 4 to 8 technical facts, release date and launch price, and one or
-two things worth knowing. There are no sources, so the panel always says *laut Claude*; if Claude does not know the
-exact model, it says so instead of guessing. Each product costs one text-only call (no image), ever: profiles are kept
-in `cache/profiles.json`.
+Every identified object stays pinned in a sidebar on the right. The one in your hand is expanded on top, linked to
+its box by a thin green line; the others collapse and open again with a click. An expanded entry shows the
+identification, the hologram and the profile:
+
+- **Hologram:** once an object is at least *likely*, Claude describes its shape as primitives in millimetres (from its
+  own knowledge and the object-only crop). The browser builds a true-to-scale model with three.js: neon-green edges,
+  turning slowly, draggable, with its size ("71,5 × 146,7 × 7,8 mm"), marked *vereinfacht · laut Claude*.
+- **Profile:** a short description (read aloud once when the voice is on), 4 to 8 technical facts, release date and
+  launch price, and one or two things worth knowing, from Claude's own knowledge. There are no sources, so it always
+  says *laut Claude*; if Claude does not know the exact model, it says so instead of guessing.
+
+Profiles and holograms cost one call each per model, ever: they are kept in `cache/`.
 
 There are no hints like "Bitte ganz ins Bild": whether the object gets a box is the feedback. The voice is off
 until you press `M`.
@@ -98,7 +105,7 @@ it is meant for the automated tests, real identification needs Claude.
 uv run pytest               # all logic, no model, no network
 uv run pytest -m model      # loads the real YOLOE weights
 uv run pytest -m claude     # one real Claude call, about 2 cents
-npm --prefix web test       # browser logic (geometry, card placement, state, voice rules)
+npm --prefix web test       # browser logic (geometry, sidebar state, hologram maths, voice rules)
 ```
 
 ## Documents
@@ -108,12 +115,14 @@ npm --prefix web test       # browser logic (geometry, card placement, state, vo
 - Acceptance checklist: [`docs/acceptance/sp1-checklist.md`](docs/acceptance/sp1-checklist.md)
 - Product profile (sub-project 2): [`docs/superpowers/specs/2026-10-01-product-profile-design.md`](docs/superpowers/specs/2026-10-01-product-profile-design.md),
   plan [`docs/superpowers/plans/2026-10-01-product-profile.md`](docs/superpowers/plans/2026-10-01-product-profile.md)
+- Hologram and sidebar (sub-project 3): [`docs/superpowers/specs/2026-10-01-hologram-design.md`](docs/superpowers/specs/2026-10-01-hologram-design.md),
+  plan [`docs/superpowers/plans/2026-10-01-hologram.md`](docs/superpowers/plans/2026-10-01-hologram.md)
 
 ## Roadmap
 
 1. **See and identify** (complete)
 2. **Product profile** (complete): Claude's own knowledge about the product, no sources, marked as such
-3. 3D: generic, generated or exact models, honestly labelled
+3. **Hologram** (complete): a simplified, true-to-scale 3D model per product in a sidebar; a real scan only if needed
 4. Questions and voice: ask about the object you hold
 5. Polish and portfolio
 

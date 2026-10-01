@@ -9,7 +9,8 @@ Keine feste Objektliste (Open-Vocabulary). Das Gesamtprojekt ist in Teilprojekte
 eigenem Plan:
 
 1. **Sehen & Identifizieren** (diese Spec, abgeschlossen) · 2. **Produkt-Steckbrief** (abgeschlossen; ersetzt
-„Wissen mit Quellen“, ohne Quellen, `2026-10-01-product-profile-design.md`) · 3. 3D · 4. Fragen & Sprache ·
+„Wissen mit Quellen“, ohne Quellen, `2026-10-01-product-profile-design.md`) · 3. **Hologramm** (abgeschlossen,
+`2026-10-01-hologram-design.md`) · 4. Fragen & Sprache ·
 5. Politur & Portfolio
 
 Teilprojekt 1 legt die Datenformate fest, an die die anderen andocken (`oi/contracts.py`, Contract-Version 1).

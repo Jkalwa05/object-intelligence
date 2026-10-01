@@ -99,3 +99,8 @@ neuen Namen.
   - Protokoll-Beispiel.
 - **Web:** Protokoll; Store (Steckbrief nach Name, nur bei wahrscheinlich/sicher sichtbar); Texte; Stimme.
 - **Echt** (`-m claude`): Der Steckbrief für „Apple iPhone 14“ ist `known` und hat Daten.
+
+## 9. Nachtrag (Teilprojekt 3)
+
+Seit Teilprojekt 3 steht der Steckbrief nicht mehr in einem Panel neben der Karte, sondern im Eintrag des Objekts in
+der Seitenleiste rechts, unter dem Hologramm. Die schwebende Karte gibt es nicht mehr.

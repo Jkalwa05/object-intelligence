@@ -46,7 +46,7 @@ angeheftet.
   - Kanten neongrün, Flächen in der Teilfarbe halb durchsichtig.
   - Das Modell dreht sich langsam und lässt sich mit der Maus drehen.
   - Darunter steht zum Beispiel „146,7 × 71,5 × 7,8 mm · vereinfacht · laut Claude“.
-- **Kosten:** ca. 2–3 Cent und 10–15 s pro Modell, einmalig.
+- **Kosten:** gemessen 1,8 Cent und ca. 10 s pro Modell, einmalig (iPhone 14: 7 Teile, 71,5 × 146,7 × 7,8 mm).
 
 ## 4. Seitenleiste
 
@@ -58,8 +58,11 @@ angeheftet.
 - **Ausgeklappt** zeigt ein Eintrag drei Teile:
   - die Erkennung: Stufe, Name, Satz, Balken, Belege, „Zeig mir bitte …“ und „Neu prüfen“ (nur beim aktiven
     Eintrag);
-  - den Steckbrief;
-  - das Hologramm.
+  - das Hologramm;
+  - den Steckbrief.
+
+  Das Hologramm steht vor dem Steckbrief, damit man es auf einem Laptop-Bildschirm ohne Scrollen sieht (Ruling nach
+  der Sichtprüfung).
 - **Nicht aktive Einträge** sind eingeklappt und zeigen nur die Kopfzeile (Name und Stufe). Ein Klick klappt sie auf
   und zu.
 - **Am Objekt:** grüne Box, ein Namensschild (Name · Stufe) und eine dünne grüne Linie zum aktiven Eintrag.
