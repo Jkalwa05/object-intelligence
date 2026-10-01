@@ -715,3 +715,104 @@ async def test_a_wrong_pick_changes_nothing():
     await pipeline.on_client_message(ConfirmMsg(track_id=CUP.id, name="Samsung Galaxy S23"))
     await pipeline.on_client_message(ConfirmMsg(track_id=777, name="Apple iPhone 14"))
     assert len(rec.messages) == before
+
+
+# --- one object seen twice becomes one sidebar entry (Claude compares the crops) ------------------------------------
+
+DS3 = cand("Sony", "DualShock 3")
+SIXAXIS = cand("Sony", "Sixaxis")
+
+
+async def _two_objects_one_after_the_other(identifier, second=None, gap_s=4.0):
+    """Track 1 is held and identified, then put away for `gap_s` (longer than the re-identification window), then
+    track 2 is held and identified."""
+    second = second or trk(2, (420, 210, 690, 490))
+    gap = round(gap_s / 0.1)
+    script = [[CUP, HAND]] * 13 + [[]] * gap + [[second, HAND]]
+    pipeline, rec, telemetry = make(script, identifier)
+    await feed(pipeline, sharp_image(boxes=(BOX,)), 13)
+    await pipeline.wait_idle()
+    await feed(pipeline, sharp_image(), gap, start=1.3, first_id=13)
+    await feed(pipeline, sharp_image(boxes=(BOX,), mirrored=True), 13, start=1.3 + gap_s, first_id=13 + gap)
+    await pipeline.wait_idle()
+    return pipeline, rec, telemetry
+
+
+async def test_the_same_object_seen_twice_becomes_one_entry():
+    dark = obs(desc="schwarzes, unregelmäßig geformtes Objekt", cat="Unbekanntes Objekt")
+    identifier = FakeIdentifier(script=[dark, obs(DS3, SIXAXIS)], same=1)
+    pipeline, rec, _ = await _two_objects_one_after_the_other(identifier)
+    assert len(identifier.same_requests) == 1
+    request = identifier.same_requests[0]
+    assert [name for name, _ in request.earlier] == ["Schwarzes, unregelmäßig geformtes Objekt"]
+    merged = rec.of("identity")[-2:]  # the old entry takes the merged name first, then the object in the hand
+    assert [(m.track_id, m.display_name) for m in merged] == [(1, "Sony DualShock 3"), (2, "Sony DualShock 3")]
+    assert 1 not in pipeline._states
+
+
+async def test_a_different_object_stays_its_own_entry():
+    identifier = FakeIdentifier(script=[obs(DS3, SIXAXIS), obs(I14, I13)], same=None)
+    pipeline, rec, _ = await _two_objects_one_after_the_other(identifier)
+    assert len(identifier.same_requests) == 1 and 1 in pipeline._states
+    assert rec.of("identity")[-1].display_name == "Apple iPhone 14"
+
+
+async def test_two_sides_of_one_controller_merge_into_a_certain_one():
+    identifier = FakeIdentifier(script=[obs(DS3, SIXAXIS), obs(DS3, SIXAXIS)], same=1)
+    _, rec, _ = await _two_objects_one_after_the_other(identifier)
+    assert (rec.of("identity")[-1].display_name, rec.of("identity")[-1].level) == ("Sony DualShock 3", "certain")
+
+
+async def test_objects_in_view_together_are_never_compared():
+    identifier = FakeIdentifier(script=[obs(DS3, SIXAXIS), obs(I14, I13)], same=1)
+    other = trk(5, (900, 200, 1100, 450))
+    hand_on_other = trk(98, (950, 400, 1050, 520), label="hand")
+    pipeline, rec, _ = make([[CUP, HAND]] * 13 + [[CUP, other, hand_on_other]], identifier)
+    await feed(pipeline, sharp_image(boxes=(BOX, (900, 200, 1100, 450))), 40)
+    await pipeline.wait_idle()
+    assert identifier.same_requests == []  # the cup is still in view: the second object cannot be the cup
+
+
+async def test_no_comparison_without_budget():
+    identifier = FakeIdentifier(script=[obs(DS3, SIXAXIS), obs(DS3, SIXAXIS)], same=1)
+    settings = Settings(max_calls_session=2)  # just the two identifications
+    second = trk(2, (420, 210, 690, 490))
+    script = [[CUP, HAND]] * 13 + [[]] * 40 + [[second, HAND]]
+    rec = Recorder()
+    pipeline = Pipeline(settings, FakeDetector(script), identifier, Telemetry(settings, "hybrid", "fake"), None, rec)
+    await feed(pipeline, sharp_image(boxes=(BOX,)), 13)
+    await pipeline.wait_idle()
+    await feed(pipeline, sharp_image(), 40, start=1.3, first_id=13)
+    await feed(pipeline, sharp_image(boxes=(BOX,), mirrored=True), 13, start=5.3, first_id=53)
+    await pipeline.wait_idle()
+    assert identifier.same_requests == []
+
+
+def test_waiting_never_spins_on_a_task_that_has_just_finished():
+    # Found while checking the comparison: a task that finished after wait_idle was woken, but before its own
+    # clean-up ran, made `while self._tasks: await gather(...)` spin forever (awaiting a finished task never yields).
+    import asyncio
+    import threading
+
+    async def scenario():
+        pipeline, _, _ = make([[CUP]], None)
+
+        async def quick():
+            return None
+
+        first = asyncio.create_task(asyncio.sleep(0))
+        pipeline._tasks.add(first)
+        first.add_done_callback(pipeline._tasks.discard)
+
+        def spawn(_):
+            second = asyncio.create_task(quick())
+            pipeline._tasks.add(second)
+            second.add_done_callback(pipeline._tasks.discard)
+
+        first.add_done_callback(spawn)
+        await pipeline.wait_idle()
+
+    worker = threading.Thread(target=lambda: asyncio.run(scenario()), daemon=True)
+    worker.start()
+    worker.join(3)
+    assert not worker.is_alive()

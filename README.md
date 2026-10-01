@@ -82,6 +82,9 @@ Every identified object stays pinned in a sidebar on the right. The one in your 
 its box by a thin green line; the others collapse and open again with a click. An expanded entry shows the
 identification, the hologram and the profile. If it stays *unsure* ("iPhone 14 or 15?"), tap the right candidate:
 it becomes *certain*, marked *von dir bestätigt*, and its profile and hologram follow.
+When a new object gets its first answer, Claude compares it once with the last three objects (small object-only
+crops): if it is one of them seen from another side, the two entries merge into one, and two sides together can make
+it *certain*. Objects in view at the same time are never merged.
 
 - **Hologram:** once an object is at least *likely*, Claude describes its shape as primitives in millimetres (from its
   own knowledge and the object-only crop). The browser builds a true-to-scale model with three.js: neon-green edges,

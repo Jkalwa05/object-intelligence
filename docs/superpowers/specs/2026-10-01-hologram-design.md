@@ -99,3 +99,31 @@ ist, sodass es dann auf sicher steht. Und dann kommt das Hologramm.“
   oder mit je einem Aufruf. Das Hologramm bekommt den zuletzt gesendeten Ausschnitt des Objekts.
 - **Einträge verschmelzen.** Wählst du im Eintrag „Apple iPhone 13“ das iPhone 14, heißt der Eintrag danach so, und
   ein bestehender Eintrag gleichen Namens wird mit ihm zu einem.
+
+## 7. Nachtrag 2026-10-01: dasselbe Objekt zweimal gesehen
+
+Im Live-Test ergab der Controller zwei Einträge. Ein sehr dunkles Bild hieß „Unbekanntes schwarzes Objekt“, kurz
+darauf kam unter neuer Tracking-Nummer der „Sony DualShock 3“. Jonas: „Da muss KI eingreifen und gleiche Artikel
+zusammenfassen.“
+
+- **Vergleich.** Hat ein Objekt sein erstes Ergebnis, fragt die Pipeline Claude genau einmal, ob es eines der bis zu
+  3 zuletzt gesehenen Objekte ist, nur aus einem anderen Winkel oder in anderem Licht.
+  - Claude sieht die Ausschnitte (nur Objekt-Pixel, auf 384 px verkleinert) und die Namen der Einträge.
+  - Antwort: `same_as` (Nummer oder null) und ein kurzer Grund.
+  - Was gerade gleichzeitig im Bild ist, wird nie verglichen.
+  - Der Vergleich zählt zum Budget und landet im Aufruf-Log (`track_id` −3).
+  - Gemessen mit Jonas' Ausschnitten: 0,4–0,5 Cent und 3–5 s pro Vergleich. Das dunkle Objekt wurde dem DualShock 3
+    zugeordnet, das iPhone nicht.
+- **Verschmelzen.** Das Objekt in der Hand übernimmt alles vom früheren:
+  - die Beobachtungen, als eigene Ansichten (`Belief.absorb`), sodass Vorder- und Rückseite zusammen „sicher“
+    ergeben können;
+  - die Aufrufe;
+  - deine Bestätigung.
+
+  Der Server schickt zuerst die Identität des alten Eintrags unter dem gemeinsamen Namen, dann die des Objekts in
+  der Hand. Die Umbenennungslogik des Browsers macht daraus einen Eintrag. Steckbrief und Hologramm folgen dem
+  gemeinsamen Produkt.
+- **Grenze.** Zwei baugleiche Dinge nacheinander kann auch Claude nicht unterscheiden; sie werden zusammengelegt.
+- **Nebenbei gefunden.** Die Test-Hilfe `Pipeline.wait_idle` drehte sich endlos, wenn ein Auftrag gerade fertig, aber
+  noch nicht ausgetragen war. Sie wartet jetzt nur auf laufende Aufträge (Regressionstest). Der echte Betrieb nutzt
+  sie nicht.

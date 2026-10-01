@@ -177,3 +177,21 @@ def test_the_person_can_say_which_candidate_it_is():
     assert b.product() == ("Apple iPhone 15", "Apple iPhone 15", "Smartphone")
     b.add(obs(I14, I15), 2, 1.0)  # a late answer cannot overrule the person
     assert b.snapshot(2).display_name == "Apple iPhone 15" and b.is_final
+
+
+def test_two_sides_of_one_object_count_as_two_views():
+    front, back = Belief("de"), Belief("de")
+    front.add(obs(I14, I13), 1, 1.0)  # each track numbers its own views from 1
+    back.add(obs(I14, I13), 1, 1.0)
+    back.absorb(front)
+    assert back.snapshot(2).level == Level.CERTAIN
+
+
+def test_your_pick_survives_a_merge():
+    picked, other = Belief("de"), Belief("de")
+    picked.add(obs(I14, I15, dist=False, view="x", reason="y"), 1, 1.0)
+    picked.confirm("Apple iPhone 15")
+    other.add(obs(desc="schwarzes Gerät", cat="Gerät"), 1, 1.0)
+    other.absorb(picked)
+    state = other.snapshot(2)
+    assert (state.display_name, state.confirmed) == ("Apple iPhone 15", True)

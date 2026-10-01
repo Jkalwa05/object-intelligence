@@ -119,6 +119,16 @@ describe("the sidebar", () => {
       [["Apple iPhone 14", 14, true]]);
   });
 
+  test("one object seen twice ends up as one entry when the server merges it", async () => {
+    const { sidebarEntries } = await import("./store");
+    let s = applyServerMessage(initialState, { ...named(1, "Schwarzes Gerät", null), level: "category_only" });
+    s = applyServerMessage(s, named(2, "Sony DualShock 3"));
+    // the merge: the old track takes the merged name first, then the object in the hand
+    s = applyServerMessage(s, named(1, "Sony DualShock 3", "certain"));
+    s = applyServerMessage(s, named(2, "Sony DualShock 3", "certain"));
+    expect(sidebarEntries(s).map((e) => [e.name, e.identity.track_id])).toEqual([["Sony DualShock 3", 2]]);
+  });
+
   test("a new name for the same object replaces its entry", async () => {
     const { sidebarEntries } = await import("./store");
     let s = applyServerMessage(initialState, named(1, "Apple iPhone 14"));

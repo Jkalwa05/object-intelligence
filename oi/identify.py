@@ -158,6 +158,17 @@ SHAPE_SCHEMA: dict[str, Any] = {
     "required": ["known", "size_mm", "parts"],
     "additionalProperties": False,
 }
+SAME_PROMPT = """You compare objects a person held up to a camera one after the other. Every image shows only the object; everything else is grey.
+- The first image is the object held now. Then come objects seen earlier in this session, numbered from 1.
+- Decide whether the object held now is the same physical object as one of the earlier ones, possibly seen from another side or angle, or in other light.
+- Answer same_as with that number, or null if it is none of them or you are not sure.
+- reason is one short sentence in {language}."""
+SAME_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"same_as": {"anyOf": [{"type": "integer"}, {"type": "null"}]}, "reason": {"type": "string"}},
+    "required": ["same_as", "reason"],
+    "additionalProperties": False,
+}
 MAX_PARTS = 16
 MAX_MM = 3000.0  # nothing anyone holds up to a webcam is bigger than 3 m
 NEUTRAL_GREY = "#9aa0a6"
@@ -233,6 +244,24 @@ class ShapeResult:
     model: str
 
 
+@dataclass(frozen=True)
+class SameRequest:
+    new_jpeg: bytes  # the object held now (small, object pixels only)
+    earlier: list[tuple[str, bytes]]  # (card name, small crop) of objects seen earlier, numbered from 1
+    language: Lang
+
+
+@dataclass(frozen=True)
+class SameResult:
+    same_as: int | None  # 1-based index into SameRequest.earlier
+    reason: str
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    latency_s: float
+    model: str
+
+
 class IdentifyError(Exception):
     def __init__(self, reason: Literal["refusal", "schema", "timeout", "api", "connection"]) -> None:
         super().__init__(reason)
@@ -249,6 +278,8 @@ class Identifier(Protocol):
     async def describe_product(self, req: ProductRequest) -> ProductResult: ...
 
     async def describe_shape(self, req: ShapeRequest) -> ShapeResult: ...
+
+    async def compare(self, req: SameRequest) -> SameResult: ...
 
 
 def format_history(observations: list[Observation], lang: Lang) -> str:
@@ -272,12 +303,20 @@ def request_text(req: IdentifyRequest) -> str:
     return "\n".join(text)
 
 
+def _image(jpeg: bytes) -> dict[str, Any]:
+    return {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
+                                        "data": base64.standard_b64encode(jpeg).decode()}}
+
+
 def _request(s: Settings, system: str, jpeg: bytes | None, text: str, schema: dict[str, Any]) -> dict[str, Any]:
-    output_config: dict[str, Any] = {"format": {"type": "json_schema", "schema": schema}}
     content: list[dict[str, Any]] = [{"type": "text", "text": text}]
     if jpeg is not None:
-        content.insert(0, {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
-                                                       "data": base64.standard_b64encode(jpeg).decode()}})
+        content.insert(0, _image(jpeg))
+    return _with_content(s, system, content, schema)
+
+
+def _with_content(s: Settings, system: str, content: list[dict[str, Any]], schema: dict[str, Any]) -> dict[str, Any]:
+    output_config: dict[str, Any] = {"format": {"type": "json_schema", "schema": schema}}
     request: dict[str, Any] = {
         "model": s.model,
         "max_tokens": MAX_TOKENS,
@@ -348,6 +387,25 @@ def parse_profile(text: str) -> ProductProfile:
                               released=_clip(released, 80) if released and _clip(released, 80) else None,
                               launch_price=_clip(price, 80) if price and _clip(price, 80) else None,
                               trivia=[_clip(t, 200) for t in data["trivia"] if _clip(t, 200)][:MAX_TRIVIA])
+    except (ValueError, TypeError, AttributeError, KeyError) as error:
+        raise IdentifyError("schema") from error
+
+
+def build_same_request(s: Settings, req: SameRequest) -> dict[str, Any]:
+    content: list[dict[str, Any]] = [{"type": "text", "text": "Held now:"}, _image(req.new_jpeg)]
+    for number, (name, jpeg) in enumerate(req.earlier, start=1):
+        content += [{"type": "text", "text": f"Earlier object {number}: {name}"}, _image(jpeg)]
+    content.append({"type": "text", "text": "Is the object held now one of the earlier ones?"})
+    return _with_content(s, SAME_PROMPT.format(language=_language(req.language)), content, SAME_SCHEMA)
+
+
+def parse_same(text: str, earlier: int) -> tuple[int | None, str]:
+    """(index of the earlier object, reason); an index outside 1..earlier counts as "none of them"."""
+    try:
+        data = json.loads(text)
+        index = data["same_as"]
+        valid = isinstance(index, int) and not isinstance(index, bool) and 1 <= index <= earlier
+        return (index if valid else None), _clip(data.get("reason", ""), 200)
     except (ValueError, TypeError, AttributeError, KeyError) as error:
         raise IdentifyError("schema") from error
 
@@ -453,6 +511,14 @@ class ClaudeIdentifier:
                            cost_usd=cost_usd(self._s.model, usage.input_tokens, usage.output_tokens, self._s.prices),
                            latency_s=latency, model=self._s.model)
 
+    async def compare(self, req: SameRequest) -> SameResult:
+        text, usage, latency = await self._call(build_same_request(self._s, req))
+        same_as, reason = parse_same(text, len(req.earlier))
+        return SameResult(same_as=same_as, reason=reason, input_tokens=usage.input_tokens,
+                          output_tokens=usage.output_tokens,
+                          cost_usd=cost_usd(self._s.model, usage.input_tokens, usage.output_tokens, self._s.prices),
+                          latency_s=latency, model=self._s.model)
+
     async def _call(self, request: dict[str, Any]) -> tuple[str, Any, float]:
         """(answer text, usage, latency); every failure becomes an IdentifyError."""
         client = self._client.with_options(timeout=self._s.claude_timeout_s)
@@ -500,16 +566,19 @@ class FakeIdentifier:
     def __init__(self, script: Sequence[Observation | IdentifyError] | None = None, delay_s: float = 0.0,
                  scene: Sequence[SceneItemWire] | IdentifyError | None = None,
                  profile: ProductProfile | IdentifyError | None = None,
-                 shape: ProductShape | IdentifyError | None = None) -> None:
+                 shape: ProductShape | IdentifyError | None = None,
+                 same: int | IdentifyError | None = None) -> None:
         self._script = list(script) if script is not None else None
         self._delay = delay_s
         self._scene = scene
         self._profile = profile
         self._shape = shape
+        self._same = same
         self.requests: list[IdentifyRequest] = []
         self.scene_requests: list[SceneRequest] = []
         self.product_requests: list[ProductRequest] = []
         self.shape_requests: list[ShapeRequest] = []
+        self.same_requests: list[SameRequest] = []
 
     async def identify(self, req: IdentifyRequest) -> IdentifyResult:
         self.requests.append(req)
@@ -557,6 +626,14 @@ class FakeIdentifier:
         shape = self._shape or ProductShape(known=False, size_mm=None, parts=[])
         return ShapeResult(shape=shape, input_tokens=0, output_tokens=0, cost_usd=0.0, latency_s=self._delay,
                            model=self.model_label)
+
+    async def compare(self, req: SameRequest) -> SameResult:
+        """The scripted answer, or "none of them": the fake never merges on its own."""
+        self.same_requests.append(req)
+        if isinstance(self._same, IdentifyError):
+            raise self._same
+        return SameResult(same_as=self._same, reason="", input_tokens=0, output_tokens=0, cost_usd=0.0, latency_s=0.0,
+                          model=self.model_label)
 
 
 async def choose_identifier(s: Settings, fake: bool,

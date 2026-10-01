@@ -61,6 +61,16 @@ class Belief:
         self._seen: list[tuple[Observation, int, float]] = []  # observation, view id, quality
         self._confirmed: str | None = None  # key of the candidate the person picked
 
+    def absorb(self, other: Belief) -> None:
+        """Another track turned out to be this same object, seen from another side: its observations join as views
+        of their own (renumbered into a fresh block, so they never collide with this track's views), and the person's
+        pick carries over."""
+        views = [view for _, view, _ in [*self._seen, *other._seen]]
+        offset = 10_000 * (1 + max(views, default=0) // 10_000)
+        self._seen.extend((observation, offset + view, q) for observation, view, q in other._seen)
+        if self._confirmed is None:
+            self._confirmed = other._confirmed
+
     def confirm(self, name: str) -> bool:
         """The person says which of the candidates it is (by its display name). It is certain from then on, and no
         later answer can overrule them. False if no candidate has that name."""

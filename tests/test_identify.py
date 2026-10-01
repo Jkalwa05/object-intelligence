@@ -334,3 +334,33 @@ async def test_fake_shape_from_script_or_unknown():
     assert (await FakeIdentifier().describe_shape(SHAPE_REQ)).shape.known is False
     with pytest.raises(IdentifyError):
         await FakeIdentifier(shape=IdentifyError("api")).describe_shape(SHAPE_REQ)
+
+
+# --- the same object seen twice (sub-project 3): one comparison call with small crops -------------------------------
+
+from oi.identify import SameRequest, build_same_request, parse_same  # noqa: E402
+
+
+def test_same_request_shows_the_new_object_and_the_earlier_ones():
+    req = SameRequest(new_jpeg=b"\xff\xd8now", earlier=[("Sony DualShock 3", b"\xff\xd8a"), ("Pendelleuchte", b"\xff\xd8b")],
+                      language="de")
+    request = build_same_request(Settings(), req)
+    content = request["messages"][0]["content"]
+    assert [b["type"] for b in content].count("image") == 3
+    texts = " ".join(b["text"] for b in content if b["type"] == "text")
+    assert "1: Sony DualShock 3" in texts and "2: Pendelleuchte" in texts
+    assert "same physical object" in request["system"] and "German" in request["system"]
+
+
+def test_same_answer_must_name_one_of_the_earlier_objects():
+    assert parse_same(json.dumps({"same_as": 2, "reason": "gleiche Form"}), 2) == (2, "gleiche Form")
+    assert parse_same(json.dumps({"same_as": None, "reason": "anders"}), 2) == (None, "anders")
+    assert parse_same(json.dumps({"same_as": 3, "reason": "?"}), 2)[0] is None  # there is no third one
+    assert parse_same(json.dumps({"same_as": 0, "reason": "?"}), 2)[0] is None
+
+
+async def test_fake_comparison_from_its_script():
+    req = SameRequest(new_jpeg=b"x", earlier=[("A", b"y")], language="de")
+    fake = FakeIdentifier(same=1)
+    assert (await fake.compare(req)).same_as == 1 and fake.same_requests == [req]
+    assert (await FakeIdentifier().compare(req)).same_as is None

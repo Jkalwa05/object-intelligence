@@ -26,7 +26,8 @@ from oi.faces import FaceFinder
 from oi.hands import HandConfirmer, HandFinder
 from oi.focus import FocusSelector, split_tracks
 from oi.identify import (Identifier, IdentifyError, IdentifyRequest, IdentifyResult, ProductRequest, ProductResult,
-                         SceneRequest, SceneResult, ShapeRequest, ShapeResult, format_history, request_text)
+                         SameRequest, SameResult, SceneRequest, SceneResult, ShapeRequest, ShapeResult, format_history,
+                         request_text)
 from oi.ingest import Frame, FrameFormatError, FrameSlot, decode_frame
 from oi.perception import Detector
 from oi.privacy import label_in, mask_people, on_person, privacy_veto
@@ -34,7 +35,7 @@ from oi.profiles import ProfileStore, ShapeStore
 from oi.scene import SceneMap
 from oi.telemetry import CallLog, CallRecord, Telemetry
 from oi.trigger import Decision, TriggerInput, decide
-from oi.views import ReadyCrop, ViewCollector
+from oi.views import ReadyCrop, ViewCollector, encode_for_claude
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +47,8 @@ SCENE_JPEG_QUALITY = 85
 PRIVATE_MEMORY_S = 2.0  # everyone seen in the last 2 s of the calibration is greyed, even if missed in the last frame
 REID_WINDOW_S = 3.0  # an identified object that vanished at most 3 s ago may come back under a new number
 REID_SIZE = 2.0  # ... if its box is at most twice or half as large
+MAX_COMPARED = 3  # a new object is compared with at most the 3 objects seen last
+COMPARE_EDGE = 384  # the crops for a comparison are this small: about 200 tokens each
 
 Box = tuple[float, float, float, float]
 
@@ -66,6 +69,7 @@ class _TrackState:
     forced: bool = False
     paused_sent: bool = False
     last_jpeg: bytes | None = None  # the last crop sent to Claude: the hologram's picture after a confirmation
+    compared: bool = False  # it was checked once whether it is an object seen earlier
 
 
 def _scene_jpeg(image: np.ndarray, private: list[Track]) -> bytes:
@@ -92,6 +96,11 @@ class _Seen:
 
 def _area(box: Box) -> float:
     return max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
+
+
+def _small(jpeg: bytes) -> bytes:
+    image = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+    return encode_for_claude(image, COMPARE_EDGE, 80) if image is not None else jpeg
 
 
 def _shape_msg(product: str, shape: ProductShape) -> ShapeMsg:
@@ -127,6 +136,7 @@ class Pipeline:
         self._background: list[Box] = []  # frozen background boxes in pixels: never the focus
         self._private: list[tuple[float, list[Track]]] = []  # recent person zones during the calibration
         self._identified: _Seen | None = None
+        self._visible_ids: set[int] = set()  # what is in view together can never be the same object
         self._profiles = profiles
         self._profiles_sent: set[str] = set()  # card names whose profile this connection has
         self._profiles_pending: dict[str, set[str]] = {}  # model being fetched -> card names waiting for it
@@ -150,6 +160,7 @@ class Pipeline:
         people = [t for t in tracks if label_in(t.label, people_labels)]
         faces = await asyncio.to_thread(self._faces.find, frame.image) if self._faces is not None else []
         people += faces
+        self._visible_ids = {t.id for t in visible}
         focus_id = self._focus.update(visible, hands, w, h, frame.t, people=people, background=self._background)
         private = people + [t for t in tracks if label_in(t.label, self._s.excluded_labels) and t not in people]
         await self._calibrate_scene(frame, visible, people, private, focus_id)
@@ -210,8 +221,11 @@ class Pipeline:
         await self._emit(self._telemetry.snapshot(frames_dropped))
 
     async def wait_idle(self) -> None:
-        while self._tasks:
-            await asyncio.gather(*list(self._tasks), return_exceptions=True)
+        """Wait until every background call has finished (tests). Only unfinished tasks are awaited: a task that has
+        just finished but is not yet removed from the set would make the loop spin, as awaiting it never yields."""
+        while pending := [task for task in self._tasks if not task.done()]:
+            await asyncio.gather(*pending, return_exceptions=True)
+        await asyncio.sleep(0)  # let the finished tasks remove themselves
 
     async def aclose(self) -> None:
         for task in list(self._tasks):
@@ -375,6 +389,7 @@ class Pipeline:
             if (product := state.belief.product()) is not None:
                 await self._want_profile(product)
                 await self._want_shape(product, ready.jpeg)
+            await self._want_compare(state)
         finally:
             state.in_flight = False
             self._in_flight -= 1
@@ -425,6 +440,78 @@ class Pipeline:
         for name in sorted(self._profiles_pending.pop(req.product, set())):
             self._profiles_sent.add(name)
             await self._emit(_profile_msg(name, result.profile))
+
+    # --- one object seen twice (sub-project 3) ---------------------------------------------------------------------
+
+    async def _want_compare(self, state: _TrackState) -> None:
+        """Once per object, after its first answer: is it one of the objects seen earlier, say the same controller
+        from the other side? Claude compares small crops. What is in view together is never compared."""
+        if self._identifier is None or state.compared or state.last_jpeg is None:
+            return
+        state.compared = True
+        earlier = sorted((s for s in self._states.values() if s is not state and s.belief.observations
+                          and s.last_jpeg is not None and s.track_id not in self._visible_ids),
+                         key=lambda s: -s.last_seen)[:MAX_COMPARED]
+        if not earlier or self._telemetry.calls_session >= self._s.max_calls_session:
+            return
+        self._telemetry.call_started()  # counted now, see _want_profile
+        req = SameRequest(new_jpeg=_small(state.last_jpeg),
+                          earlier=[(self._snapshot(s).display_name, _small(s.last_jpeg or b"")) for s in earlier],
+                          language=self._s.language)
+        task = asyncio.create_task(self._compare(state, earlier, req))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def _compare(self, state: _TrackState, earlier: list[_TrackState], req: SameRequest) -> None:
+        assert self._identifier is not None
+        try:
+            result = await self._identifier.compare(req)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001 - no merge then; both entries simply stay
+            if not isinstance(error, IdentifyError):
+                log.exception("comparing track %s failed", state.track_id)
+            self._telemetry.call_failed()
+            self._write_compare_log(state, req, None, error.reason if isinstance(error, IdentifyError) else "api")
+            return
+        self._telemetry.call_finished(result.latency_s, result.cost_usd)
+        self._write_compare_log(state, req, result, None)
+        if result.same_as is None:
+            return
+        other = earlier[result.same_as - 1]
+        if self._states.get(other.track_id) is not other or other.track_id in self._visible_ids:
+            return  # gone meanwhile, or back in view next to it
+        await self._merge(other, into=state)
+
+    async def _merge(self, other: _TrackState, into: _TrackState) -> None:
+        """One object, two tracks: views, evidence, calls and the person's pick join; the old entry takes the merged
+        name first, so the browser folds it into the entry of the object in the hand."""
+        into.belief.absorb(other.belief)
+        into.calls += other.calls
+        into.last_jpeg = into.last_jpeg or other.last_jpeg
+        del self._states[other.track_id]
+        if self._identified is not None and self._identified.track_id == other.track_id:
+            self._identified = None
+        snapshot = self._snapshot(into)
+        await self._send_identity(other.track_id, "ready", snapshot)
+        await self._send_identity(into.track_id, "analysing" if into.in_flight else "ready", snapshot)
+        if (product := into.belief.product()) is not None:
+            await self._want_profile(product)
+            await self._want_shape(product, into.last_jpeg)
+
+    def _write_compare_log(self, state: _TrackState, req: SameRequest, result: SameResult | None,
+                           error: str | None) -> None:
+        if self._call_log is None:
+            return
+        self._calls_logged += 1
+        names = [name for name, _ in req.earlier]
+        self._call_log.write(CallRecord(
+            n=self._calls_logged, track_id=-3, jpeg=req.new_jpeg, request_text=f"same: track {state.track_id} vs {names}",
+            observation={"same_as": result.same_as, "reason": result.reason} if result else None, error=error,
+            input_tokens=result.input_tokens if result else 0, output_tokens=result.output_tokens if result else 0,
+            cost_usd=result.cost_usd if result else 0.0, latency_s=result.latency_s if result else 0.0,
+            model=result.model if result else (self._identifier.model_label if self._identifier else "–"),
+            level_after=None))
 
     # --- hologram (sub-project 3) ----------------------------------------------------------------------------------
 
