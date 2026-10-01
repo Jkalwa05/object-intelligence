@@ -364,3 +364,51 @@ async def test_fake_comparison_from_its_script():
     fake = FakeIdentifier(same=1)
     assert (await fake.compare(req)).same_as == 1 and fake.same_requests == [req]
     assert (await FakeIdentifier().compare(req)).same_as is None
+
+
+# --- questions by voice (sub-project 4): Claude answers, searching the web when it needs to ------------------------
+
+from oi.identify import AskRequest, build_ask_request, parse_answer  # noqa: E402
+
+ASK_REQ = AskRequest(question="Was kostet das heute gebraucht?", product="Apple iPhone 14", category="Smartphone",
+                     level="likely", facts="Chip: A15 Bionic; Display: 6,1 Zoll", history=[("Wie schwer ist das?",
+                     "Es wiegt 172 Gramm.")], jpeg=b"\xff\xd8crop", language="de")
+
+
+def test_ask_request_has_the_object_the_history_and_the_web_search():
+    request = build_ask_request(Settings(), ASK_REQ)
+    content = request["messages"][0]["content"]
+    assert content[0]["type"] == "image"
+    text = content[-1]["text"]
+    for part in ("Apple iPhone 14", "Smartphone", "A15 Bionic", "Wie schwer ist das?", "172 Gramm",
+                 "Was kostet das heute gebraucht?"):
+        assert part in text
+    assert request["tools"] == [{"type": "web_search_20260209", "name": "web_search", "max_uses": 2}]
+    assert "German" in request["system"] and "output_config" not in request or "format" not in request["output_config"]
+
+
+def test_answer_keeps_the_text_and_the_sources():
+    blocks = [SimpleNamespace(type="server_tool_use"), SimpleNamespace(type="web_search_tool_result"),
+              SimpleNamespace(type="text", text="Gebraucht kostet es etwa 350 Euro.", citations=[
+                  SimpleNamespace(type="web_search_result_location", url="https://a.de/x", title="A"),
+                  SimpleNamespace(type="web_search_result_location", url="https://a.de/x", title="A")]),
+              SimpleNamespace(type="text", text=" Neu war es teurer.", citations=None)]
+    answer, sources = parse_answer(blocks)
+    assert answer == "Gebraucht kostet es etwa 350 Euro. Neu war es teurer."
+    assert [(s.title, s.url) for s in sources] == [("A", "https://a.de/x")]
+
+
+async def test_a_search_adds_its_price():
+    reply = SimpleNamespace(stop_reason="end_turn",
+                            usage=SimpleNamespace(input_tokens=2000, output_tokens=500,
+                                                  server_tool_use=SimpleNamespace(web_search_requests=2)),
+                            content=[SimpleNamespace(type="text", text="Etwa 350 Euro.", citations=None)])
+    result = await ClaudeIdentifier(Settings(), FakeClient(reply=reply)).answer(ASK_REQ)
+    assert result.answer == "Etwa 350 Euro." and result.searches == 2
+    assert result.cost_usd == pytest.approx(0.018 + 0.02)
+
+
+async def test_fake_answers_from_its_script():
+    fake = FakeIdentifier(answer="Es wiegt 172 Gramm.")
+    result = await fake.answer(ASK_REQ)
+    assert (result.answer, fake.ask_requests) == ("Es wiegt 172 Gramm.", [ASK_REQ])

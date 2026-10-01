@@ -279,8 +279,26 @@ class ShapeMsg(_ServerMsg):
         return cls(product=product, status=status, size_mm=shape.size_mm, parts=shape.parts)
 
 
-ServerMsg = Annotated[TracksMsg | IdentityMsg | TelemetryMsg | NoticeMsg | SceneMsg | ProfileMsg | ShapeMsg,
-                      Field(discriminator="type")]
+class Source(_Model):
+    title: str
+    url: str
+
+
+class QuestionMsg(_ServerMsg):
+    """A spoken question about one object and Claude's answer (sub-project 4), shown in that object's entry."""
+
+    type: Literal["question"] = "question"
+    product: str  # the name of the sidebar entry
+    qid: int
+    status: Literal["transcribing", "thinking", "ready", "empty", "error"]
+    question: str
+    answer: str
+    sources: list[Source]
+    line: str  # what the voice reads: the answer
+
+
+ServerMsg = Annotated[TracksMsg | IdentityMsg | TelemetryMsg | NoticeMsg | SceneMsg | ProfileMsg | ShapeMsg
+                      | QuestionMsg, Field(discriminator="type")]
 
 
 class FocusMsg(_Model):
@@ -305,11 +323,22 @@ class ConfirmMsg(_Model):
     name: str
 
 
-ClientMsg = Annotated[FocusMsg | RecheckMsg | RecalibrateMsg | ConfirmMsg, Field(discriminator="type")]
-_client_messages: TypeAdapter[FocusMsg | RecheckMsg | RecalibrateMsg | ConfirmMsg] = TypeAdapter(ClientMsg)
+class AskMsg(_Model):
+    """A question spoken while the space bar was held (sub-project 4): 16-bit PCM in base64 and the target entry."""
+
+    type: Literal["ask"] = "ask"
+    track_id: int | None
+    name: str | None
+    rate: int
+    audio: str
 
 
-def parse_client_message(text: str) -> FocusMsg | RecheckMsg | RecalibrateMsg | ConfirmMsg | None:
+AnyClientMsg = FocusMsg | RecheckMsg | RecalibrateMsg | ConfirmMsg | AskMsg
+ClientMsg = Annotated[AnyClientMsg, Field(discriminator="type")]
+_client_messages: TypeAdapter[AnyClientMsg] = TypeAdapter(ClientMsg)
+
+
+def parse_client_message(text: str) -> AnyClientMsg | None:
     """A browser message, or None for anything malformed or unknown."""
     try:
         return _client_messages.validate_json(text)
@@ -346,5 +375,7 @@ def protocol_examples() -> list[dict]:
                       rotation_deg=(0, 0, 0), color="#9fc4e8", radius_mm=10.0),
             ShapePart(name="Kameralinse", shape="cylinder", size_mm=(12, 2, 12), position_mm=(-22, 60, -4.5),
                       rotation_deg=(90, 0, 0), color="#1b1b1f")])).model_copy(update={"ts": 1.6, "seq": 7}),
+        QuestionMsg(ts=1.7, seq=8, product="Apple iPhone 14", qid=1, status="ready", question="Wie schwer ist das?",
+                    answer="Das iPhone 14 wiegt 172 Gramm.", sources=[], line="Das iPhone 14 wiegt 172 Gramm."),
     ]
     return [m.model_dump(mode="json") for m in messages]

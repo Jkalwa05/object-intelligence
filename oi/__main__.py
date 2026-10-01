@@ -22,6 +22,7 @@ from oi.identify import choose_identifier
 from oi.perception import YoloeDetector
 from oi.profiles import ProfileStore, ShapeStore
 from oi.server import create_app
+from oi.speech import WhisperTranscriber
 
 
 def open_browser_when_ready(url: str, port: int, opener: Callable[[str], object] = webbrowser.open,
@@ -68,8 +69,10 @@ def main(argv: list[str] | None = None) -> None:
     # the fake's "unknown product" answers must never end up in the real caches
     profiles = None if args.fake_claude else ProfileStore(settings.profile_cache)
     shapes = None if args.fake_claude else ShapeStore(settings.shape_cache)
+    transcriber = WhisperTranscriber()
+    transcriber.warm_up()  # loads Whisper in the background, so the first question is quick
     app = create_app(settings, detector, lambda: choose_identifier(settings, args.fake_claude), faces=faces,
-                     hands=HandFinder(), profiles=profiles, shapes=shapes)
+                     hands=HandFinder(), profiles=profiles, shapes=shapes, transcriber=transcriber)
     url = f"http://127.0.0.1:{port}"
     print(f"Object Intelligence: {url}  (Detektor {detector.model_name}, Modell "
           f"{'fake' if args.fake_claude else settings.model})")

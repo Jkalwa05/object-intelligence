@@ -212,5 +212,17 @@
         "radius_mm": null
       }
     ]
+  },
+  {
+    "ts": 1.7,
+    "seq": 8,
+    "type": "question",
+    "product": "Apple iPhone 14",
+    "qid": 1,
+    "status": "ready",
+    "question": "Wie schwer ist das?",
+    "answer": "Das iPhone 14 wiegt 172 Gramm.",
+    "sources": [],
+    "line": "Das iPhone 14 wiegt 172 Gramm."
   }
 ]

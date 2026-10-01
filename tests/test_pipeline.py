@@ -816,3 +816,88 @@ def test_waiting_never_spins_on_a_task_that_has_just_finished():
     worker.start()
     worker.join(3)
     assert not worker.is_alive()
+
+
+# --- sub-project 4: questions by voice -----------------------------------------------------------------------------
+
+def _audio(seconds=1.0):
+    import base64
+    import numpy as np
+    noise = (np.random.default_rng(1).normal(0, 0.05, int(16000 * seconds)) * 32767).astype("<i2")
+    return base64.b64encode(noise.tobytes()).decode()
+
+
+def _asking(identifier, transcriber, settings=None):
+    from oi.profiles import ProfileStore
+    settings = settings or Settings()
+    rec = Recorder()
+    pipeline = Pipeline(settings, FakeDetector([[CUP, HAND]]), identifier, Telemetry(settings, "hybrid", "fake"), None,
+                        rec, profiles=ProfileStore(None), transcriber=transcriber)
+    return pipeline, rec
+
+
+def _ask(track_id=CUP.id, name="Apple iPhone 14", seconds=1.0):
+    from oi.contracts import AskMsg
+    return AskMsg(track_id=track_id, name=name, rate=16000, audio=_audio(seconds))
+
+
+async def test_a_spoken_question_gets_an_answer_about_the_object():
+    from oi.speech import FakeTranscriber
+    identifier = FakeIdentifier(script=[obs(I14, I13)], answer="Es wiegt 172 Gramm.")
+    pipeline, rec = _asking(identifier, FakeTranscriber("Wie schwer ist das?"))
+    await _identify_cup(pipeline)
+    await pipeline.on_client_message(_ask())
+    await pipeline.wait_idle()
+    questions = rec.of("question")
+    assert [q.status for q in questions] == ["transcribing", "thinking", "ready"]
+    last = questions[-1]
+    assert (last.product, last.question, last.answer, last.line) == (
+        "Apple iPhone 14", "Wie schwer ist das?", "Es wiegt 172 Gramm.", "Es wiegt 172 Gramm.")
+    request = identifier.ask_requests[0]
+    assert (request.product, request.category, request.level) == ("Apple iPhone 14", "Smartphone", "likely")
+    assert request.jpeg == identifier.requests[0].jpeg  # the object-only crop, never the whole picture
+
+
+async def test_a_follow_up_question_knows_the_earlier_answer():
+    from oi.speech import FakeTranscriber
+    identifier = FakeIdentifier(script=[obs(I14, I13)], answer="Es wiegt 172 Gramm.")
+    pipeline, _ = _asking(identifier, FakeTranscriber("Wie schwer ist das?"))
+    await _identify_cup(pipeline)
+    await pipeline.on_client_message(_ask())
+    await pipeline.wait_idle()
+    await pipeline.on_client_message(_ask())
+    await pipeline.wait_idle()
+    assert identifier.ask_requests[1].history == [("Wie schwer ist das?", "Es wiegt 172 Gramm.")]
+
+
+async def test_silence_or_a_tap_is_no_question():
+    from oi.speech import FakeTranscriber
+    identifier = FakeIdentifier(script=[obs(I14, I13)])
+    pipeline, rec = _asking(identifier, FakeTranscriber(""))
+    await _identify_cup(pipeline)
+    await pipeline.on_client_message(_ask())
+    await pipeline.on_client_message(_ask(seconds=0.1))
+    await pipeline.wait_idle()
+    assert [q.status for q in rec.of("question")] == ["transcribing", "empty", "transcribing", "empty"]
+    assert identifier.ask_requests == []
+
+
+async def test_no_answer_once_the_budget_is_used_up():
+    from oi.speech import FakeTranscriber
+    identifier = FakeIdentifier(script=[obs(I14, I13)], answer="x")
+    pipeline, rec = _asking(identifier, FakeTranscriber("Wie schwer ist das?"), Settings(max_calls_session=1))
+    await _identify_cup(pipeline)
+    await pipeline.on_client_message(_ask())
+    await pipeline.wait_idle()
+    assert rec.of("question")[-1].status == "error" and identifier.ask_requests == []
+
+
+async def test_an_entry_whose_object_is_gone_can_still_be_asked_about():
+    from oi.speech import FakeTranscriber
+    identifier = FakeIdentifier(answer="Eine Pendelleuchte hängt an der Decke.")
+    pipeline, rec = _asking(identifier, FakeTranscriber("Was ist das?"))
+    await pipeline.on_client_message(_ask(track_id=777, name="Pendelleuchte"))
+    await pipeline.wait_idle()
+    request = identifier.ask_requests[0]
+    assert (request.product, request.category, request.jpeg) == ("Pendelleuchte", None, None)
+    assert rec.of("question")[-1].product == "Pendelleuchte"

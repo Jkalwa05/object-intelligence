@@ -14,6 +14,7 @@ dependencies = [
     "python-dotenv",
     "lap>=0.5.12",
     "pyobjc-framework-vision>=12.2.2",
+    "mlx-whisper>=0.4.3",
 ]
 
 [dependency-groups]

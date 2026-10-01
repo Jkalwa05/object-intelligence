@@ -24,7 +24,7 @@ import anthropic
 from oi import lines
 from oi.config import Lang, Settings
 from oi.contracts import (Candidate, Depth, NextView, Observation, ProductProfile, ProductShape, ProfileFact,
-                          SceneItemWire, ShapePart)
+                          SceneItemWire, ShapePart, Source)
 
 MAX_TOKENS = 16000
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
@@ -169,6 +169,13 @@ SAME_SCHEMA: dict[str, Any] = {
     "required": ["same_as", "reason"],
     "additionalProperties": False,
 }
+ASK_PROMPT = """You answer a spoken question about an object a person holds up to a camera, as the voice of a heads-up display.
+- Answer in {language}, in one to three short sentences that sound natural when read aloud. No lists, no markdown, no URLs.
+- Use what you know about this product. Search the web only when the question needs current information (today's price, availability, recent news) or a fact you are not sure of.
+- If you are not sure, say so briefly instead of guessing.
+- If the question is not about the object, answer it anyway, briefly."""
+WEB_SEARCH = {"type": "web_search_20260209", "name": "web_search", "max_uses": 2}
+SEARCH_PRICE_USD = 0.01  # 10 dollars per 1000 searches
 MAX_PARTS = 16
 MAX_MM = 3000.0  # nothing anyone holds up to a webcam is bigger than 3 m
 NEUTRAL_GREY = "#9aa0a6"
@@ -262,6 +269,30 @@ class SameResult:
     model: str
 
 
+@dataclass(frozen=True)
+class AskRequest:
+    question: str
+    product: str | None  # the entry's name, None if no object is meant
+    category: str | None
+    level: str | None
+    facts: str  # the profile's facts as one line, "" if there is none
+    history: list[tuple[str, str]]  # earlier questions and answers about this object
+    jpeg: bytes | None  # the object-only crop of the identification
+    language: Lang
+
+
+@dataclass(frozen=True)
+class AskResult:
+    answer: str
+    sources: list[Source]
+    searches: int
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    latency_s: float
+    model: str
+
+
 class IdentifyError(Exception):
     def __init__(self, reason: Literal["refusal", "schema", "timeout", "api", "connection"]) -> None:
         super().__init__(reason)
@@ -280,6 +311,8 @@ class Identifier(Protocol):
     async def describe_shape(self, req: ShapeRequest) -> ShapeResult: ...
 
     async def compare(self, req: SameRequest) -> SameResult: ...
+
+    async def answer(self, req: AskRequest) -> AskResult: ...
 
 
 def format_history(observations: list[Observation], lang: Lang) -> str:
@@ -315,8 +348,10 @@ def _request(s: Settings, system: str, jpeg: bytes | None, text: str, schema: di
     return _with_content(s, system, content, schema)
 
 
-def _with_content(s: Settings, system: str, content: list[dict[str, Any]], schema: dict[str, Any]) -> dict[str, Any]:
-    output_config: dict[str, Any] = {"format": {"type": "json_schema", "schema": schema}}
+def _with_content(s: Settings, system: str, content: list[dict[str, Any]], schema: dict[str, Any] | None
+                  ) -> dict[str, Any]:
+    """`schema=None`: a free-text answer (questions), no structured output."""
+    output_config: dict[str, Any] = {"format": {"type": "json_schema", "schema": schema}} if schema else {}
     request: dict[str, Any] = {
         "model": s.model,
         "max_tokens": MAX_TOKENS,
@@ -389,6 +424,37 @@ def parse_profile(text: str) -> ProductProfile:
                               trivia=[_clip(t, 200) for t in data["trivia"] if _clip(t, 200)][:MAX_TRIVIA])
     except (ValueError, TypeError, AttributeError, KeyError) as error:
         raise IdentifyError("schema") from error
+
+
+def build_ask_request(s: Settings, req: AskRequest) -> dict[str, Any]:
+    lines_ = [f"Object: {req.product} (category: {req.category or 'unknown'}, identification: {req.level or 'unknown'})"
+              if req.product else "Object: none in particular"]
+    if req.facts:
+        lines_.append(f"Known facts: {req.facts}")
+    if req.history:
+        lines_.append("Earlier in this conversation:")
+        lines_ += [f"Q: {q}\nA: {a}" for q, a in req.history]
+    lines_.append(f"Question: {req.question}")
+    content: list[dict[str, Any]] = [{"type": "text", "text": "\n".join(lines_)}]
+    if req.jpeg is not None:
+        content.insert(0, _image(req.jpeg))
+    request = _with_content(s, ASK_PROMPT.format(language=_language(req.language)), content, None)
+    request["tools"] = [dict(WEB_SEARCH)]
+    if not request.get("output_config"):
+        request.pop("output_config", None)
+    return request
+
+
+def parse_answer(blocks: list[Any]) -> tuple[str, list[Source]]:
+    """All text of the answer, and the distinct pages the web search cited."""
+    text = "".join(getattr(b, "text", "") for b in blocks if getattr(b, "type", None) == "text")
+    sources: dict[str, Source] = {}
+    for block in blocks:
+        for citation in getattr(block, "citations", None) or []:
+            url = getattr(citation, "url", None)
+            if url and url not in sources:
+                sources[url] = Source(title=_clip(getattr(citation, "title", "") or url, 80), url=url)
+    return " ".join(text.split()), list(sources.values())
 
 
 def build_same_request(s: Settings, req: SameRequest) -> dict[str, Any]:
@@ -519,8 +585,26 @@ class ClaudeIdentifier:
                           cost_usd=cost_usd(self._s.model, usage.input_tokens, usage.output_tokens, self._s.prices),
                           latency_s=latency, model=self._s.model)
 
+    async def answer(self, req: AskRequest) -> AskResult:
+        response, latency = await self._create(build_ask_request(self._s, req))
+        answer, sources = parse_answer(response.content)
+        if not answer:
+            raise IdentifyError("schema")
+        usage = response.usage
+        searches = int(getattr(getattr(usage, "server_tool_use", None), "web_search_requests", 0) or 0)
+        tokens = cost_usd(self._s.model, usage.input_tokens, usage.output_tokens, self._s.prices)
+        return AskResult(answer=answer, sources=sources, searches=searches, input_tokens=usage.input_tokens,
+                         output_tokens=usage.output_tokens, cost_usd=tokens + searches * SEARCH_PRICE_USD,
+                         latency_s=latency, model=self._s.model)
+
     async def _call(self, request: dict[str, Any]) -> tuple[str, Any, float]:
         """(answer text, usage, latency); every failure becomes an IdentifyError."""
+        response, latency = await self._create(request)
+        text = next((block.text for block in response.content if getattr(block, "type", None) == "text"), "")
+        return text, response.usage, latency
+
+    async def _create(self, request: dict[str, Any]) -> tuple[Any, float]:
+        """(response, latency); every failure becomes an IdentifyError."""
         client = self._client.with_options(timeout=self._s.claude_timeout_s)
         started = time.monotonic()
         try:
@@ -539,8 +623,7 @@ class ClaudeIdentifier:
             raise IdentifyError("refusal")
         if response.stop_reason == "max_tokens":
             raise IdentifyError("schema")
-        text = next((block.text for block in response.content if getattr(block, "type", None) == "text"), "")
-        return text, response.usage, latency
+        return response, latency
 
 
 def canned_observation(coarse_label: str, lang: Lang) -> Observation:
@@ -567,18 +650,20 @@ class FakeIdentifier:
                  scene: Sequence[SceneItemWire] | IdentifyError | None = None,
                  profile: ProductProfile | IdentifyError | None = None,
                  shape: ProductShape | IdentifyError | None = None,
-                 same: int | IdentifyError | None = None) -> None:
+                 same: int | IdentifyError | None = None, answer: str | IdentifyError | None = None) -> None:
         self._script = list(script) if script is not None else None
         self._delay = delay_s
         self._scene = scene
         self._profile = profile
         self._shape = shape
         self._same = same
+        self._answer = answer
         self.requests: list[IdentifyRequest] = []
         self.scene_requests: list[SceneRequest] = []
         self.product_requests: list[ProductRequest] = []
         self.shape_requests: list[ShapeRequest] = []
         self.same_requests: list[SameRequest] = []
+        self.ask_requests: list[AskRequest] = []
 
     async def identify(self, req: IdentifyRequest) -> IdentifyResult:
         self.requests.append(req)
@@ -634,6 +719,14 @@ class FakeIdentifier:
             raise self._same
         return SameResult(same_as=self._same, reason="", input_tokens=0, output_tokens=0, cost_usd=0.0, latency_s=0.0,
                           model=self.model_label)
+
+    async def answer(self, req: AskRequest) -> AskResult:
+        """The scripted answer, or a plain "I don't know"."""
+        self.ask_requests.append(req)
+        if isinstance(self._answer, IdentifyError):
+            raise self._answer
+        return AskResult(answer=self._answer or "Dazu weiß ich gerade nichts.", sources=[], searches=0,
+                         input_tokens=0, output_tokens=0, cost_usd=0.0, latency_s=0.0, model=self.model_label)
 
 
 async def choose_identifier(s: Settings, fake: bool,

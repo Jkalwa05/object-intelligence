@@ -11,7 +11,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import cv2
 import numpy as np
@@ -19,20 +19,21 @@ import numpy as np
 from oi import appearance, lines
 from oi.belief import Belief, Product
 from oi.config import Settings
-from oi.contracts import (BeliefState, ConfirmMsg, FocusMsg, IdentityMsg, Level, NoticeMsg, ProductProfile, ProductShape,
-                          ProfileMsg, RecalibrateMsg, RecheckMsg, SceneItemWire, SceneMsg, ServerMsg, ShapeMsg, Status,
-                          Track, TracksMsg, WireTrack)
+from oi.contracts import (AnyClientMsg, AskMsg, BeliefState, ConfirmMsg, FocusMsg, IdentityMsg, Level, NoticeMsg,
+                          ProductProfile, ProductShape, ProfileMsg, QuestionMsg, RecalibrateMsg, SceneItemWire, SceneMsg,
+                          ServerMsg, ShapeMsg, Status, Track, TracksMsg, WireTrack)
 from oi.faces import FaceFinder
 from oi.hands import HandConfirmer, HandFinder
 from oi.focus import FocusSelector, split_tracks
-from oi.identify import (Identifier, IdentifyError, IdentifyRequest, IdentifyResult, ProductRequest, ProductResult,
-                         SameRequest, SameResult, SceneRequest, SceneResult, ShapeRequest, ShapeResult, format_history,
-                         request_text)
+from oi.identify import (AskRequest, AskResult, Identifier, IdentifyError, IdentifyRequest, IdentifyResult,
+                         ProductRequest, ProductResult, SameRequest, SameResult, SceneRequest, SceneResult, ShapeRequest,
+                         ShapeResult, format_history, request_text)
 from oi.ingest import Frame, FrameFormatError, FrameSlot, decode_frame
 from oi.perception import Detector
 from oi.privacy import label_in, mask_people, on_person, privacy_veto
 from oi.profiles import ProfileStore, ShapeStore
 from oi.scene import SceneMap
+from oi.speech import RATE, Transcriber, decode_pcm
 from oi.telemetry import CallLog, CallRecord, Telemetry
 from oi.trigger import Decision, TriggerInput, decide
 from oi.views import ReadyCrop, ViewCollector, encode_for_claude
@@ -49,6 +50,8 @@ REID_WINDOW_S = 3.0  # an identified object that vanished at most 3 s ago may co
 REID_SIZE = 2.0  # ... if its box is at most twice or half as large
 MAX_COMPARED = 3  # a new object is compared with at most the 3 objects seen last
 COMPARE_EDGE = 384  # the crops for a comparison are this small: about 200 tokens each
+MIN_QUESTION_S = 0.3  # shorter is a tap of the space bar, not a question
+MAX_HISTORY = 6  # earlier questions and answers about the same object that Claude gets as context
 
 Box = tuple[float, float, float, float]
 
@@ -70,6 +73,7 @@ class _TrackState:
     paused_sent: bool = False
     last_jpeg: bytes | None = None  # the last crop sent to Claude: the hologram's picture after a confirmation
     compared: bool = False  # it was checked once whether it is an object seen earlier
+    qa: list[tuple[str, str]] = field(default_factory=list)  # questions and answers about this object
 
 
 def _scene_jpeg(image: np.ndarray, private: list[Track]) -> bytes:
@@ -117,7 +121,7 @@ class Pipeline:
     def __init__(self, settings: Settings, detector: Detector, identifier: Identifier | None, telemetry: Telemetry,
                  call_log: CallLog | None, emit: Emit, faces: FaceFinder | None = None,
                  hands: HandFinder | None = None, profiles: ProfileStore | None = None,
-                 shapes: ShapeStore | None = None) -> None:
+                 shapes: ShapeStore | None = None, transcriber: Transcriber | None = None) -> None:
         self._s = settings
         self._detector = detector
         self._identifier = identifier
@@ -137,6 +141,8 @@ class Pipeline:
         self._private: list[tuple[float, list[Track]]] = []  # recent person zones during the calibration
         self._identified: _Seen | None = None
         self._visible_ids: set[int] = set()  # what is in view together can never be the same object
+        self._transcriber = transcriber
+        self._questions = 0
         self._profiles = profiles
         self._profiles_sent: set[str] = set()  # card names whose profile this connection has
         self._profiles_pending: dict[str, set[str]] = {}  # model being fetched -> card names waiting for it
@@ -190,7 +196,7 @@ class Pipeline:
                                    faces=[WireTrack.from_track(f, w, h).box for f in faces],
                                    hands=[WireTrack.from_track(hand, w, h) for hand in hands]))
 
-    async def on_client_message(self, message: FocusMsg | RecheckMsg | RecalibrateMsg | ConfirmMsg) -> None:
+    async def on_client_message(self, message: AnyClientMsg) -> None:
         if isinstance(message, RecalibrateMsg):
             self._scene.reset()
             self._scene_announced = False
@@ -201,6 +207,11 @@ class Pipeline:
             self._focus.pin(message.track_id)
         elif isinstance(message, ConfirmMsg):
             await self._confirm(message)
+        elif isinstance(message, AskMsg):
+            self._questions += 1
+            task = asyncio.create_task(self._ask(self._questions, message))
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
         elif (state := self._states.get(message.track_id)) is not None:
             state.forced = True
             state.collector.force_next()
@@ -290,6 +301,76 @@ class Pipeline:
         self._call_log.write(CallRecord(
             n=self._calls_logged, track_id=0, jpeg=jpeg, request_text="scene",
             observation={"items": [i.model_dump(mode="json") for i in result.items]} if result else None, error=error,
+            input_tokens=result.input_tokens if result else 0, output_tokens=result.output_tokens if result else 0,
+            cost_usd=result.cost_usd if result else 0.0, latency_s=result.latency_s if result else 0.0,
+            model=result.model if result else (self._identifier.model_label if self._identifier else "–"),
+            level_after=None))
+
+    # --- questions by voice (sub-project 4) -------------------------------------------------------------------------
+
+    async def _ask(self, qid: int, message: AskMsg) -> None:
+        """Understand the spoken question on the Mac, then let Claude answer it about the object, searching the web
+        only when it needs to. Every step shows up in the object's entry."""
+        lang = self._s.language
+        state = self._states.get(message.track_id) if message.track_id is not None else None
+        name = message.name or (self._snapshot(state).display_name if state else "")
+        base: dict = {"product": name, "qid": qid, "question": "", "answer": "", "sources": [], "line": ""}
+        await self._emit(QuestionMsg(status="transcribing", **base))
+        samples = decode_pcm(message.audio, message.rate)
+        text = ""
+        if self._transcriber is not None and len(samples) >= MIN_QUESTION_S * RATE:
+            text = await self._transcriber.transcribe(samples, lang)
+        if not text:
+            await self._emit(QuestionMsg(status="empty", **base))
+            return
+        base["question"] = text
+        if self._identifier is None or self._telemetry.calls_session >= self._s.max_calls_session:
+            await self._emit(QuestionMsg(status="error", **{**base, "answer": lines.paused_line(lang)}))
+            return
+        await self._emit(QuestionMsg(status="thinking", **base))
+        self._telemetry.call_started()
+        request = self._ask_request(text, name, state)
+        try:
+            result = await self._identifier.answer(request)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001 - the entry says so
+            if not isinstance(error, IdentifyError):
+                log.exception("answering a question failed")
+            self._telemetry.call_failed()
+            self._write_ask_log(request, None, error.reason if isinstance(error, IdentifyError) else "api")
+            await self._emit(QuestionMsg(status="error", **{**base, "answer": lines.error_line(lang)}))
+            return
+        self._telemetry.call_finished(result.latency_s, result.cost_usd)
+        self._write_ask_log(request, result, None)
+        if state is not None:
+            state.qa.append((text, result.answer))
+        await self._emit(QuestionMsg(status="ready", **{**base, "answer": result.answer, "sources": result.sources,
+                                                         "line": result.answer}))
+
+    def _ask_request(self, question: str, name: str, state: _TrackState | None) -> AskRequest:
+        lang = self._s.language
+        if state is None or not state.belief.observations:
+            return AskRequest(question=question, product=name or None, category=None, level=None, facts="",
+                              history=[], jpeg=None, language=lang)
+        snapshot = self._snapshot(state)
+        product = state.belief.product()
+        profile = self._profiles.get(product.model, lang) if product and self._profiles else None
+        facts = "; ".join(f"{f.label}: {f.value}" for f in profile.facts) if profile and profile.known else ""
+        return AskRequest(question=question, product=name or snapshot.display_name,
+                          category=state.belief.observations[-1].category,
+                          level=str(snapshot.level) if snapshot.level else None, facts=facts,
+                          history=state.qa[-MAX_HISTORY:], jpeg=state.last_jpeg, language=lang)
+
+    def _write_ask_log(self, request: AskRequest, result: AskResult | None, error: str | None) -> None:
+        if self._call_log is None:
+            return
+        self._calls_logged += 1
+        self._call_log.write(CallRecord(
+            n=self._calls_logged, track_id=-4, jpeg=request.jpeg or b"",
+            request_text=f"ask about {request.product}: {request.question}",
+            observation={"answer": result.answer, "sources": [s.model_dump() for s in result.sources],
+                         "searches": result.searches} if result else None, error=error,
             input_tokens=result.input_tokens if result else 0, output_tokens=result.output_tokens if result else 0,
             cost_usd=result.cost_usd if result else 0.0, latency_s=result.latency_s if result else 0.0,
             model=result.model if result else (self._identifier.model_label if self._identifier else "–"),
@@ -488,6 +569,7 @@ class Pipeline:
         name first, so the browser folds it into the entry of the object in the hand."""
         into.belief.absorb(other.belief)
         into.calls += other.calls
+        into.qa = other.qa + into.qa
         into.last_jpeg = into.last_jpeg or other.last_jpeg
         del self._states[other.track_id]
         if self._identified is not None and self._identified.track_id == other.track_id:

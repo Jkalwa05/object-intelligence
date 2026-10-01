@@ -93,3 +93,14 @@ def test_confirm_message_from_the_browser():
         track_id=14, name="Apple iPhone 14")
     assert parse_client_message('{"type":"confirm","track_id":14}') is None
     assert "confirmed" in IdentityMsg.model_fields
+
+
+def test_question_messages():
+    from oi.contracts import AskMsg, QuestionMsg, Source
+    ask = parse_client_message('{"type":"ask","track_id":14,"name":"Apple iPhone 14","rate":16000,"audio":"AAA="}')
+    assert ask == AskMsg(track_id=14, name="Apple iPhone 14", rate=16000, audio="AAA=")
+    assert parse_client_message('{"type":"ask","track_id":null,"name":null,"rate":16000,"audio":""}') is not None
+    message = QuestionMsg(product="Apple iPhone 14", qid=1, status="ready", question="Wie schwer ist das?",
+                          answer="Es wiegt 172 Gramm.", sources=[Source(title="Apple", url="https://apple.com")],
+                          line="Es wiegt 172 Gramm.")
+    assert message.model_dump(mode="json")["sources"] == [{"title": "Apple", "url": "https://apple.com"}]
