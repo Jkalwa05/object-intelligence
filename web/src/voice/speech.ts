@@ -1,4 +1,4 @@
-// When does the voice speak (spec §3)? Only for the focus object, only new lines, hints at most every 5 s.
+// When does the voice speak (spec §3)? Only for the focus object and only new lines. It is off until M is pressed.
 
 import type { Lang } from "../protocol";
 
@@ -12,21 +12,16 @@ export function pickVoice<V extends { name: string; lang: string }>(voices: V[],
   return voices.find((v) => v.lang.toLowerCase().startsWith(lang) && !NOVELTY_VOICES.has(baseName(v.name))) ?? null;
 }
 
-const HINT_INTERVAL_MS = 5000;
-
 export interface SpeechEvent {
   trackId: number;
   line: string;
-  kind: "result" | "hint";
 }
 
 export class SpeechGate {
   private spoken = new Map<number, Set<string>>();
-  private lastHintAt = Number.NEGATIVE_INFINITY;
 
   reset(): void {
     this.spoken.clear();
-    this.lastHintAt = Number.NEGATIVE_INFINITY;
   }
 
   // The tracker gave the same object a new number: what was said about it stays said.
@@ -35,13 +30,8 @@ export class SpeechGate {
   }
 
   // Returns the line to speak now, or null.
-  consider(event: SpeechEvent, now: number, focusId: number | null, muted: boolean): string | null {
+  consider(event: SpeechEvent, focusId: number | null, muted: boolean): string | null {
     if (muted || !event.line || event.trackId !== focusId) return null;
-    if (event.kind === "hint") {
-      if (now - this.lastHintAt < HINT_INTERVAL_MS) return null;
-      this.lastHintAt = now;
-      return event.line;
-    }
     const lines = this.spoken.get(event.trackId) ?? new Set<string>();
     if (lines.has(event.line)) return null;
     lines.add(event.line);

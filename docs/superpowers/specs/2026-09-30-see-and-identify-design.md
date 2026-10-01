@@ -1,7 +1,7 @@
 # Object Intelligence, Teilprojekt 1: Sehen & Identifizieren
 
 Stand: 2026-10-01 · Status: **abgeschlossen** (auf `main`, abgenommen durch Jonas' Live-Test), Anpassungen nach den
-Live-Tests in §8 bis §11
+Live-Tests in §8 bis §12
 
 Object Intelligence ist ein voll funktionsfähiges Programm und Portfolio-Projekt: Man hält einen beliebigen Gegenstand vor die
 Mac-Kamera, und das System sagt, *was* es ist und *wie sicher* es ist, zeigt ein 3D-Modell und beantwortet Fragen.
@@ -491,3 +491,22 @@ Im Live-Test bekam das iPhone in 8 Minuten 10 Tracking-Nummern. Jede Nummer bega
   zufrieden“). Die formale Checkliste (`docs/acceptance/sp1-checklist.md`) wurde auf seinen Wunsch nicht einzeln
   abgehakt. „Wissen mit Quellen“ ist gestrichen; Teilprojekt 2 wurde noch in derselben Nacht als Produkt-Steckbrief
   ohne Quellen gebaut (eigene Spec). Weiter geht es mit Teilprojekt 3 (3D).
+
+## 12. Nachtrag 2026-10-01: T-Shirt, keine Hinweise, Stimme aus
+
+Nach Jonas' Test mit Steckbrief: „Der nimmt immer mein T-Shirt als Objekt“, „das Reden können wir abschalten“,
+„dieses ‚Bitte ganz ins Bild‘ ist Quatsch“.
+
+- **T-Shirt.** Gemessen an seinem Bild erkennt YOLOE unten eine große Region aus T-Shirt, Schultern und Arm (Label
+  „assemble“, 16 % des Bildes). Die Hand vor der Brust legt 7 Gelenkpunkte darauf, die Region ist nur 1,3-mal so
+  groß wie die Hand und liegt nur zu 44 % in der Körperzone. Sie galt also als gehalten und schlug als größere
+  Fläche sogar das iPhone.
+  - Apples Personen-Segmentierung hilft nicht: Sie zählt das gehaltene iPhone zu 100 % zur Person.
+  - Neue Regel (`privacy.worn`): Liegt etwas zu mindestens 25 % in einer Körperzone und reicht bis an den unteren
+    Bildrand (innerhalb von 2 % der Bildhöhe), ist es getragen. Getragenes ist nie gehalten und nie Fokus. Etwas, das
+    vor der Brust gehalten wird, endet über dem Rand und zählt weiter.
+- **Keine Hinweise mehr.** Die Hinweise „Bitte ganz ins Bild“, „Bitte etwas näher“, „Personen und Gesichter …“ und
+  „Halt es bitte tiefer …“ sind entfernt, ebenso das Feld `tracks.hint`. Ob das Objekt eine Box bekommt, ist die
+  Rückmeldung. Der Prüfgrund erscheint nur noch in der Telemetrie (Taste D).
+- **Stimme aus.** Die Stimme ist beim Start aus und wird mit Taste M eingeschaltet. Dann steht unten links
+  „Stimme an (M)“.

@@ -17,7 +17,7 @@ test("incomplete or unknown messages are rejected", () => {
 });
 
 test("tracks need the hand outlines and the scene its naming flag", () => {
-  const tracks = { type: "tracks", ts: 1, seq: 1, frame_id: 1, w: 1280, h: 720, focus_id: null, tracks: [], hint: null,
+  const tracks = { type: "tracks", ts: 1, seq: 1, frame_id: 1, w: 1280, h: 720, focus_id: null, tracks: [],
     faces: [] };
   expect(isServerMsg(tracks)).toBe(false);
   expect(isServerMsg({ ...tracks, hands: [] })).toBe(true);

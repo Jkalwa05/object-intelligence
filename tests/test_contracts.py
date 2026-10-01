@@ -27,7 +27,8 @@ def test_wire_track_is_normalized():
 
 
 def test_server_message_dump_has_type():
-    d = TracksMsg(frame_id=1, w=1280, h=720, focus_id=None, tracks=[], hint=None).model_dump(mode="json")
+    d = TracksMsg(frame_id=1, w=1280, h=720, focus_id=None, tracks=[]).model_dump(mode="json")
+    assert "hint" not in d  # no hints: the box itself is the feedback
     assert d["type"] == "tracks" and d["seq"] == 0 and d["ts"] == 0.0
 
 
@@ -57,9 +58,9 @@ def test_scene_naming_and_hand_outlines_travel_to_the_browser():
     assert SceneMsg(calibrating=False, naming=True, items=[]).model_dump(mode="json")["naming"] is True
     hand = WireTrack(id=-101, box=(0.4, 0.5, 0.6, 0.9), polygon=[(0.4, 0.5), (0.6, 0.5), (0.5, 0.9)], label="hand",
                      score=1.0)
-    message = TracksMsg(frame_id=1, w=1280, h=720, focus_id=None, tracks=[], hint=None, hands=[hand])
+    message = TracksMsg(frame_id=1, w=1280, h=720, focus_id=None, tracks=[], hands=[hand])
     assert message.model_dump(mode="json")["hands"][0]["polygon"][2] == [0.5, 0.9]
-    assert TracksMsg(frame_id=1, w=1280, h=720, focus_id=None, tracks=[], hint=None).hands == []
+    assert TracksMsg(frame_id=1, w=1280, h=720, focus_id=None, tracks=[]).hands == []
 
 
 def test_profile_message_travels():

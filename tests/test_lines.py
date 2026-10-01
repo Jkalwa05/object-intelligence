@@ -43,17 +43,12 @@ def test_category_line():
     assert lines.line_category("red ceramic mug", "en") == "Red ceramic mug, I can't recognize a specific product."
 
 
-@pytest.mark.parametrize("reason,de,en", [
-    ("cut", "Bitte ganz ins Bild.", "Please bring it fully into view."),
-    ("small", "Bitte etwas näher.", "Please come a bit closer."),
-])
-def test_hint_lines(reason, de, en):
-    assert (lines.hint_line(reason, "de"), lines.hint_line(reason, "en")) == (de, en)
-
-
-def test_nobody_is_asked_to_hold_still():
-    assert "blurry" not in lines._HINT_KEYS  # a snapshot is taken from the video instead
-    assert all("ruhig" not in text and "still" not in text for texts in lines._TEXTS.values() for text in texts.values())
+def test_there_are_no_hints():
+    # Live test 2026-10-01: "ich merk wohl selber, wenn ich keine Box um den Gegenstand bekomme". The box is the feedback.
+    texts = " ".join(text for texts in lines._TEXTS.values() for text in texts.values())
+    assert not hasattr(lines, "hint_line")
+    for nag in ("ganz ins Bild", "näher", "tiefer", "ruhig", "fully into view", "closer", "lower", "still"):
+        assert nag not in texts
 
 
 def test_status_and_notice_texts():

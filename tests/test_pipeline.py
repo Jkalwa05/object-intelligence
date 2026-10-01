@@ -121,14 +121,12 @@ async def test_identify_error_then_retry_on_new_view():
     assert rec.of("identity")[-1].status == "ready" and len(identifier.requests) == 2
 
 
-async def test_edge_object_gets_full_view_hint():
+async def test_an_object_cut_off_by_the_edge_is_not_sent():
     edge_box = (5, 200, 305, 500)
     identifier = FakeIdentifier(script=[obs(I14)])
     pipeline, rec, _ = make([[trk(1, edge_box), trk(99, (50, 400, 250, 520), label="hand")]], identifier)
     await feed(pipeline, sharp_image(boxes=(edge_box,)), 22)
-    hints = [m.hint for m in rec.of("tracks")]
-    assert hints[19] is None and hints[20] == "Bitte ganz ins Bild."
-    assert identifier.requests == []
+    assert identifier.requests == [] and rec.of("tracks")[-1].focus_id == 1  # the box shows it; nobody nags
 
 
 async def test_two_similar_objects_do_not_flicker():
@@ -158,7 +156,7 @@ async def test_person_region_is_never_sent():
     await feed(pipeline, sharp_image(boxes=((320, 20, 960, 700),)), 30)
     await pipeline.wait_idle()
     assert identifier.requests == []
-    assert all(m.focus_id is None and m.tracks == [] and m.hint is None for m in rec.of("tracks"))
+    assert all(m.focus_id is None and m.tracks == [] for m in rec.of("tracks"))
 
 
 async def test_clicked_person_region_is_never_sent():
@@ -170,7 +168,6 @@ async def test_clicked_person_region_is_never_sent():
     await feed(pipeline, sharp_image(boxes=((320, 20, 960, 700),)), 22)
     await pipeline.wait_idle()
     assert identifier.requests == []
-    assert rec.of("tracks")[20].hint == "Personen und Gesichter identifiziere ich nicht."
 
 
 async def test_held_object_in_front_of_the_face_is_never_marked_or_sent():
@@ -211,17 +208,6 @@ async def test_recheck_during_analysis_is_not_lost():
     assert len(identifier.requests) == 2
 
 
-async def test_no_hints_once_nothing_can_be_called():
-    from tests.helpers import blurry_image
-    decisive = obs(cand("Myprotein", "Essential BCAA"), readable=("Essential BCAA 2:1:1",), cat="Dose")
-    pipeline, rec, _ = make([[CUP, HAND]], FakeIdentifier(script=[decisive]))
-    await feed(pipeline, sharp_image(boxes=(BOX,)), 13)
-    await pipeline.wait_idle()
-    assert rec.of("identity")[-1].final
-    await feed(pipeline, blurry_image(boxes=(BOX,)), 25, start=1.3, first_id=13)
-    assert all(m.hint is None for m in rec.of("tracks"))
-
-
 class FakeFaces:
     def __init__(self, boxes):
         from oi.contracts import Track
@@ -257,16 +243,6 @@ async def test_hand_finder_makes_the_held_phone_the_focus():
     await feed(pipeline, sharp_image(boxes=(BOX,)), 13)
     await pipeline.wait_idle()
     assert len(identifier.requests) == 1
-
-
-async def test_no_nagging_after_the_first_result():
-    from tests.helpers import blurry_image
-    pipeline, rec, _ = make([[CUP, HAND]], FakeIdentifier(script=[obs(desc="Gadget", cat="Gadget")]))
-    await feed(pipeline, sharp_image(boxes=(BOX,)), 13)
-    await pipeline.wait_idle()
-    assert rec.of("identity")[-1].level == "category_only" and not rec.of("identity")[-1].final
-    await feed(pipeline, blurry_image(boxes=(BOX,)), 25, start=1.3, first_id=13)
-    assert all(m.hint is None for m in rec.of("tracks")[13:])
 
 
 async def test_phone_beside_the_face_is_fine_when_faces_are_known():
@@ -469,7 +445,6 @@ async def test_a_shaky_hand_held_object_is_identified_without_nagging():
         await pipeline.handle_frame(Frame(frame_id=i, t=i * 0.1, image=image))
     await pipeline.wait_idle()
     assert len(identifier.requests) == 1 and rec.of("identity")[-1].status == "ready"
-    assert all(m.hint is None for m in rec.of("tracks"))
 
 
 # --- the tracker gives the held object a new number: it keeps its identity (live test 2026-09-30: 10 numbers) -------

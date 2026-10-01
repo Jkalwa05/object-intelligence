@@ -7,7 +7,7 @@ from collections.abc import Sequence
 
 from oi.config import Settings
 from oi.contracts import Track
-from oi.privacy import privacy_veto
+from oi.privacy import privacy_veto, worn
 
 EPS = 1e-6  # tolerance for time comparisons
 SIZE_FULL = 0.15  # an object covering 15 % of the frame gets the full size factor
@@ -83,7 +83,8 @@ class FocusSelector:
     def update(self, visible: list[Track], hands: list[Track], frame_w: int, frame_h: int, now: float,
                people: list[Track] = (), background: Sequence[Box] = ()) -> int | None:
         """`people`: raw person and face detections, so regions on a person's body or face never get focus.
-        `background`: the frozen boxes of the scene calibration; what matches one of them is never held.
+        `background`: the frozen boxes of the scene calibration; what matches one of them is never held, and
+        neither is anything the person wears (shirt, shoulders, arms: privacy.worn).
 
         Only held objects are the focus, and only while a hand was on them within the last 2 s; regions on a face
         never are. `pin` (not used by the browser any more) overrides both."""
@@ -91,7 +92,7 @@ class FocusSelector:
         ids = {t.id for t in visible}
         for t in visible:
             self._track_motion(t, diag, now)
-            if is_background(t.box, background):
+            if is_background(t.box, background) or worn(t, list(people), frame_h):
                 self._last_held.pop(t.id, None)
             elif self._touches_hand(t, hands):
                 self._last_held[t.id] = now

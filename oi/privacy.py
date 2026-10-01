@@ -59,6 +59,19 @@ def on_person(track: Track, people: list[Track], frame_h: float) -> bool:
                               for zone in person_zones(people, frame_h))
 
 
+WORN_SHARE = 0.25  # a quarter of a box lies in a body zone ...
+BOTTOM_EDGE = 0.02  # ... and it reaches the bottom edge of the frame (within 2 % of its height)
+
+
+def worn(track: Track, people: list[Track], frame_h: float) -> bool:
+    """Shirt, shoulders and arms of the person in front of the camera: partly in a body zone and cut off by the bottom
+    edge, like every torso in a webcam picture. Something held in front of the chest ends above that edge."""
+    area = _area(track.box)
+    if not area or track.box[3] < frame_h * (1 - BOTTOM_EDGE):
+        return False
+    return any(_overlap(track.box, zone) >= WORN_SHARE * area for zone in person_zones(people, frame_h))
+
+
 def mask_people(image: np.ndarray, people: list[Track]) -> np.ndarray:
     """A copy of the frame in which every person zone is flat grey: the only way a whole frame may leave the Mac."""
     out = image.copy()

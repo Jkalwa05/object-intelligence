@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { t } from "../i18n";
-import { focusHint, sceneBanner, useHud } from "../store";
+import { sceneBanner, useHud } from "../store";
 
 const INFO_VISIBLE_MS = 6000;
 
@@ -10,7 +10,6 @@ export default function Banner({ onRetryCamera }: { onRetryCamera(): void }) {
   const notices = useHud((s) => s.notices);
   const connection = useHud((s) => s.connection);
   const cameraError = useHud((s) => s.cameraError);
-  const hint = useHud(focusHint);
   const scene = useHud(sceneBanner);
   const lang = useHud((s) => s.telemetry?.language ?? "de");
   const latest = notices.at(-1);
@@ -33,7 +32,6 @@ export default function Banner({ onRetryCamera }: { onRetryCamera(): void }) {
   if (connection === "replaced") items.push(<div key="replaced" className="banner glass">{t("replaced", lang)}</div>);
   else if (connection === "closed") items.push(<div key="closed" className="banner glass">{t("reconnecting", lang)}</div>);
   if (scene) items.push(<div key="scene" className="banner glass">{t(scene, lang)}</div>);
-  if (hint) items.push(<div key="hint" className="banner glass">{hint}</div>);
   if (latest && latest.seq !== expiredSeq) {
     items.push(<div key={`notice-${latest.seq}`} className="banner glass">{latest.text}</div>);
   }

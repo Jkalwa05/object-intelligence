@@ -26,3 +26,5 @@ test("profile texts", () => {
   expect(t("profile.byClaude", "de")).toBe("laut Claude");
   expect(t("profile.unknown", "de")).toBe("Zu diesem Produkt weiß ich nichts Genaues.");
 });
+
+test("the badge says when the voice is on", () => expect(t("voiceOn", "de")).toBe("Stimme an (M)"));

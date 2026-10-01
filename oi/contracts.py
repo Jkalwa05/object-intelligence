@@ -151,7 +151,6 @@ class TracksMsg(_ServerMsg):
     h: int
     focus_id: int | None
     tracks: list[WireTrack]
-    hint: str | None
     faces: list[tuple[float, float, float, float]] = Field(default_factory=list)  # normalized, the card avoids them
     hands: list[WireTrack] = Field(default_factory=list)  # confirmed hands; polygon is the outline to draw
 
@@ -274,7 +273,7 @@ def protocol_examples() -> list[dict]:
     hand = WireTrack(id=-101, box=(0.2, 0.4, 0.35, 0.7), polygon=[(0.2, 0.4), (0.35, 0.45), (0.3, 0.7)],
                      label="hand", score=1.0)
     messages: list[_ServerMsg] = [
-        TracksMsg(ts=1.0, seq=1, frame_id=42, w=1280, h=720, focus_id=17, tracks=[track], hint=None, hands=[hand]),
+        TracksMsg(ts=1.0, seq=1, frame_id=42, w=1280, h=720, focus_id=17, tracks=[track], hands=[hand]),
         IdentityMsg(ts=1.1, seq=2, track_id=17, status="ready", level=Level.LIKELY, display_name="Apple iPhone 14",
                     candidates=[RankedCandidate(name="Apple iPhone 14", share=0.67),
                                 RankedCandidate(name="Apple iPhone 13", share=0.33)],

@@ -23,7 +23,6 @@ export interface TracksMsg {
   h: number;
   focus_id: number | null;
   tracks: WireTrack[];
-  hint: string | null;
   faces: Box[]; // normalized face boxes: the info card never covers them
   hands: WireTrack[]; // confirmed hands; polygon is the outline to draw
 }
@@ -131,7 +130,7 @@ export interface RecalibrateMsg {
 }
 
 const REQUIRED: Record<ServerMsg["type"], string[]> = {
-  tracks: ["frame_id", "w", "h", "focus_id", "tracks", "hint", "faces", "hands"],
+  tracks: ["frame_id", "w", "h", "focus_id", "tracks", "faces", "hands"],
   identity: ["track_id", "status", "level", "display_name", "candidates", "evidence", "view_request", "final",
     "calls_used", "line", "previous_id"],
   telemetry: ["fps_processed", "frames_dropped", "det_ms", "id_ms_last", "sharpness_focus", "calls_session",

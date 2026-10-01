@@ -33,7 +33,7 @@ export default function Telemetry({ video }: { video: RefObject<HTMLVideoElement
   }, [video]);
 
   const lang = tel?.language ?? "de";
-  const badge = muted ? <div className="muted-badge glass">{t("muted", lang)}</div> : null;
+  const badge = muted ? null : <div className="muted-badge glass">{t("voiceOn", lang)}</div>;
   if (!show) return badge;
   const rows: [string, string][] = [
     [t("tel.fpsVideo", lang), `${videoFps} fps`],

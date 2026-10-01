@@ -154,3 +154,26 @@ def test_calibrated_background_never_becomes_the_focus():
     assert not fs.held(lamp.id, 10.0)
     assert FocusSelector(Settings()).update([PHONE], [HAND], W, H, 10.0, background=[(0.0, 0.0, 300.0, 300.0)]) \
         == PHONE.id  # other background elsewhere changes nothing
+
+
+# --- live test 2026-10-01: "der nimmt immer mein T-Shirt als Objekt" -----------------------------------------------
+# Boxes measured on Jonas's frame: the hand in front of his chest also lies on the region of shirt, shoulders and arm.
+
+FACE = trk(-1, (485, 412, 666, 658), label="face")
+CHEST_HAND = hand_track([(720, 600), (760, 560), (800, 520), (850, 600), (900, 650), (950, 560), (980, 500),
+                         (940, 420), (900, 380)], 1.0, 0, W, H)
+SHIRT = trk(30, (528, 509, 1254, 717), label="assemble")  # reaches the bottom edge, partly in the body zone
+HELD_PHONE = trk(31, (696, 251, 946, 649), label="gadget")
+
+
+def test_the_shirt_is_worn_not_held():
+    fs = FocusSelector(Settings())
+    assert fs.update([SHIRT], [CHEST_HAND], W, H, 10.0, people=[FACE]) is None
+    assert not fs.held(SHIRT.id, 10.0)
+    assert FocusSelector(Settings()).update([HELD_PHONE, SHIRT], [CHEST_HAND], W, H, 10.0, people=[FACE]) \
+        == HELD_PHONE.id
+
+
+def test_something_held_low_in_front_of_the_chest_still_counts():
+    low = trk(32, (690, 470, 1000, 690), label="bottle")  # in the body zone, but above the bottom edge
+    assert FocusSelector(Settings()).update([low], [CHEST_HAND], W, H, 10.0, people=[FACE]) == low.id

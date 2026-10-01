@@ -18,7 +18,7 @@ const TEXTS = {
   reconnecting: { de: "Verbindung verloren, verbinde neu …", en: "Connection lost, reconnecting …" },
   replaced: { de: "In einem anderen Tab geöffnet. Lade diese Seite neu, um hier weiterzumachen.",
     en: "Opened in another tab. Reload this page to continue here." },
-  muted: { de: "Stimme aus (M)", en: "Voice off (M)" },
+  voiceOn: { de: "Stimme an (M)", en: "Voice on (M)" },
   calibrating: { de: "Szene wird eingemessen …", en: "Calibrating the scene …" },
   naming: { de: "Hintergrund wird erkannt …", en: "Recognising the background …" },
   "profile.title": { de: "STECKBRIEF", en: "PROFILE" },

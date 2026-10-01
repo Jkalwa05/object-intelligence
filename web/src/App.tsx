@@ -22,7 +22,7 @@ function say(line: string | null, lang: Lang) {
   window.speechSynthesis.speak(utterance);
 }
 
-// The voice follows the store: new lines of the focus object, hints at most every 5 s (spec §3).
+// The voice follows the store: new lines of the focus object, only after M switched it on (spec §3).
 function useVoice() {
   useEffect(() => {
     const gate = new SpeechGate();
@@ -31,7 +31,6 @@ function useVoice() {
       const synth = "speechSynthesis" in window ? window.speechSynthesis : null;
       const focusId = s.tracks?.focus_id ?? null;
       const lang: Lang = s.telemetry?.language ?? "de";
-      const now = performance.now();
       if (s.connection === "open" && prev.connection !== "open") gate.reset(); // fresh pipeline, IDs start at 1
       if (s.muted && !prev.muted) synth?.cancel();
       if (focusId === null) return;
@@ -42,14 +41,11 @@ function useVoice() {
       }
       if (identity && identity !== prev.identities[focusId]) {
         if (identity.previous_id !== null) gate.carry(identity.previous_id, focusId); // same object, new number
-        say(gate.consider({ trackId: focusId, line: identity.line, kind: "result" }, now, focusId, s.muted), lang);
+        say(gate.consider({ trackId: focusId, line: identity.line }, focusId, s.muted), lang);
       }
       const profile = focusProfile(s);
       if (profile && profile !== focusProfile(prev) && profile.line) {
-        say(gate.consider({ trackId: focusId, line: profile.line, kind: "result" }, now, focusId, s.muted), lang);
-      }
-      if (s.tracks !== prev.tracks && s.tracks?.hint) {
-        say(gate.consider({ trackId: focusId, line: s.tracks.hint, kind: "hint" }, now, focusId, s.muted), lang);
+        say(gate.consider({ trackId: focusId, line: profile.line }, focusId, s.muted), lang);
       }
     });
   }, []);

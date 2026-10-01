@@ -6,7 +6,6 @@ from typing import Literal
 
 from oi.config import Lang
 from oi.contracts import Candidate, Depth
-from oi.views import GateFailure
 
 _TEXTS: dict[str, dict[str, str]] = {
     "de": {
@@ -17,10 +16,6 @@ _TEXTS: dict[str, dict[str, str]] = {
         "show": " Zeig mir bitte {view}.",
         "indistinct": "{a} oder {b}, von außen kaum zu unterscheiden.",
         "category": "{description}, ein bestimmtes Produkt erkenne ich nicht.",
-        "cut": "Bitte ganz ins Bild.",
-        "small": "Bitte etwas näher.",
-        "person": "Personen und Gesichter identifiziere ich nicht.",
-        "lower": "Halt es bitte tiefer, nicht vors Gesicht.",
         "error": "Identifikation gerade nicht möglich.",
         "paused": "Kostenbremse erreicht, Identifikation pausiert.",
         "no_key": "Kein API-Key: nur lokale Erkennung.",
@@ -36,10 +31,6 @@ _TEXTS: dict[str, dict[str, str]] = {
         "show": " Please show me {view}.",
         "indistinct": "{a} or {b}, hard to tell apart from the outside.",
         "category": "{description}, I can't recognize a specific product.",
-        "cut": "Please bring it fully into view.",
-        "small": "Please come a bit closer.",
-        "person": "I don't identify people or faces.",
-        "lower": "Please hold it lower, not in front of your face.",
         "error": "Identification is not available right now.",
         "paused": "Cost limit reached, identification paused.",
         "no_key": "No API key: local detection only.",
@@ -48,9 +39,6 @@ _TEXTS: dict[str, dict[str, str]] = {
         "scene_local": "Claude could not name the background right now, showing the local names.",
     },
 }
-
-_HINT_KEYS: dict[GateFailure, str] = {"cut": "cut", "small": "small", "person": "person", "lower": "lower"}
-
 
 def _capitalize(text: str) -> str:
     return text[:1].upper() + text[1:]
@@ -86,10 +74,6 @@ def line_unsure(a: str, b: str | None, view: str | None, distinguishable: bool, 
 
 def line_category(description: str, lang: Lang) -> str:
     return _TEXTS[lang]["category"].format(description=_capitalize(description))
-
-
-def hint_line(reason: GateFailure, lang: Lang) -> str:
-    return _TEXTS[lang][_HINT_KEYS[reason]]
 
 
 def error_line(lang: Lang) -> str:

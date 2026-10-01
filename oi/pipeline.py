@@ -147,7 +147,6 @@ class Pipeline:
         for track in visible:
             self._remember(track, frame.t)
 
-        hint = None
         focus = next((t for t in visible if t.id == focus_id), None)
         if focus is not None:
             await self._recognise_again(focus, frame, {t.id for t in visible})
@@ -159,8 +158,6 @@ class Pipeline:
             result = state.collector.offer(focus, frame.image, frame.t, blocked)
             self._telemetry.set_sharpness(result.sharpness)
             self._telemetry.set_gate(result.failing)
-            if result.hint is not None and self._hints_wanted(state):
-                hint = lines.hint_line(result.hint, self._s.language)
             if result.ready is not None:
                 await self._consider(focus, state, result.ready)
         else:
@@ -170,7 +167,6 @@ class Pipeline:
         self._forget(frame.t)
         await self._emit(TracksMsg(frame_id=frame.frame_id, w=w, h=h, focus_id=focus_id,
                                    tracks=[WireTrack.from_track(t, w, h) for t in visible if t.id == focus_id],
-                                   hint=hint,
                                    faces=[WireTrack.from_track(f, w, h).box for f in faces],
                                    hands=[WireTrack.from_track(hand, w, h) for hand in hands]))
 
@@ -417,15 +413,6 @@ class Pipeline:
             cost_usd=result.cost_usd if result else 0.0, latency_s=result.latency_s if result else 0.0,
             model=result.model if result else (self._identifier.model_label if self._identifier else "–"),
             level_after=None))
-
-    def _hints_wanted(self, state: _TrackState) -> bool:
-        """Hints guide the first capture of an object (and a requested re-check). Once an answer is on the card they
-        only nag, and once no call can start they make no sense at all."""
-        if self._telemetry.calls_session >= self._s.max_calls_session:
-            return False
-        if state.forced:
-            return True
-        return not state.belief.observations and state.calls < self._s.max_calls_object
 
     def _snapshot(self, state: _TrackState) -> BeliefState:
         if not state.belief.observations:

@@ -25,7 +25,7 @@ export const initialState: HudState = {
   notices: [],
   connection: "closed",
   mirrored: true,
-  muted: false,
+  muted: true, // the voice stays off until M is pressed
   showTelemetry: false,
   cameraError: null,
 };
@@ -68,11 +68,6 @@ export function focusProfile(s: HudState): ProfileMsg | null {
   const identity = id == null ? undefined : s.identities[id];
   if (!identity || (identity.level !== "likely" && identity.level !== "certain")) return null;
   return s.profiles[identity.display_name] ?? null;
-}
-
-// The hint for the focus object, shown as a banner as well as spoken (the voice may be muted).
-export function focusHint(s: HudState): string | null {
-  return s.tracks?.hint ?? null;
 }
 
 interface HudActions {

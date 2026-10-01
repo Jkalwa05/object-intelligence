@@ -11,46 +11,38 @@ test("pickVoice skips novelty voices and matches the language", () => {
 
 test("a result line is spoken once per track, only for the focus, never when muted", () => {
   const gate = new SpeechGate();
-  const result = (trackId: number, line: string) => ({ trackId, line, kind: "result" as const });
-  expect(gate.consider(result(1, "Das ist X."), 0, 1, false)).toBe("Das ist X.");
-  expect(gate.consider(result(1, "Das ist X."), 100, 1, false)).toBeNull();
-  expect(gate.consider(result(2, "Das ist Y."), 200, 1, false)).toBeNull();
-  expect(gate.consider(result(1, "Das ist Z."), 300, 1, true)).toBeNull();
-  expect(gate.consider(result(1, ""), 400, 1, false)).toBeNull();
-  expect(gate.consider(result(2, "Das ist Y."), 500, 2, false)).toBe("Das ist Y.");
-});
-
-test("hints at most every 5 s", () => {
-  const gate = new SpeechGate();
-  const hint = { trackId: 1, line: "Halt es bitte ruhig.", kind: "hint" as const };
-  expect(gate.consider(hint, 0, 1, false)).toBe("Halt es bitte ruhig.");
-  expect(gate.consider(hint, 4000, 1, false)).toBeNull();
-  expect(gate.consider(hint, 5000, 1, false)).toBe("Halt es bitte ruhig.");
+  const result = (trackId: number, line: string) => ({ trackId, line });
+  expect(gate.consider(result(1, "Das ist X."), 1, false)).toBe("Das ist X.");
+  expect(gate.consider(result(1, "Das ist X."), 1, false)).toBeNull();
+  expect(gate.consider(result(2, "Das ist Y."), 1, false)).toBeNull();
+  expect(gate.consider(result(1, "Das ist Z."), 1, true)).toBeNull();
+  expect(gate.consider(result(1, ""), 1, false)).toBeNull();
+  expect(gate.consider(result(2, "Das ist Y."), 2, false)).toBe("Das ist Y.");
 });
 
 test("reset forgets what was spoken, for a fresh connection", () => {
   const gate = new SpeechGate();
-  const line = { trackId: 1, line: "Das ist X.", kind: "result" as const };
-  expect(gate.consider(line, 0, 1, false)).toBe("Das ist X.");
+  const line = { trackId: 1, line: "Das ist X." };
+  expect(gate.consider(line, 1, false)).toBe("Das ist X.");
   gate.reset();
-  expect(gate.consider(line, 1, 1, false)).toBe("Das ist X.");
+  expect(gate.consider(line, 1, false)).toBe("Das ist X.");
 });
 
 test("an object under a new tracker number does not repeat what was said", () => {
   const gate = new SpeechGate();
-  const result = (trackId: number, line: string) => ({ trackId, line, kind: "result" as const });
-  expect(gate.consider(result(1, "Das ist X."), 0, 1, false)).toBe("Das ist X.");
+  const result = (trackId: number, line: string) => ({ trackId, line });
+  expect(gate.consider(result(1, "Das ist X."), 1, false)).toBe("Das ist X.");
   gate.carry(1, 7);
-  expect(gate.consider(result(7, "Das ist X."), 100, 7, false)).toBeNull();
-  expect(gate.consider(result(7, "Das ist sicher X."), 200, 7, false)).toBe("Das ist sicher X.");
+  expect(gate.consider(result(7, "Das ist X."), 7, false)).toBeNull();
+  expect(gate.consider(result(7, "Das ist sicher X."), 7, false)).toBe("Das ist sicher X.");
 });
 
 test("carrying keeps what the new number already said", () => {
   const gate = new SpeechGate();
-  const result = (trackId: number, line: string) => ({ trackId, line, kind: "result" as const });
-  gate.consider(result(7, "Ich analysiere."), 0, 7, false);
-  gate.consider(result(1, "Das ist X."), 0, 1, false);
+  const result = (trackId: number, line: string) => ({ trackId, line });
+  gate.consider(result(7, "Ich analysiere."), 7, false);
+  gate.consider(result(1, "Das ist X."), 1, false);
   gate.carry(1, 7);
-  expect(gate.consider(result(7, "Ich analysiere."), 100, 7, false)).toBeNull();
-  expect(gate.consider(result(7, "Das ist X."), 100, 7, false)).toBeNull();
+  expect(gate.consider(result(7, "Ich analysiere."), 7, false)).toBeNull();
+  expect(gate.consider(result(7, "Das ist X."), 7, false)).toBeNull();
 });

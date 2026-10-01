@@ -72,7 +72,8 @@ Your hands get a cyan outline as soon as they are confirmed: Apple's Vision fram
 the 21 hand joints and find the hand in two frames in a row. Only the object your fingers lie on (at least three
 joints on it) gets a box (neon green), and only that object goes to Claude, as a crop in which everything outside its
 outline is grey. You are never marked otherwise: not your face, hair, glasses, shirt or necklace (OpenCV's YuNet face
-detector and a body zone keep them out). If two candidates look alike from one side, the card asks for the view that
+detector and a body zone keep them out, and whatever lies in the body zone and reaches the bottom edge of the
+picture counts as worn, never as held). If two candidates look alike from one side, the card asks for the view that
 separates them, for example "Zeig mir bitte die Unterseite" for iPhone 14 (Lightning) and 15 (USB-C). Nobody has to
 hold still: a snapshot, the sharpest frame of half a second, is taken from the video. If the tracker loses the object
 for a moment and gives it a new number, card, result and call count stay (same size and colours, gone at most 3 s).
@@ -83,7 +84,10 @@ two things worth knowing. There are no sources, so the panel always says *laut C
 exact model, it says so instead of guessing. Each product costs one text-only call (no image), ever: profiles are kept
 in `cache/profiles.json`.
 
-Keys: `M` mutes the voice, `D` shows the telemetry (including which quality check a crop fails), `S` toggles the mirror
+There are no hints like "Bitte ganz ins Bild": whether the object gets a box is the feedback. The voice is off
+until you press `M`.
+
+Keys: `M` switches the voice on and off, `D` shows the telemetry (including which quality check a crop fails), `S` toggles the mirror
 view, `R` calibrates the scene again. Settings such as `OI_MODEL=claude-sonnet-5-5` (faster), `OI_LANGUAGE=en` or
 `OI_MIN_SHARPNESS` are read from the environment or `.env`. `--fake-claude` gives canned answers without any API call;
 it is meant for the automated tests, real identification needs Claude.

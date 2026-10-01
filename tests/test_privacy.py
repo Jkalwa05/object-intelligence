@@ -37,14 +37,6 @@ def test_person_and_body_labels_are_excluded():
         assert label in s.excluded_labels
 
 
-def test_privacy_hint_texts():
-    from oi import lines
-    assert lines.hint_line("person", "de") == "Personen und Gesichter identifiziere ich nicht."
-    assert lines.hint_line("person", "en") == "I don't identify people or faces."
-    assert lines.hint_line("lower", "de") == "Halt es bitte tiefer, nicht vors Gesicht."
-    assert lines.hint_line("lower", "en") == "Please hold it lower, not in front of your face."
-
-
 def test_small_object_on_a_face_is_vetoed():
     face = trk(-1, (700, 600, 1010, 1000), label="face")
     glasses = trk(7, (740, 700, 990, 800), label="glasses")

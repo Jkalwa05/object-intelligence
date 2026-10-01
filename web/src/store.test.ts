@@ -3,7 +3,7 @@ import type { IdentityMsg, NoticeMsg, TracksMsg } from "./protocol";
 import { applyServerMessage, initialState } from "./store";
 
 const tracks = (seq: number): TracksMsg =>
-  ({ type: "tracks", ts: 0, seq, frame_id: seq, w: 1280, h: 720, focus_id: 1, tracks: [], hint: null, faces: [], hands: [] });
+  ({ type: "tracks", ts: 0, seq, frame_id: seq, w: 1280, h: 720, focus_id: 1, tracks: [], faces: [], hands: [] });
 const identity = (trackId: number, line: string): IdentityMsg => ({
   type: "identity", ts: 0, seq: 0, track_id: trackId, status: "ready", level: "likely", display_name: "X",
   candidates: [], evidence: [], view_request: null, final: false, calls_used: 1, line, previous_id: null,
@@ -38,12 +38,6 @@ test("closing clears the boxes; reopening forgets old identities and notices", a
   expect(s.connection).toBe("open");
 });
 
-test("the focus hint is shown on screen too", async () => {
-  const { focusHint } = await import("./store");
-  expect(focusHint(initialState)).toBeNull();
-  expect(focusHint(applyServerMessage(initialState, { ...tracks(1), hint: "Halt es bitte ruhig." }))).toBe("Halt es bitte ruhig.");
-});
-
 test("the frozen scene is kept until a new connection calibrates again", async () => {
   const { applyConnection } = await import("./store");
   const scene = { type: "scene" as const, ts: 0, seq: 1, calibrating: false, naming: false,
@@ -75,3 +69,5 @@ test("the profile panel shows the focus product's own profile while it is likely
   expect(focusProfile(applyServerMessage(s, { ...identity(1, "X oder Y?"), level: "unsure" }))).toBeNull();
   expect(focusProfile(applyServerMessage(s, { ...identity(1, "Das ist Z."), display_name: "Z" }))).toBeNull();
 });
+
+test("the voice stays off until M is pressed", () => expect(initialState.muted).toBe(true));

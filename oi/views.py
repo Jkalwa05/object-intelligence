@@ -17,7 +17,6 @@ from oi.config import Settings
 from oi.contracts import Track
 
 GateFailure = Literal["cut", "small", "blurry", "person", "lower"]
-HINTED: frozenset[GateFailure] = frozenset({"cut", "small", "person", "lower"})  # what the user can change
 EPS = 1e-6  # tolerance for time comparisons
 
 
@@ -99,8 +98,7 @@ class ReadyCrop:
 @dataclass(frozen=True)
 class ViewResult:
     ready: ReadyCrop | None
-    failing: GateFailure | None
-    hint: GateFailure | None
+    failing: GateFailure | None  # shown in the telemetry only: there are no hints, the box itself is the feedback
     sharpness: float | None
 
 
@@ -116,7 +114,6 @@ class ViewCollector:
 
     def __init__(self, settings: Settings) -> None:
         self._s = settings
-        self._fail_since: float | None = None
         self._armed = True
         self._forced = False
         self._window_start: float | None = None
@@ -132,10 +129,9 @@ class ViewCollector:
         or blocked are skipped without losing what was collected. Half a second after the first candidate the
         sharpest one goes out, if it is sharp enough; after two seconds the sharpest one goes out anyway."""
         failing, sharp, crop, gray = (blocked, None, None, None) if blocked else self._gate(track, image)
-        hint = self._hint(failing, now)
         if crop is not None and gray is not None and sharp is not None:
             self._collect(track, image, crop, gray, sharp, now)
-        return ViewResult(ready=self._take(now), failing=failing, hint=hint, sharpness=sharp)
+        return ViewResult(ready=self._take(now), failing=failing, sharpness=sharp)
 
     def mark_sent(self, crop: ReadyCrop) -> None:
         if crop.is_new_view:
@@ -149,15 +145,6 @@ class ViewCollector:
     def force_next(self) -> None:
         """Release the next good crop even if it shows a view that was already sent (\"Neu prüfen\")."""
         self._forced = True
-
-    def _hint(self, failing: GateFailure | None, now: float) -> GateFailure | None:
-        """A hint only for what the user can change, and only once it lasted 2 s."""
-        if failing not in HINTED:
-            self._fail_since = None
-            return None
-        if self._fail_since is None:
-            self._fail_since = now
-        return failing if now - self._fail_since >= self._s.hint_after_s - EPS else None
 
     def _collect(self, track: Track, image: np.ndarray, crop: np.ndarray, gray: np.ndarray, sharp: float,
                  now: float) -> None:

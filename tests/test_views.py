@@ -45,7 +45,7 @@ def test_gate_reasons(box, reason):
 
 def test_blurry_frame_is_only_reported():
     result = ViewCollector(Settings()).offer(trk(1, BOX), blurry_image(boxes=(BOX,)), now=0.0)
-    assert (result.failing, result.hint, result.ready) == ("blurry", None, None)
+    assert (result.failing, result.ready) == ("blurry", None)
 
 
 def offer_series(collector, image, start, end):
@@ -71,13 +71,11 @@ def test_a_shaky_video_still_gets_its_snapshot():
         results.append(collector.offer(trk(1, BOX), image, now=i * 0.1))
     ready = [r.ready for r in results if r.ready]
     assert len(ready) == 1 and ready[0].sharpness == max(r.sharpness for r in results)
-    assert all(r.hint is None for r in results)
 
 
 def test_only_blurry_frames_still_give_a_snapshot_after_two_seconds():
     results = offer_series(ViewCollector(Settings()), blurry_image(boxes=(BOX,)), 0.0, 3.0)
     assert [t for t, r in results if r.ready is not None] == [pytest.approx(2.0)]
-    assert all(r.hint is None for _, r in results)
 
 
 def test_release_is_the_sharpest_of_its_window():
@@ -107,25 +105,17 @@ def test_new_view_after_turning():
     assert (again.is_new_view, again.view_id) == (False, 1)
 
 
-def test_hints_only_for_what_the_user_can_change():
-    cut, collector = (2, 100, 300, 400), ViewCollector(Settings())
-    by_step = [collector.offer(trk(1, cut), sharp_image(boxes=(cut,)), now=i * 0.1) for i in range(21)]
-    assert by_step[19].hint is None and by_step[20].hint == "cut"
-    assert all(r.hint is None for _, r in offer_series(ViewCollector(Settings()), blurry_image(boxes=(BOX,)), 0.0, 3.0))
-
-
 def test_quality_q_mapping():
     assert quality_q(60, 60) == 0.5
     assert quality_q(300, 60) == 1.0
     assert quality_q(1000, 60) == 1.0
 
 
-def test_privacy_block_never_releases_and_hints():
+def test_privacy_block_never_releases():
     collector = ViewCollector(Settings())
     image = sharp_image(boxes=(BOX,))
     results = [collector.offer(trk(1, BOX), image, now=i * 0.1, blocked="person") for i in range(22)]
     assert all(r.ready is None and r.failing == "person" for r in results)
-    assert results[19].hint is None and results[20].hint == "person"
 
 
 def test_released_crop_contains_only_the_object():
