@@ -29,5 +29,6 @@ asyncio_mode = "auto"
 markers = [
     "model: loads the YOLOE weights (slow, downloads them on first run)",
     "claude: makes a real Claude API call (costs about 2 cents)",
+    "scad: runs the real OpenSCAD compiler (needs node and web/node_modules)",
 ]
-addopts = "-m 'not model and not claude'"
+addopts = "-m 'not model and not claude and not scad'"
