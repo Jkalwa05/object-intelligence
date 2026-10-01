@@ -78,28 +78,6 @@ class ProductProfile(_Model):
 
 
 Vec3 = tuple[float, float, float]
-ShapeKind = Literal["box", "rounded_box", "cylinder", "cone", "sphere", "capsule"]
-
-
-class ShapePart(_Model):
-    """One primitive of a hologram (sub-project 3), in millimetres around the object's centre, y pointing up."""
-
-    name: str
-    shape: ShapeKind
-    size_mm: Vec3  # box: width, height, depth · cylinder/capsule: diameter, height, diameter · cone: bottom
-    #                diameter, height, top diameter · sphere: the diameters along x, y, z
-    position_mm: Vec3
-    rotation_deg: Vec3
-    color: str  # "#rrggbb"
-    radius_mm: float | None = None  # rounded_box only
-
-
-class ProductShape(_Model):
-    """A simplified, true-to-scale model of one product built from primitives: always "vereinfacht · laut Claude"."""
-
-    known: bool
-    size_mm: Vec3 | None
-    parts: list[ShapePart] = Field(max_length=16)
 
 
 # --- what the pipeline tracks (§2.2, §2.6) ----------------------------------------------------------------------
@@ -263,25 +241,81 @@ class ProfileMsg(_ServerMsg):
                    released=profile.released, launch_price=profile.launch_price, trivia=profile.trivia, line=line)
 
 
-class ShapeMsg(_ServerMsg):
-    """The hologram of one product name (sub-project 3); the browser shows it in the sidebar entry of that name."""
-
-    type: Literal["shape"] = "shape"
-    product: str
-    status: ProfileStatus
-    size_mm: Vec3 | None
-    parts: list[ShapePart]
-
-    @classmethod
-    def of(cls, product: str, status: ProfileStatus, shape: ProductShape | None) -> ShapeMsg:
-        if shape is None:
-            return cls(product=product, status=status, size_mm=None, parts=[])
-        return cls(product=product, status=status, size_mm=shape.size_mm, parts=shape.parts)
-
-
 class Source(_Model):
     title: str
     url: str
+
+
+# --- the precision model (sub-project 6) ------------------------------------------------------------------------
+
+MeasureKind = Literal["drawing", "datasheet", "estimate"]
+
+
+class Measure(_Model):
+    label: str  # "Kameraplateau Breite"
+    value_mm: float
+    source: int | None  # index into MeasureSheet.sources
+    kind: MeasureKind
+
+
+class DrawingRef(_Model):
+    url: str  # a PDF or an image the research found
+    find: str  # words that stand on the right PDF page, e.g. "iPhone 14 Dimensional Drawing"
+
+
+class MeasureSheet(_Model):
+    """What the research found out about a product's dimensions, every number with its source (spec §4.2)."""
+
+    size_mm: Vec3 | None  # width (x), height (y), depth (z)
+    size_source: int | None
+    measures: list[Measure]
+    features: list[str]
+    sources: list[Source]
+    drawing: DrawingRef | None
+
+    @classmethod
+    def estimated(cls) -> MeasureSheet:
+        """Nothing researched: every dimension of the model is Claude's estimate."""
+        return cls(size_mm=None, size_source=None, measures=[], features=[], sources=[], drawing=None)
+
+
+class ModelPart(_Model):
+    name: str
+    color: str  # "#rrggbb"
+    file: str  # "part-01.stl"
+    min_mm: Vec3
+    max_mm: Vec3
+    triangles: int
+
+
+class ModelManifest(_Model):
+    """A finished precision model as it is kept in cache/models/<slug>/ (spec §7)."""
+
+    model: str
+    slug: str
+    parts: list[ModelPart]
+    size_mm: Vec3
+    sheet: MeasureSheet
+    drawing_pages: list[int]  # 1-based pages of the technical drawing that Claude saw
+    notes: str
+    verdict: Literal["good", "fix", "unchecked"]
+    rounds: int
+    cost_usd: float
+    created: str
+
+
+ModelStatus = Literal["queued", "researching", "drawing", "modeling", "building", "checking", "ready", "failed",
+                      "limit"]
+
+
+class ModelMsg(_ServerMsg):
+    """Progress and result of the precision model, for one sidebar entry (sub-project 6)."""
+
+    type: Literal["model"] = "model"
+    product: str  # the name of the sidebar entry
+    status: ModelStatus
+    round: int = 0  # the check round while checking
+    manifest: ModelManifest | None = None  # only when ready
 
 
 class QuestionMsg(_ServerMsg):
@@ -297,7 +331,7 @@ class QuestionMsg(_ServerMsg):
     line: str  # what the voice reads: the answer
 
 
-ServerMsg = Annotated[TracksMsg | IdentityMsg | TelemetryMsg | NoticeMsg | SceneMsg | ProfileMsg | ShapeMsg
+ServerMsg = Annotated[TracksMsg | IdentityMsg | TelemetryMsg | NoticeMsg | SceneMsg | ProfileMsg | ModelMsg
                       | QuestionMsg, Field(discriminator="type")]
 
 
@@ -333,7 +367,14 @@ class AskMsg(_Model):
     audio: str
 
 
-AnyClientMsg = FocusMsg | RecheckMsg | RecalibrateMsg | ConfirmMsg | AskMsg
+class RebuildMsg(_Model):
+    """„Neu bauen“ after a failed precision model, for the entry of that name (sub-project 6)."""
+
+    type: Literal["rebuild"] = "rebuild"
+    name: str
+
+
+AnyClientMsg = FocusMsg | RecheckMsg | RecalibrateMsg | ConfirmMsg | AskMsg | RebuildMsg
 ClientMsg = Annotated[AnyClientMsg, Field(discriminator="type")]
 _client_messages: TypeAdapter[AnyClientMsg] = TypeAdapter(ClientMsg)
 
@@ -370,11 +411,15 @@ def protocol_examples() -> list[dict]:
             facts=[ProfileFact(label="Chip", value="A15 Bionic"), ProfileFact(label="Display", value="6,1 Zoll OLED")],
             released="September 2022", launch_price="999 € (128 GB)", trivia=["Erstes iPhone mit Unfallerkennung."]),
             line="Ein Smartphone von Apple aus dem Jahr 2022.").model_copy(update={"ts": 1.5, "seq": 6}),
-        ShapeMsg.of("Apple iPhone 14", "ready", ProductShape(known=True, size_mm=(71.5, 146.7, 7.8), parts=[
-            ShapePart(name="Gehäuse", shape="rounded_box", size_mm=(71.5, 146.7, 7.8), position_mm=(0, 0, 0),
-                      rotation_deg=(0, 0, 0), color="#9fc4e8", radius_mm=10.0),
-            ShapePart(name="Kameralinse", shape="cylinder", size_mm=(12, 2, 12), position_mm=(-22, 60, -4.5),
-                      rotation_deg=(90, 0, 0), color="#1b1b1f")])).model_copy(update={"ts": 1.6, "seq": 7}),
+        ModelMsg(ts=1.6, seq=7, product="Apple iPhone 14", status="ready", round=1, manifest=ModelManifest(
+            model="Apple iPhone 14", slug="apple-iphone-14", size_mm=(71.5, 146.7, 7.8), drawing_pages=[212], notes="",
+            verdict="good", rounds=1, cost_usd=0.92, created="2026-10-01T22:00:00",
+            parts=[ModelPart(name="Gehäuse", color="#9fc4e8", file="part-01.stl", min_mm=(-35.75, -73.35, -3.9),
+                             max_mm=(35.75, 73.35, 3.9), triangles=1200)],
+            sheet=MeasureSheet(size_mm=(71.5, 146.7, 7.8), size_source=0, features=[], drawing=None,
+                               measures=[Measure(label="Kameraplateau Breite", value_mm=30.4, source=0, kind="drawing")],
+                               sources=[Source(title="Accessory Design Guidelines",
+                                               url="https://developer.apple.com/accessories/guidelines.pdf")]))),
         QuestionMsg(ts=1.7, seq=8, product="Apple iPhone 14", qid=1, status="ready", question="Wie schwer ist das?",
                     answer="Das iPhone 14 wiegt 172 Gramm.", sources=[], line="Das iPhone 14 wiegt 172 Gramm."),
     ]

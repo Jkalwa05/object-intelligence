@@ -30,3 +30,12 @@ def test_invalid_values_rejected(env):
 
 def test_dhash_distance_can_be_calibrated():
     assert Settings.from_env({"OI_DHASH_MIN_DISTANCE": "20"}).dhash_min_distance == 20
+
+
+def test_settings_for_models():
+    s = Settings()
+    assert (s.max_model_cost_usd, s.max_models_session, s.model_check_rounds, s.model_timeout_s) == (1.60, 5, 2, 360.0)
+    assert s.model_cache.parts[-2:] == ("cache", "models") and s.models_dir.name == "models"
+    changed = Settings.from_env({"OI_MAX_MODELS_SESSION": "3", "OI_MAX_MODEL_COST_USD": "0.8",
+                                 "OI_MODEL_CHECK_ROUNDS": "1"})
+    assert (changed.max_models_session, changed.max_model_cost_usd, changed.model_check_rounds) == (3, 0.8, 1)

@@ -31,3 +31,10 @@ test("a profile needs every field the panel shows", () => {
   const { trivia: _, ...withoutTrivia } = profile;
   expect(isServerMsg(withoutTrivia)).toBe(false);
 });
+
+test("a model message needs its round and its manifest, which is null until it is ready", () => {
+  const queued = { type: "model", ts: 1, seq: 1, product: "X", status: "queued", round: 0, manifest: null };
+  expect(isServerMsg(queued)).toBe(true);
+  const { manifest: _dropped, ...withoutManifest } = queued;
+  expect(isServerMsg(withoutManifest)).toBe(false);
+});

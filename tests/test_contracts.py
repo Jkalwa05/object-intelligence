@@ -75,16 +75,32 @@ def test_profile_message_travels():
     assert (loading.summary, loading.facts, loading.trivia, loading.line) == ("", [], [], "")
 
 
-def test_shape_message_travels():
-    from oi.contracts import ProductShape, ShapeMsg, ShapePart
-    body = ShapePart(name="Gehäuse", shape="rounded_box", size_mm=(71.5, 146.7, 7.8), position_mm=(0, 0, 0),
-                     rotation_deg=(0, 0, 0), color="#9fc4e8", radius_mm=10.0)
-    shape = ProductShape(known=True, size_mm=(71.5, 146.7, 7.8), parts=[body])
-    data = ShapeMsg.of("Apple iPhone 14", "ready", shape).model_dump(mode="json")
-    assert data["type"] == "shape" and data["parts"][0]["shape"] == "rounded_box"
-    assert (data["product"], data["size_mm"]) == ("Apple iPhone 14", [71.5, 146.7, 7.8])
-    loading = ShapeMsg.of("Apple iPhone 14", "loading", None)
-    assert (loading.parts, loading.size_mm) == ([], None)
+def test_model_message_travels():
+    from oi.contracts import Measure, MeasureSheet, ModelManifest, ModelMsg, ModelPart, Source
+    sheet = MeasureSheet(size_mm=(71.5, 146.7, 7.8), size_source=0,
+                         measures=[Measure(label="Kameraplateau Breite", value_mm=30.4, source=0, kind="drawing")],
+                         features=["Kameraplateau oben links, 4 mm vom Rand"],
+                         sources=[Source(title="Accessory Design Guidelines", url="https://developer.apple.com/a.pdf")],
+                         drawing=None)
+    part = ModelPart(name="Gehäuse", color="#9fc4e8", file="part-01.stl", min_mm=(-35.75, -73.35, -3.9),
+                     max_mm=(35.75, 73.35, 3.9), triangles=1200)
+    manifest = ModelManifest(model="Apple iPhone 14", slug="apple-iphone-14", parts=[part], size_mm=(71.5, 146.7, 7.8),
+                             sheet=sheet, drawing_pages=[212], notes="", verdict="good", rounds=1, cost_usd=0.92,
+                             created="2026-10-01T22:00:00")
+    data = ModelMsg(product="Apple iPhone 14", status="ready", round=1, manifest=manifest).model_dump(mode="json")
+    assert data["type"] == "model" and data["manifest"]["parts"][0]["file"] == "part-01.stl"
+    assert data["manifest"]["sheet"]["measures"][0]["kind"] == "drawing"
+    assert ModelMsg.model_validate(data).manifest == manifest
+    queued = ModelMsg(product="Apple iPhone 14", status="queued")
+    assert (queued.round, queued.manifest) == (0, None)
+    assert MeasureSheet.estimated() == MeasureSheet(size_mm=None, size_source=None, measures=[], features=[],
+                                                    sources=[], drawing=None)
+
+
+def test_rebuild_is_a_client_message():
+    from oi.contracts import RebuildMsg
+    assert parse_client_message('{"type":"rebuild","name":"Apple iPhone 14"}') == RebuildMsg(name="Apple iPhone 14")
+    assert parse_client_message('{"type":"rebuild"}') is None
 
 
 def test_confirm_message_from_the_browser():

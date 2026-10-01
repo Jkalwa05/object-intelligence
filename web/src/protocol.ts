@@ -154,8 +154,63 @@ export interface QuestionMsg {
   line: string; // what the voice reads: the answer
 }
 
+// Sub-project 6: the precision model, researched, written in OpenSCAD, compiled and checked.
+export type MeasureKind = "drawing" | "datasheet" | "estimate";
+
+export interface Measure {
+  label: string;
+  value_mm: number;
+  source: number | null; // index into MeasureSheet.sources
+  kind: MeasureKind;
+}
+
+export interface MeasureSheet {
+  size_mm: [number, number, number] | null; // width (x), height (y), depth (z)
+  size_source: number | null;
+  measures: Measure[];
+  features: string[];
+  sources: Source[];
+  drawing: { url: string; find: string } | null;
+}
+
+export interface ModelPart {
+  name: string;
+  color: string;
+  file: string; // "part-01.stl", served at /models/<slug>/<file>
+  min_mm: [number, number, number];
+  max_mm: [number, number, number];
+  triangles: number;
+}
+
+export interface ModelManifest {
+  model: string;
+  slug: string;
+  parts: ModelPart[];
+  size_mm: [number, number, number];
+  sheet: MeasureSheet;
+  drawing_pages: number[];
+  notes: string;
+  verdict: "good" | "fix" | "unchecked";
+  rounds: number;
+  cost_usd: number;
+  created: string;
+}
+
+export type ModelStatus = "queued" | "researching" | "drawing" | "modeling" | "building" | "checking" | "ready"
+  | "failed" | "limit";
+
+export interface ModelMsg {
+  type: "model";
+  ts: number;
+  seq: number;
+  product: string; // the name of the sidebar entry
+  status: ModelStatus;
+  round: number;
+  manifest: ModelManifest | null; // only when ready
+}
+
 export type ServerMsg = TracksMsg | IdentityMsg | TelemetryMsg | NoticeMsg | SceneMsg | ProfileMsg | ShapeMsg
-  | QuestionMsg;
+  | ModelMsg | QuestionMsg;
 
 export interface FocusMsg {
   type: "focus";
@@ -180,6 +235,12 @@ export interface AskMsg {
   audio: string;
 }
 
+// „Neu bauen“ after a failed precision model (sub-project 6).
+export interface RebuildMsg {
+  type: "rebuild";
+  name: string;
+}
+
 // The person picks the right candidate of a sidebar entry (sub-project 3).
 export interface ConfirmMsg {
   type: "confirm";
@@ -197,6 +258,7 @@ const REQUIRED: Record<ServerMsg["type"], string[]> = {
   scene: ["calibrating", "naming", "items"],
   profile: ["product", "status", "summary", "facts", "released", "launch_price", "trivia", "line"],
   shape: ["product", "status", "size_mm", "parts"],
+  model: ["product", "status", "round", "manifest"],
   question: ["product", "qid", "status", "question", "answer", "sources", "line"],
 };
 

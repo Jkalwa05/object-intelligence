@@ -69,6 +69,8 @@ export function applyServerMessage(s: HudState, m: ServerMsg): HudState {
       return { ...s, profiles: { ...s.profiles, [m.product]: m } };
     case "shape":
       return { ...s, shapes: { ...s.shapes, [m.product]: m } };
+    case "model": // kept from Task 11 of the precision-model plan on
+      return s;
     case "question": {
       const earlier = s.questions[m.product] ?? [];
       const list = earlier.some((q) => q.qid === m.qid) ? earlier.map((q) => (q.qid === m.qid ? m : q)) : [...earlier, m];

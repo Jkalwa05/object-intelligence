@@ -44,16 +44,3 @@ def test_an_unwritable_cache_keeps_working_in_memory(tmp_path):
     store = ProfileStore(blocker / "profiles.json")  # its folder is a file: nothing can be written there
     store.put("Apple iPhone 14", "de", IPHONE)
     assert store.get("Apple iPhone 14", "de") == IPHONE
-
-
-def test_shapes_are_kept_per_model_across_a_restart(tmp_path):
-    from oi.contracts import ProductShape, ShapePart
-    from oi.profiles import ShapeStore
-    shape = ProductShape(known=True, size_mm=(71.5, 146.7, 7.8), parts=[ShapePart(
-        name="Gehäuse", shape="box", size_mm=(71.5, 146.7, 7.8), position_mm=(0, 0, 0), rotation_deg=(0, 0, 0),
-        color="#9fc4e8")])
-    path = tmp_path / "shapes.json"
-    ShapeStore(path).put("Apple iPhone 14", shape)
-    assert ShapeStore(path).get(" apple  iPhone 14") == shape
-    assert ShapeStore(path).get("Apple iPhone 15") is None
-    assert ShapeStore(None).get("Apple iPhone 14") is None  # memory only: nothing from the file

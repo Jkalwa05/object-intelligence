@@ -70,7 +70,12 @@ class Settings:
     log_calls: bool = True
     runs_dir: Path = Path("runs")
     profile_cache: Path = Path(__file__).resolve().parent.parent / "cache" / "profiles.json"  # sub-project 2
-    shape_cache: Path = Path(__file__).resolve().parent.parent / "cache" / "shapes.json"  # sub-project 3
+    max_model_cost_usd: float = 1.60  # the precision model (sub-project 6): hard cap per product, about 1.50 €
+    max_models_session: int = 5  # new precision models per server run
+    model_check_rounds: int = 2
+    model_timeout_s: float = 360.0  # research, CAD and check calls take minutes
+    model_cache: Path = Path(__file__).resolve().parent.parent / "cache" / "models"
+    models_dir: Path = Path(__file__).resolve().parent.parent / "models"  # YuNet and BOSL2 live here
     port: int = 8766
     prices: Mapping[str, tuple[float, float]] = field(default_factory=lambda: dict(DEFAULT_PRICES), hash=False)
 
@@ -89,6 +94,9 @@ class Settings:
             "OI_DHASH_MIN_DISTANCE": ("dhash_min_distance", int),
             "OI_LOG_CALLS": ("log_calls", _parse_bool),
             "OI_PORT": ("port", int),
+            "OI_MAX_MODEL_COST_USD": ("max_model_cost_usd", float),
+            "OI_MAX_MODELS_SESSION": ("max_models_session", int),
+            "OI_MODEL_CHECK_ROUNDS": ("model_check_rounds", int),
         }
         updates = {name: parse(env[key]) for key, (name, parse) in parsers.items() if env.get(key, "").strip()}
         settings = replace(cls(), **updates)

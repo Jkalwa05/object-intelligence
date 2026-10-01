@@ -25,7 +25,7 @@ from oi.identify import Identifier
 from oi.ingest import FrameFormatError, FrameSlot, parse_frame_message
 from oi.perception import Detector
 from oi.pipeline import Pipeline
-from oi.profiles import ProfileStore, ShapeStore
+from oi.profiles import ProfileStore
 from oi.speech import Transcriber
 from oi.telemetry import CallLog, SessionBudget, Telemetry
 
@@ -65,15 +65,14 @@ async def _tick(pipeline: Pipeline, slot: FrameSlot) -> None:
 def create_app(settings: Settings, detector: Detector, identifier_factory: IdentifierFactory,
                static_dir: Path = Path("web/dist"), faces: FaceFinder | None = None,
                hands: HandFinder | None = None, profiles: ProfileStore | None = None,
-               shapes: ShapeStore | None = None, transcriber: Transcriber | None = None) -> FastAPI:
-    """`profiles`, `shapes`: the stores shared by every connection; None keeps them in memory (tests)."""
+               transcriber: Transcriber | None = None) -> FastAPI:
+    """`profiles`: the store shared by every connection; None keeps it in memory (tests)."""
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.identifier, app.state.notice, app.state.mode = await identifier_factory()
         app.state.active = None
         app.state.budget = SessionBudget()
         app.state.profiles = profiles if profiles is not None else ProfileStore(None)
-        app.state.shapes = shapes if shapes is not None else ShapeStore(None)
         yield
 
     app = FastAPI(lifespan=lifespan)
@@ -100,7 +99,7 @@ def create_app(settings: Settings, detector: Detector, identifier_factory: Ident
                               budget=app.state.budget)
         pipeline = Pipeline(settings, detector, identifier, telemetry, CallLog(settings.runs_dir, settings.log_calls),
                             sender.send, faces=faces, hands=hands, profiles=app.state.profiles,
-                            shapes=app.state.shapes, transcriber=transcriber)
+                            transcriber=transcriber)
         slot = FrameSlot()
         if app.state.notice:
             await sender.send(NoticeMsg(level="warn", text=app.state.notice))
