@@ -70,6 +70,7 @@ class Settings:
     claude_timeout_s: float = 20.0
     log_calls: bool = True
     runs_dir: Path = Path("runs")
+    profile_cache: Path = Path(__file__).resolve().parent.parent / "cache" / "profiles.json"  # sub-project 2
     port: int = 8766
     prices: Mapping[str, tuple[float, float]] = field(default_factory=lambda: dict(DEFAULT_PRICES), hash=False)
 
