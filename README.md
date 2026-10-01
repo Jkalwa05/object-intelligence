@@ -172,6 +172,9 @@ needs Claude.
 
 ## Documents
 
+[`ERKLAERUNG.md`](ERKLAERUNG.md) explains the whole project in German: what happens, how and why, step by step,
+with the bugs found on the way and reading exercises.
+
 | Sub-project | Design | Plan |
 |---|---|---|
 | 1 See and identify | [spec](docs/superpowers/specs/2026-09-30-see-and-identify-design.md) | [plan](docs/superpowers/plans/2026-09-30-see-and-identify.md), [acceptance](docs/acceptance/sp1-checklist.md) |
