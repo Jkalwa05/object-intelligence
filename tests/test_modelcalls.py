@@ -78,3 +78,142 @@ def test_parse_research_clips_and_repairs():
 def test_parse_research_without_json_is_a_schema_error(text):
     with pytest.raises(IdentifyError):
         parse_research([NS(type="text", text=text)])
+
+
+# --- CAD and check calls (Task 8) -----------------------------------------------------------------------------------
+
+from oi.contracts import MeasureSheet  # noqa: E402
+from oi.modelcalls import (CadPart, CadProgram, CadRequest, CheckAnswer, CheckRequest, ClaudeModelCalls,  # noqa: E402
+                           FakeModelCalls, apply_check, build_cad_request, build_check_request, parse_cad,
+                           parse_check, scad_source)
+from oi.scad import HEADER  # noqa: E402
+
+SHEET_OBJ = MeasureSheet.model_validate(SHEET)
+PNG = b"\x89PNG\r\n\x1a\nfake"
+BODY = {"name": "Gehäuse", "color": "#9fc4e8", "scad": "cuboid([w, h, d], rounding=9, edges=\"Z\");"}
+CAD = {"shared": "w = 71.5; h = 146.7; d = 7.8;", "parts": [BODY], "notes": "Tasten angenähert"}
+PROGRAM = CadProgram(shared="w = 71.5;", parts=[CadPart("Gehäuse", "#9fc4e8", "cube(w);"),
+                                                CadPart("Linse", "#111111", "cyl(d=13, h=2);")], notes="")
+
+
+def cad_request(**kw) -> CadRequest:
+    base = dict(model="Apple iPhone 14", category="Smartphone", sheet=SHEET_OBJ,
+                drawings=[(PNG, "image/png"), (PNG, "image/png")], jpeg=b"\xff\xd8crop", language="de")
+    return CadRequest(**{**base, **kw})
+
+
+def check_request(**kw) -> CheckRequest:
+    base = dict(model="Apple iPhone 14", sheet=SHEET_OBJ, drawings=[(PNG, "image/png")], jpeg=b"\xff\xd8crop",
+                program=PROGRAM, renders=[PNG] * 4, errors={"Linse": ["ERROR: Parser error"]},
+                size_hint="Breite 80,0 mm statt 71,5 mm", round=1, rounds=2, language="de")
+    return CheckRequest(**{**base, **kw})
+
+
+def media(content: list) -> list[str]:
+    return [b["source"]["media_type"] for b in content if b["type"] == "image"]
+
+
+def test_cad_request_carries_sheet_drawings_and_crop():
+    request = build_cad_request(Settings(), cad_request())
+    content = request["messages"][0]["content"]
+    assert media(content) == ["image/png", "image/png", "image/jpeg"]
+    text = " ".join(b["text"] for b in content if b["type"] == "text")
+    assert "Kameraplateau Breite" in text and "Apple iPhone 14" in text
+    assert request["output_config"]["effort"] == "high" and request["output_config"]["format"]["type"] == "json_schema"
+    assert request["max_tokens"] == 32000 and "cuboid(" in request["system"] and "German" in request["system"]
+    assert media(build_cad_request(Settings(), cad_request(drawings=[], jpeg=None))["messages"][0]["content"]) == []
+
+
+def test_parse_cad_limits_colours_and_unique_names():
+    long_part = {"name": "zu lang", "color": "#000000", "scad": "x" * 12001}
+    program = parse_cad(json.dumps({**CAD, "parts": [BODY, {**BODY, "color": "blau"}, {**BODY, "name": "x" * 60},
+                                                     long_part, {"name": "leer", "color": "#000000", "scad": "  "}]
+                                    + [BODY] * 50}))
+    assert len(program.parts) == 40
+    assert [p.name for p in program.parts[:3]] == ["Gehäuse", "Gehäuse 2", "x" * 39 + "…"]
+    assert program.parts[1].color == "#9aa0a6" and program.shared.startswith("w = 71.5")
+    assert all(p.name not in ("zu lang", "leer") for p in program.parts)
+    assert len({p.name for p in program.parts}) == 40
+
+
+@pytest.mark.parametrize("text", [json.dumps({**CAD, "parts": []}), json.dumps({**CAD, "shared": "x" * 20001}),
+                                  "kaputt"])
+def test_parse_cad_without_parts_is_a_schema_error(text):
+    with pytest.raises(IdentifyError):
+        parse_cad(text)
+
+
+def test_check_request_labels_the_four_views_and_the_round():
+    request = build_check_request(Settings(), check_request())
+    content = request["messages"][0]["content"]
+    text = " ".join(b["text"] for b in content if b["type"] == "text")
+    for label in ("vorn", "hinten", "rechts", "oben", "Runde 1 von 2", "ERROR: Parser error", "Breite 80,0 mm",
+                  "cube(w);", "Kameraplateau Breite"):
+        assert label in text, label
+    assert media(content) == ["image/png"] * 5 + ["image/jpeg"]
+    assert request["output_config"]["effort"] == "high"
+    answer = parse_check(json.dumps({"verdict": "fix", "issues": ["Linse zu groß"] * 12, "shared": None,
+                                     "parts": [{"name": "Linse", "color": "#111111", "scad": "cyl(d=10, h=2);"}],
+                                     "remove": ["Blitz"]}))
+    assert (answer.verdict, len(answer.issues), answer.shared, answer.remove) == ("fix", 10, None, ["Blitz"])
+    assert parse_check(json.dumps({"verdict": "super", "issues": [], "shared": None, "parts": [],
+                                   "remove": []})).verdict == "fix"
+
+
+def test_apply_check_replaces_appends_and_removes():
+    answer = CheckAnswer(verdict="fix", issues=[], shared="w = 70;",
+                         parts=[CadPart("Linse", "#222222", "cyl(d=12, h=2);"), CadPart("Blitz", "#ffffff", "sphere(2);")],
+                         remove=["Gehäuse"])
+    fixed = apply_check(PROGRAM, answer)
+    assert fixed.shared == "w = 70;"
+    assert [(p.name, p.scad) for p in fixed.parts] == [("Linse", "cyl(d=12, h=2);"), ("Blitz", "sphere(2);")]
+    same = apply_check(PROGRAM, CheckAnswer("good", [], None, [], []))
+    assert same == PROGRAM
+
+
+def test_scad_source_has_header_shared_and_every_part():
+    source = scad_source(PROGRAM)
+    assert source.startswith(HEADER) and "w = 71.5;" in source
+    assert source.index("// --- Gehäuse") < source.index("cube(w);") < source.index("// --- Linse")
+
+
+async def test_claude_model_calls_report_cost_and_use_the_model_timeout():
+    from types import SimpleNamespace
+
+    from oi.identify import ClaudeIdentifier
+    from tests.test_identify import FakeClient, response
+    usage = SimpleNamespace(input_tokens=30000, output_tokens=2000,
+                            server_tool_use=SimpleNamespace(web_search_requests=2, web_fetch_requests=1))
+    researched = SimpleNamespace(stop_reason="end_turn", usage=usage, content=answer(SHEET))
+    client = FakeClient(reply=researched)
+    calls = ClaudeModelCalls(ClaudeIdentifier(Settings(), client), Settings())
+    result = await calls.research(RESEARCH_REQ)
+    assert result.sheet.size_mm == (71.5, 146.7, 7.8) and result.searches == 2
+    assert result.cost_usd == pytest.approx(30000 * 4 / 1e6 + 2000 * 20 / 1e6 + 2 * 0.01)
+    assert client.options["timeout"] == 360.0
+    client = FakeClient(reply=response(json.dumps(CAD)))
+    cad = await ClaudeModelCalls(ClaudeIdentifier(Settings(), client), Settings()).build_cad(cad_request())
+    assert cad.program.parts[0].name == "Gehäuse" and cad.cost_usd == pytest.approx(2000 * 4 / 1e6 + 500 * 20 / 1e6)
+    client = FakeClient(reply=response(json.dumps({"verdict": "good", "issues": [], "shared": None, "parts": [],
+                                                   "remove": []})))
+    checked = await ClaudeModelCalls(ClaudeIdentifier(Settings(), client), Settings()).check_cad(check_request())
+    assert checked.answer.verdict == "good"
+
+
+async def test_fake_model_calls_follow_the_script():
+    fake = FakeModelCalls(research=SHEET_OBJ, cad=PROGRAM, costs=(0.3, 0.3, 0.2),
+                          checks=[CheckAnswer("fix", ["Linse"], None, [], []), IdentifyError("api")])
+    researched = await fake.research(RESEARCH_REQ)
+    assert researched.sheet == SHEET_OBJ and researched.cost_usd == 0.3
+    assert SHEET["drawing"]["url"] in researched.allowed_urls
+    assert (await fake.build_cad(cad_request())).program == PROGRAM
+    assert (await fake.check_cad(check_request())).answer.verdict == "fix"
+    with pytest.raises(IdentifyError):
+        await fake.check_cad(check_request())
+    assert (await fake.check_cad(check_request())).answer.verdict == "good"  # script used up: good
+    assert len(fake.check_requests) == 3 and len(fake.research_requests) == len(fake.cad_requests) == 1
+    plain = FakeModelCalls()
+    assert (await plain.research(RESEARCH_REQ)).sheet == MeasureSheet.estimated()
+    assert (await plain.build_cad(cad_request())).program.parts
+    with pytest.raises(IdentifyError):
+        await FakeModelCalls(cad=IdentifyError("timeout")).build_cad(cad_request())

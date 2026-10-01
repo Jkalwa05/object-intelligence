@@ -45,3 +45,17 @@ async def test_real_profile_knows_the_iphone_14():
     assert result.profile.known and result.profile.summary and len(result.profile.facts) >= 4
     print(f"\n{result.model}: {result.profile.model_dump_json()}\n"
           f"tokens {result.input_tokens}/{result.output_tokens}, ${result.cost_usd:.4f}, {result.latency_s:.1f} s")
+
+
+@pytest.mark.claude
+async def test_real_research_finds_the_iphone_14_size():
+    from oi.modelcalls import ClaudeModelCalls, ResearchRequest
+    settings = Settings.from_env()
+    result = await ClaudeModelCalls(ClaudeIdentifier(settings), settings).research(
+        ResearchRequest(model="Apple iPhone 14", category="Smartphone", language="de"))
+    sheet = result.sheet
+    assert sheet.size_mm is not None and sheet.sources
+    assert all(abs(a - b) <= 1.0 for a, b in zip(sheet.size_mm, (71.5, 146.7, 7.8), strict=True))
+    print(f"\n{sheet.model_dump_json(indent=1)}\nallowed {sorted(result.allowed_urls)}\n"
+          f"searches {result.searches}, tokens {result.input_tokens}/{result.output_tokens}, ${result.cost_usd:.3f}, "
+          f"{result.latency_s:.0f} s")

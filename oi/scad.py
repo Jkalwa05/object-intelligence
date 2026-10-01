@@ -20,9 +20,10 @@ import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from oi.modelcalls import CadPart
+if TYPE_CHECKING:  # modelcalls imports HEADER from here
+    from oi.modelcalls import CadPart
 
 log = logging.getLogger(__name__)
 
