@@ -136,3 +136,29 @@ describe("the sidebar", () => {
     expect(sidebarEntries(s).map((e) => e.name)).toEqual(["Apple iPhone 14, Blau"]);
   });
 });
+
+describe("questions", () => {
+  const named = (trackId: number, name: string) =>
+    ({ ...identity(trackId, `Das ist ${name}.`), display_name: name, level: "likely" as const });
+  const focus = (id: number | null) => ({ ...tracks(99), focus_id: id });
+  const question = (qid: number, status: "transcribing" | "thinking" | "ready", answer = "") => ({
+    type: "question" as const, ts: 0, seq: qid, product: "Apple iPhone 14", qid, status, question: "Wie schwer?",
+    answer, sources: [], line: answer });
+
+  test("they collect under their entry and update by number", async () => {
+    const { questionsFor } = await import("./store");
+    let s = applyServerMessage(initialState, question(1, "transcribing"));
+    s = applyServerMessage(applyServerMessage(s, question(1, "ready", "172 g")), question(2, "thinking"));
+    expect(questionsFor(s, "Apple iPhone 14").map((q) => [q.qid, q.status])).toEqual([[1, "ready"], [2, "thinking"]]);
+    expect(questionsFor(s, "Lampe")).toEqual([]);
+  });
+
+  test("a question goes to the object in the hand, else to the last opened entry", async () => {
+    const { askTarget, toggleEntry } = await import("./store");
+    let s = applyServerMessage(applyServerMessage(initialState, named(1, "Lampe")), named(2, "iPhone"));
+    expect(askTarget(applyServerMessage(s, focus(2)))).toEqual({ track_id: 2, name: "iPhone" });
+    s = toggleEntry(applyServerMessage(s, focus(null)), "Lampe");
+    expect(askTarget(s)).toEqual({ track_id: 1, name: "Lampe" });
+    expect(askTarget(initialState)).toBeNull();
+  });
+});

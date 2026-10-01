@@ -11,6 +11,9 @@ export default function Banner({ onRetryCamera }: { onRetryCamera(): void }) {
   const connection = useHud((s) => s.connection);
   const cameraError = useHud((s) => s.cameraError);
   const scene = useHud(sceneBanner);
+  const listening = useHud((s) => s.listening);
+  const micError = useHud((s) => s.micError);
+  const flash = useHud((s) => s.flash);
   const lang = useHud((s) => s.telemetry?.language ?? "de");
   const latest = notices.at(-1);
   const [expiredSeq, setExpiredSeq] = useState<number | null>(null);
@@ -32,6 +35,9 @@ export default function Banner({ onRetryCamera }: { onRetryCamera(): void }) {
   if (connection === "replaced") items.push(<div key="replaced" className="banner glass">{t("replaced", lang)}</div>);
   else if (connection === "closed") items.push(<div key="closed" className="banner glass">{t("reconnecting", lang)}</div>);
   if (scene) items.push(<div key="scene" className="banner glass">{t(scene, lang)}</div>);
+  if (listening) items.push(<div key="listening" className="banner glass listening">{t("listening", lang)}</div>);
+  if (micError) items.push(<div key="mic" className="banner glass">{t("micDenied", lang)}</div>);
+  if (flash) items.push(<div key="flash" className="banner glass">{flash}</div>);
   if (latest && latest.seq !== expiredSeq) {
     items.push(<div key={`notice-${latest.seq}`} className="banner glass">{latest.text}</div>);
   }

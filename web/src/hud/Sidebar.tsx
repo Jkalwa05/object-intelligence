@@ -7,6 +7,7 @@ import { t, type I18nKey } from "../i18n";
 import { entriesFor, useHud, type SidebarEntry } from "../store";
 import IdentityView from "./IdentityView";
 import ProfileView from "./ProfileView";
+import QuestionsView from "./QuestionsView";
 
 const Hologram = lazy(() => import("./Hologram")); // three.js loads only once a hologram is shown
 
@@ -36,6 +37,7 @@ function Entry({ entry, onRecheck, onConfirm }: { entry: SidebarEntry } & Action
         <div className="entry-body">
           <IdentityView identity={identity} lang={lang} onRecheck={entry.active ? onRecheck : undefined}
             onConfirm={onConfirm} />
+          <QuestionsView name={entry.name} lang={lang} />
           {known && shape && <Suspense fallback={null}><Hologram shape={shape} lang={lang} /></Suspense>}
           {known && profile && <ProfileView profile={profile} lang={lang} />}
         </div>

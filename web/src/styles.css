@@ -124,6 +124,41 @@ body {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.qa {
+  margin-top: 8px;
+}
+
+.qa-question {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.qa-answer {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.qa-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 4px 0 0;
+  font-size: 11px;
+}
+
+.qa-sources a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.banner.listening::before {
+  content: "●";
+  margin-right: 8px;
+  color: #ff453a;
+}
+
 .hologram-canvas {
   display: block;
   width: 100%;

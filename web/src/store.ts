@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { ConnectionStatus } from "./net/socket";
-import type { IdentityMsg, NoticeMsg, ProfileMsg, SceneMsg, ServerMsg, ShapeMsg, TelemetryMsg, TracksMsg } from "./protocol";
+import type { IdentityMsg, NoticeMsg, ProfileMsg, QuestionMsg, SceneMsg, ServerMsg, ShapeMsg, TelemetryMsg, TracksMsg }
+  from "./protocol";
 
 export const MAX_ENTRIES = 8;
 
@@ -13,6 +14,10 @@ export interface HudState {
   named: Record<string, IdentityMsg>; // the latest identity of every card name, for the sidebar
   recent: string[]; // card names in the sidebar, newest first
   open: string[]; // sidebar entries opened by hand
+  questions: Record<string, QuestionMsg[]>; // spoken questions by entry name, oldest first
+  listening: boolean; // the space bar is held: the microphone is open
+  micError: string | null;
+  flash: string | null; // a short message for the person's own action
   telemetry: TelemetryMsg | null;
   notices: NoticeMsg[];
   connection: ConnectionStatus;
@@ -31,6 +36,10 @@ export const initialState: HudState = {
   named: {},
   recent: [],
   open: [],
+  questions: {},
+  listening: false,
+  micError: null,
+  flash: null,
   telemetry: null,
   notices: [],
   connection: "closed",
@@ -58,6 +67,11 @@ export function applyServerMessage(s: HudState, m: ServerMsg): HudState {
       return { ...s, profiles: { ...s.profiles, [m.product]: m } };
     case "shape":
       return { ...s, shapes: { ...s.shapes, [m.product]: m } };
+    case "question": {
+      const earlier = s.questions[m.product] ?? [];
+      const list = earlier.some((q) => q.qid === m.qid) ? earlier.map((q) => (q.qid === m.qid ? m : q)) : [...earlier, m];
+      return { ...s, questions: { ...s.questions, [m.product]: list } };
+    }
   }
 }
 
@@ -66,7 +80,7 @@ export function applyServerMessage(s: HudState, m: ServerMsg): HudState {
 export function applyConnection(s: HudState, connection: ConnectionStatus): HudState {
   if (connection === "open") {
     return { ...s, connection, identities: {}, notices: [], scene: null, profiles: {}, shapes: {}, named: {}, recent: [],
-      open: [] };
+      open: [], questions: {} };
   }
   return { ...s, connection, tracks: null };
 }
@@ -116,6 +130,22 @@ export function toggleEntry<S extends Pick<HudState, "open">>(s: S, name: string
   return { ...s, open: s.open.includes(name) ? s.open.filter((n) => n !== name) : [...s.open, name] };
 }
 
+const NO_QUESTIONS: QuestionMsg[] = [];
+
+export function questionsFor(s: Pick<HudState, "questions">, name: string): QuestionMsg[] {
+  return s.questions[name] ?? NO_QUESTIONS;
+}
+
+// Whom a spoken question is about: the object in the hand, else the entry opened last, else the newest entry.
+export function askTarget(s: HudState): { track_id: number; name: string } | null {
+  const id = s.tracks?.focus_id;
+  const held = id == null ? undefined : s.identities[id];
+  if (held) return { track_id: held.track_id, name: held.display_name };
+  const name = s.open.at(-1) ?? s.recent[0];
+  const identity = name === undefined ? undefined : s.named[name];
+  return identity ? { track_id: identity.track_id, name } : null;
+}
+
 // The profile next to the card: the focus product's own one, only while it is likely or certain.
 export function focusProfile(s: HudState): ProfileMsg | null {
   const id = s.tracks?.focus_id;
@@ -130,6 +160,9 @@ interface HudActions {
   toggleMute(): void;
   toggleTelemetry(): void;
   toggleEntry(name: string): void;
+  setListening(listening: boolean): void;
+  setMicError(error: string | null): void;
+  setFlash(text: string | null): void;
   setConnection(c: ConnectionStatus): void;
   setCameraError(e: string | null): void;
 }
@@ -141,6 +174,9 @@ export const useHud = create<HudState & HudActions>()((set) => ({
   toggleMute: () => set((s) => ({ muted: !s.muted })),
   toggleTelemetry: () => set((s) => ({ showTelemetry: !s.showTelemetry })),
   toggleEntry: (name) => set((s) => toggleEntry(s, name)),
+  setListening: (listening) => set({ listening }),
+  setMicError: (micError) => set({ micError }),
+  setFlash: (flash) => set({ flash }),
   setConnection: (connection) => set((s) => applyConnection(s, connection)),
   setCameraError: (cameraError) => set({ cameraError }),
 }));

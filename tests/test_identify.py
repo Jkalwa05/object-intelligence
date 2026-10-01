@@ -383,7 +383,9 @@ def test_ask_request_has_the_object_the_history_and_the_web_search():
     for part in ("Apple iPhone 14", "Smartphone", "A15 Bionic", "Wie schwer ist das?", "172 Gramm",
                  "Was kostet das heute gebraucht?"):
         assert part in text
-    assert request["tools"] == [{"type": "web_search_20260209", "name": "web_search", "max_uses": 2}]
+    assert request["tools"][0]["type"] == "web_search_20260209" and request["tools"][0]["name"] == "web_search"
+    assert request["output_config"] == {"effort": "medium"}  # with low effort Claude skipped a needed search
+    assert "used prices" in request["system"]
     assert "German" in request["system"] and "output_config" not in request or "format" not in request["output_config"]
 
 
@@ -412,3 +414,18 @@ async def test_fake_answers_from_its_script():
     fake = FakeIdentifier(answer="Es wiegt 172 Gramm.")
     result = await fake.answer(ASK_REQ)
     assert (result.answer, fake.ask_requests) == ("Es wiegt 172 Gramm.", [ASK_REQ])
+
+
+def test_without_citations_the_pages_found_are_the_sources():
+    found = SimpleNamespace(type="web_search_tool_result", content=[
+        SimpleNamespace(type="web_search_result", url=f"https://shop{i}.de", title=f"Shop {i}") for i in range(5)])
+    answer, sources = parse_answer([found, SimpleNamespace(type="text", text="Etwa 25 Euro.", citations=None)])
+    assert answer == "Etwa 25 Euro." and [s.url for s in sources] == ["https://shop0.de", "https://shop1.de",
+                                                                       "https://shop2.de"]
+
+
+def test_german_questions_search_from_germany_once():
+    request = build_ask_request(Settings(), ASK_REQ)
+    tool = request["tools"][0]
+    assert tool["max_uses"] == 1
+    assert tool["user_location"] == {"type": "approximate", "country": "DE", "timezone": "Europe/Berlin"}

@@ -5,8 +5,10 @@ import Overlay from "./hud/Overlay";
 import Sidebar from "./hud/Sidebar";
 import Telemetry from "./hud/Telemetry";
 import { connect, type Connection } from "./net/socket";
-import type { ConfirmMsg, Lang, RecalibrateMsg, RecheckMsg } from "./protocol";
-import { focusProfile, useHud } from "./store";
+import type { AskMsg, ConfirmMsg, Lang, RecalibrateMsg, RecheckMsg } from "./protocol";
+import { askTarget, focusProfile, useHud } from "./store";
+import { t } from "./i18n";
+import { MAX_SECONDS, MIN_SECONDS, RATE, record, toPcmBase64, type Recording } from "./voice/recorder";
 import { SpeechGate, pickVoice } from "./voice/speech";
 import "./styles.css";
 
@@ -26,11 +28,25 @@ function useVoice() {
   useEffect(() => {
     const gate = new SpeechGate();
     let spokenFor: number | null = null; // the object the voice talks about; a moment without focus changes nothing
+    const answered = new Set<number>(); // answers already read aloud, by question number
     return useHud.subscribe((s, prev) => {
+      if (s.questions !== prev.questions) {
+        const lang: Lang = s.telemetry?.language ?? "de";
+        for (const list of Object.values(s.questions)) {
+          for (const q of list) {
+            if (q.status !== "ready" || !q.line || answered.has(q.qid)) continue;
+            answered.add(q.qid);
+            say(q.line, lang); // you asked by voice: the answer is spoken even when the voice is off
+          }
+        }
+      }
       const synth = "speechSynthesis" in window ? window.speechSynthesis : null;
       const focusId = s.tracks?.focus_id ?? null;
       const lang: Lang = s.telemetry?.language ?? "de";
-      if (s.connection === "open" && prev.connection !== "open") gate.reset(); // fresh pipeline, IDs start at 1
+      if (s.connection === "open" && prev.connection !== "open") {
+        gate.reset(); // fresh pipeline, IDs start at 1
+        answered.clear();
+      }
       if (s.muted && !prev.muted) synth?.cancel();
       if (focusId === null) return;
       const identity = s.identities[focusId];
@@ -98,6 +114,60 @@ export default function App() {
   }, []);
 
   useVoice();
+
+  // Push-to-talk: hold the space bar, ask, let go (sub-project 4).
+  useEffect(() => {
+    let recording: Promise<Recording> | null = null;
+    let target: { track_id: number; name: string } | null = null;
+    let limit: number | undefined;
+    const store = useHud.getState;
+    const finish = async () => {
+      window.clearTimeout(limit);
+      const pending = recording;
+      recording = null;
+      store().setListening(false);
+      if (!pending || !target) return;
+      try {
+        const { samples, seconds } = await (await pending).stop();
+        if (seconds < MIN_SECONDS) return;
+        const ask: AskMsg = { type: "ask", track_id: target.track_id, name: target.name, rate: RATE,
+          audio: toPcmBase64(samples) };
+        connection.current?.send(JSON.stringify(ask));
+      } catch {
+        // no microphone: the banner already says so
+      }
+    };
+    const down = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || event.metaKey || event.ctrlKey || event.altKey) return;
+      event.preventDefault(); // no scrolling, no button presses
+      if (event.repeat || recording) return;
+      target = askTarget(store());
+      if (!target) {
+        store().setFlash(t("noTarget", store().telemetry?.language ?? "de"));
+        window.setTimeout(() => store().setFlash(null), 2500);
+        return;
+      }
+      store().setListening(true);
+      store().setMicError(null);
+      recording = record();
+      recording.catch((error: unknown) => {
+        store().setListening(false);
+        store().setMicError(String(error));
+      });
+      limit = window.setTimeout(() => void finish(), MAX_SECONDS * 1000);
+    };
+    const up = (event: KeyboardEvent) => {
+      if (event.code !== "Space") return;
+      event.preventDefault();
+      void finish();
+    };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+    };
+  }, []);
 
   const send = (message: RecheckMsg | ConfirmMsg) => connection.current?.send(JSON.stringify(message));
 

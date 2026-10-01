@@ -135,7 +135,27 @@ export interface ShapeMsg {
   parts: ShapePart[];
 }
 
-export type ServerMsg = TracksMsg | IdentityMsg | TelemetryMsg | NoticeMsg | SceneMsg | ProfileMsg | ShapeMsg;
+export interface Source {
+  title: string;
+  url: string;
+}
+
+// Sub-project 4: a spoken question about one object and Claude's answer, shown in that object's entry.
+export interface QuestionMsg {
+  type: "question";
+  ts: number;
+  seq: number;
+  product: string; // the name of the sidebar entry
+  qid: number;
+  status: "transcribing" | "thinking" | "ready" | "empty" | "error";
+  question: string;
+  answer: string;
+  sources: Source[];
+  line: string; // what the voice reads: the answer
+}
+
+export type ServerMsg = TracksMsg | IdentityMsg | TelemetryMsg | NoticeMsg | SceneMsg | ProfileMsg | ShapeMsg
+  | QuestionMsg;
 
 export interface FocusMsg {
   type: "focus";
@@ -149,6 +169,15 @@ export interface RecheckMsg {
 
 export interface RecalibrateMsg {
   type: "recalibrate";
+}
+
+// A question spoken while the space bar was held (sub-project 4): 16-bit PCM in base64 and the target entry.
+export interface AskMsg {
+  type: "ask";
+  track_id: number | null;
+  name: string | null;
+  rate: number;
+  audio: string;
 }
 
 // The person picks the right candidate of a sidebar entry (sub-project 3).
@@ -168,6 +197,7 @@ const REQUIRED: Record<ServerMsg["type"], string[]> = {
   scene: ["calibrating", "naming", "items"],
   profile: ["product", "status", "summary", "facts", "released", "launch_price", "trivia", "line"],
   shape: ["product", "status", "size_mm", "parts"],
+  question: ["product", "qid", "status", "question", "answer", "sources", "line"],
 };
 
 export function isServerMsg(x: unknown): x is ServerMsg {

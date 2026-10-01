@@ -170,12 +170,15 @@ SAME_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 ASK_PROMPT = """You answer a spoken question about an object a person holds up to a camera, as the voice of a heads-up display.
-- Answer in {language}, in one to three short sentences that sound natural when read aloud. No lists, no markdown, no URLs.
-- Use what you know about this product. Search the web only when the question needs current information (today's price, availability, recent news) or a fact you are not sure of.
+- Answer in {language}, in at most three short sentences that sound natural when read aloud. No lists, no markdown, no URLs.
+- Use what you know about this product. Questions about today's or used prices, availability, offers or recent news always need a web search first; so does any fact you are not sure of. Otherwise answer without searching.
 - If you are not sure, say so briefly instead of guessing.
 - If the question is not about the object, answer it anyway, briefly."""
-WEB_SEARCH = {"type": "web_search_20260209", "name": "web_search", "max_uses": 2}
+WEB_SEARCH = {"type": "web_search_20260209", "name": "web_search", "max_uses": 1}  # one search: ~20k tokens of pages
+GERMANY = {"type": "approximate", "country": "DE", "timezone": "Europe/Berlin"}  # euro prices, German marketplaces
+MAX_SOURCES = 3
 SEARCH_PRICE_USD = 0.01  # 10 dollars per 1000 searches
+ASK_EFFORT = "medium"
 MAX_PARTS = 16
 MAX_MM = 3000.0  # nothing anyone holds up to a webcam is bigger than 3 m
 NEUTRAL_GREY = "#9aa0a6"
@@ -439,22 +442,33 @@ def build_ask_request(s: Settings, req: AskRequest) -> dict[str, Any]:
     if req.jpeg is not None:
         content.insert(0, _image(req.jpeg))
     request = _with_content(s, ASK_PROMPT.format(language=_language(req.language)), content, None)
-    request["tools"] = [dict(WEB_SEARCH)]
+    tool = dict(WEB_SEARCH)
+    if req.language == "de":
+        tool["user_location"] = dict(GERMANY)
+    request["tools"] = [tool]
+    if "effort" in request.get("output_config", {}):
+        request["output_config"]["effort"] = ASK_EFFORT  # low effort tends to skip the search it needs
     if not request.get("output_config"):
         request.pop("output_config", None)
     return request
 
 
 def parse_answer(blocks: list[Any]) -> tuple[str, list[Source]]:
-    """All text of the answer, and the distinct pages the web search cited."""
+    """All text of the answer, and its sources: the pages Claude cited, or else the first pages its search found."""
     text = "".join(getattr(b, "text", "") for b in blocks if getattr(b, "type", None) == "text")
-    sources: dict[str, Source] = {}
-    for block in blocks:
-        for citation in getattr(block, "citations", None) or []:
-            url = getattr(citation, "url", None)
+
+    def collect(items: list[Any]) -> list[Source]:
+        sources: dict[str, Source] = {}
+        for item in items:
+            url = getattr(item, "url", None)
             if url and url not in sources:
-                sources[url] = Source(title=_clip(getattr(citation, "title", "") or url, 80), url=url)
-    return " ".join(text.split()), list(sources.values())
+                sources[url] = Source(title=_clip(getattr(item, "title", "") or url, 80), url=url)
+        return list(sources.values())[:MAX_SOURCES]
+
+    cited = collect([c for b in blocks for c in getattr(b, "citations", None) or []])
+    found = [r for b in blocks if getattr(b, "type", None) == "web_search_tool_result"
+             for r in (getattr(b, "content", None) if isinstance(getattr(b, "content", None), list) else [])]
+    return " ".join(text.split()), cited or collect(found)
 
 
 def build_same_request(s: Settings, req: SameRequest) -> dict[str, Any]:
