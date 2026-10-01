@@ -1,12 +1,18 @@
 import { create } from "zustand";
 import type { ConnectionStatus } from "./net/socket";
-import type { IdentityMsg, NoticeMsg, ProfileMsg, SceneMsg, ServerMsg, TelemetryMsg, TracksMsg } from "./protocol";
+import type { IdentityMsg, NoticeMsg, ProfileMsg, SceneMsg, ServerMsg, ShapeMsg, TelemetryMsg, TracksMsg } from "./protocol";
+
+export const MAX_ENTRIES = 8;
 
 export interface HudState {
   tracks: TracksMsg | null;
   scene: SceneMsg | null;
   identities: Record<number, IdentityMsg>;
   profiles: Record<string, ProfileMsg>; // by product name
+  shapes: Record<string, ShapeMsg>; // by product name
+  named: Record<string, IdentityMsg>; // the latest identity of every card name, for the sidebar
+  recent: string[]; // card names in the sidebar, newest first
+  open: string[]; // sidebar entries opened by hand
   telemetry: TelemetryMsg | null;
   notices: NoticeMsg[];
   connection: ConnectionStatus;
@@ -21,6 +27,10 @@ export const initialState: HudState = {
   scene: null,
   identities: {},
   profiles: {},
+  shapes: {},
+  named: {},
+  recent: [],
+  open: [],
   telemetry: null,
   notices: [],
   connection: "closed",
@@ -37,7 +47,7 @@ export function applyServerMessage(s: HudState, m: ServerMsg): HudState {
     case "tracks":
       return { ...s, tracks: m };
     case "identity":
-      return { ...s, identities: { ...s.identities, [m.track_id]: m } };
+      return remember({ ...s, identities: { ...s.identities, [m.track_id]: m } }, m, s.identities[m.track_id]);
     case "telemetry":
       return { ...s, telemetry: m };
     case "notice":
@@ -46,13 +56,18 @@ export function applyServerMessage(s: HudState, m: ServerMsg): HudState {
       return { ...s, scene: m };
     case "profile":
       return { ...s, profiles: { ...s.profiles, [m.product]: m } };
+    case "shape":
+      return { ...s, shapes: { ...s.shapes, [m.product]: m } };
   }
 }
 
 // A new connection means a fresh server pipeline whose track IDs start again at 1: old identities must not stick
 // to new objects, and boxes of a closed connection must not stay frozen on screen.
 export function applyConnection(s: HudState, connection: ConnectionStatus): HudState {
-  if (connection === "open") return { ...s, connection, identities: {}, notices: [], scene: null, profiles: {} };
+  if (connection === "open") {
+    return { ...s, connection, identities: {}, notices: [], scene: null, profiles: {}, shapes: {}, named: {}, recent: [],
+      open: [] };
+  }
   return { ...s, connection, tracks: null };
 }
 
@@ -60,6 +75,40 @@ export function applyConnection(s: HudState, connection: ConnectionStatus): HudS
 export function sceneBanner(s: HudState): "calibrating" | "naming" | null {
   if (s.scene?.calibrating) return "calibrating";
   return s.scene?.naming ? "naming" : null;
+}
+
+// Every identified object stays pinned in the sidebar under its card name, the newest on top. A new name for the same
+// object (a confirmed colour) replaces its entry instead of adding a second one.
+function remember(s: HudState, m: IdentityMsg, before: IdentityMsg | undefined): HudState {
+  if (m.level === null) return s;
+  const renamed = before?.level != null && before.display_name !== m.display_name ? before.display_name : null;
+  const recent = [m.display_name, ...s.recent.filter((n) => n !== m.display_name && n !== renamed)].slice(0, MAX_ENTRIES);
+  return { ...s, named: { ...s.named, [m.display_name]: m }, recent, open: s.open.filter((n) => recent.includes(n)) };
+}
+
+export interface SidebarEntry {
+  name: string;
+  identity: IdentityMsg;
+  active: boolean; // the object in the hand right now
+  expanded: boolean; // active, or opened by hand
+}
+
+// The sidebar: the held object first and expanded (also while it is still being analysed), the others collapsed.
+export function sidebarEntries(s: HudState): SidebarEntry[] {
+  const id = s.tracks?.focus_id;
+  const held = id == null ? undefined : s.identities[id];
+  const entries: SidebarEntry[] = [];
+  if (held) entries.push({ name: held.display_name, identity: held, active: true, expanded: true });
+  for (const name of s.recent) {
+    if (held && name === held.display_name) continue;
+    const identity = s.named[name];
+    if (identity) entries.push({ name, identity, active: false, expanded: s.open.includes(name) });
+  }
+  return entries;
+}
+
+export function toggleEntry(s: HudState, name: string): HudState {
+  return { ...s, open: s.open.includes(name) ? s.open.filter((n) => n !== name) : [...s.open, name] };
 }
 
 // The profile next to the card: the focus product's own one, only while it is likely or certain.
@@ -75,6 +124,7 @@ interface HudActions {
   toggleMirror(): void;
   toggleMute(): void;
   toggleTelemetry(): void;
+  toggleEntry(name: string): void;
   setConnection(c: ConnectionStatus): void;
   setCameraError(e: string | null): void;
 }
@@ -85,6 +135,7 @@ export const useHud = create<HudState & HudActions>()((set) => ({
   toggleMirror: () => set((s) => ({ mirrored: !s.mirrored })),
   toggleMute: () => set((s) => ({ muted: !s.muted })),
   toggleTelemetry: () => set((s) => ({ showTelemetry: !s.showTelemetry })),
+  toggleEntry: (name) => set((s) => toggleEntry(s, name)),
   setConnection: (connection) => set((s) => applyConnection(s, connection)),
   setCameraError: (cameraError) => set({ cameraError }),
 }));

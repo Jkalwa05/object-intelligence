@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 import type { IdentityMsg, NoticeMsg, TracksMsg } from "./protocol";
 import { applyServerMessage, initialState } from "./store";
 
@@ -71,3 +71,48 @@ test("the profile panel shows the focus product's own profile while it is likely
 });
 
 test("the voice stays off until M is pressed", () => expect(initialState.muted).toBe(true));
+
+describe("the sidebar", () => {
+  const named = (trackId: number, name: string, level: "likely" | "unsure" | null = "likely") =>
+    ({ ...identity(trackId, `Das ist ${name}.`), display_name: name, level });
+  const focus = (id: number | null) => ({ ...tracks(99), focus_id: id });
+
+  test("every identified object gets a pinned entry, the newest on top, at most 8", async () => {
+    const { sidebarEntries } = await import("./store");
+    let s = initialState;
+    for (let i = 1; i <= 10; i++) s = applyServerMessage(s, named(i, `Ding ${i}`));
+    s = applyServerMessage(s, focus(null));
+    expect(sidebarEntries(s).map((e) => e.name)).toEqual(
+      ["Ding 10", "Ding 9", "Ding 8", "Ding 7", "Ding 6", "Ding 5", "Ding 4", "Ding 3"]);
+    expect(sidebarEntries(s).every((e) => !e.active && !e.expanded)).toBe(true);
+  });
+
+  test("only the held object is expanded; a click opens or closes another one", async () => {
+    const { sidebarEntries, toggleEntry } = await import("./store");
+    let s = applyServerMessage(applyServerMessage(initialState, named(1, "Lampe")), named(2, "iPhone"));
+    s = applyServerMessage(s, focus(2));
+    expect(sidebarEntries(s).map((e) => [e.name, e.active, e.expanded])).toEqual(
+      [["iPhone", true, true], ["Lampe", false, false]]);
+    s = toggleEntry(s, "Lampe");
+    expect(sidebarEntries(s).find((e) => e.name === "Lampe")?.expanded).toBe(true);
+    s = applyServerMessage(s, focus(null));  // the iPhone is put away: collapsed, still pinned
+    expect(sidebarEntries(s).map((e) => [e.name, e.expanded])).toEqual([["iPhone", false], ["Lampe", true]]);
+    expect(sidebarEntries(toggleEntry(s, "Lampe")).find((e) => e.name === "Lampe")?.expanded).toBe(false);
+  });
+
+  test("an object being analysed shows on top without entering the history", async () => {
+    const { sidebarEntries } = await import("./store");
+    let s = applyServerMessage(initialState, named(1, "Lampe"));
+    s = applyServerMessage(applyServerMessage(s, { ...named(5, "gadget", null), status: "analysing" }), focus(5));
+    expect(sidebarEntries(s).map((e) => [e.name, e.active])).toEqual([["gadget", true], ["Lampe", false]]);
+    s = applyServerMessage(applyServerMessage(s, focus(null)), focus(null));
+    expect(sidebarEntries(s).map((e) => e.name)).toEqual(["Lampe"]);
+  });
+
+  test("a new name for the same object replaces its entry", async () => {
+    const { sidebarEntries } = await import("./store");
+    let s = applyServerMessage(initialState, named(1, "Apple iPhone 14"));
+    s = applyServerMessage(s, named(1, "Apple iPhone 14, Blau"));
+    expect(sidebarEntries(s).map((e) => e.name)).toEqual(["Apple iPhone 14, Blau"]);
+  });
+});
