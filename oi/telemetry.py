@@ -117,7 +117,8 @@ class CallLog:
             self._session_dir = self._runs_dir / self._now().strftime("%Y-%m-%d_%H-%M-%S")
             self._session_dir.mkdir(parents=True, exist_ok=True)
         stem = f"{record.n:03d}_track{record.track_id}"
-        (self._session_dir / f"{stem}.jpg").write_bytes(record.jpeg)
+        if record.jpeg:  # a text-only call (product profile) has no image
+            (self._session_dir / f"{stem}.jpg").write_bytes(record.jpeg)
         data = asdict(record)
         del data["jpeg"]
         (self._session_dir / f"{stem}.json").write_text(json.dumps(data, indent=2, ensure_ascii=False))

@@ -68,3 +68,11 @@ def test_budget_is_shared_between_connections():
     first.call_finished(1.0, 0.02)
     second.call_started()
     assert second.calls_session == 2 and second.snapshot(0).cost_session_usd == 0.02
+
+
+def test_call_log_writes_no_image_for_a_text_only_call(tmp_path):
+    from dataclasses import replace
+    log = CallLog(tmp_path, enabled=True, now=lambda: datetime(2026, 10, 1, 9, 0, 0))
+    log.write(replace(_record(), track_id=-1, jpeg=b""))  # a product profile: only text went to Claude
+    (session,) = list(tmp_path.iterdir())
+    assert sorted(p.name for p in session.iterdir()) == ["001_track-1.json"]

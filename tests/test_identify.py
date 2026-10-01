@@ -225,3 +225,53 @@ async def test_fake_scene_answers_from_its_script():
     assert (await FakeIdentifier().describe_scene(SCENE_REQ)).items == []
     with pytest.raises(IdentifyError):
         await FakeIdentifier(scene=IdentifyError("api")).describe_scene(SCENE_REQ)
+
+
+# --- product profile (sub-project 2): Claude's own knowledge, text only ---------------------------------------------
+
+from oi.identify import ProductRequest, build_profile_request, parse_profile  # noqa: E402
+
+PRODUCT_REQ = ProductRequest(product="Apple iPhone 14", category="Smartphone", language="de")
+PROFILE = {"known": True, "summary": "Ein Smartphone von Apple.", "facts": [{"label": "Chip", "value": "A15 Bionic"}],
+           "released": "September 2022", "launch_price": "999 €", "trivia": ["Erstes iPhone mit Unfallerkennung."]}
+
+
+def test_profile_request_sends_no_image_only_the_name():
+    request = build_profile_request(Settings(), PRODUCT_REQ)
+    content = request["messages"][0]["content"]
+    assert [block["type"] for block in content] == ["text"]
+    assert "Apple iPhone 14" in content[0]["text"] and "Smartphone" in content[0]["text"]
+    assert "German" in request["system"] and "known" in request["system"]
+    assert request["output_config"]["format"]["schema"]["required"] == ["known", "summary", "facts", "released",
+                                                                       "launch_price", "trivia"]
+
+
+def test_profile_answer_is_trimmed():
+    text = json.dumps({**PROFILE, "summary": "  Ein Smartphone von Apple.  ", "trivia": ["a", "b", "c"],
+                       "facts": [{"label": f"Wert {i}", "value": str(i)} for i in range(12)]})
+    profile = parse_profile(text)
+    assert profile.summary == "Ein Smartphone von Apple." and len(profile.facts) == 8 and profile.trivia == ["a", "b"]
+    empty = parse_profile(json.dumps({**PROFILE, "facts": [{"label": " ", "value": "x"}, {"label": "Chip", "value": ""}]}))
+    assert empty.facts == []
+
+
+def test_unknown_product_gives_an_empty_profile():
+    profile = parse_profile(json.dumps({**PROFILE, "known": False}))
+    assert (profile.known, profile.summary, profile.facts, profile.trivia, profile.released, profile.launch_price) \
+        == (False, "", [], [], None, None)
+
+
+async def test_profile_call_reports_cost():
+    client = FakeClient(reply=response(json.dumps(PROFILE)))
+    result = await ClaudeIdentifier(Settings(), client).describe_product(PRODUCT_REQ)
+    assert result.profile.facts[0].value == "A15 Bionic" and result.cost_usd == pytest.approx(0.018)
+
+
+async def test_fake_profile_from_script_or_unknown():
+    from oi.contracts import ProductProfile
+    profile = ProductProfile.model_validate(PROFILE)
+    fake = FakeIdentifier(profile=profile)
+    assert (await fake.describe_product(PRODUCT_REQ)).profile == profile and fake.product_requests == [PRODUCT_REQ]
+    assert (await FakeIdentifier().describe_product(PRODUCT_REQ)).profile.known is False
+    with pytest.raises(IdentifyError):
+        await FakeIdentifier(profile=IdentifyError("api")).describe_product(PRODUCT_REQ)

@@ -1,7 +1,8 @@
 """Identification (spec §2.5): the Claude request, parsing its answer, a free fake, and the startup probe.
 
 Identification sees only the focus crop. The one exception is the scene call after a calibration (spec §9): it gets
-the whole frame, with every person painted grey first (privacy.mask_people). Limits such as "at most 4 candidates"
+the whole frame, with every person painted grey first (privacy.mask_people). The product profile (sub-project 2)
+sends no image at all, only the product's name. Limits such as "at most 4 candidates"
 are enforced after the answer arrives (by truncating), not in the JSON schema, so a paid call is never rejected over
 one extra candidate.
 """
@@ -20,7 +21,7 @@ import anthropic
 
 from oi import lines
 from oi.config import Lang, Settings
-from oi.contracts import Candidate, Depth, NextView, Observation, SceneItemWire
+from oi.contracts import Candidate, Depth, NextView, Observation, ProductProfile, ProfileFact, SceneItemWire
 
 MAX_TOKENS = 16000
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
@@ -92,6 +93,35 @@ SCENE_SCHEMA: dict[str, Any] = {
 }
 MIN_SCENE_BOX = 5  # of 1000: anything thinner is no object
 
+PROFILE_PROMPT = """You write a short product profile for a heads-up display, from your own knowledge.
+- Only facts about exactly this model. Leave a field out (null, or fewer entries) rather than guess.
+- If you do not know this exact model well, set known to false and leave everything else empty.
+- summary: one or two sentences: what it is, what it is for, who it is for.
+- facts: the 4 to 8 most telling technical facts for this kind of product (for a phone for example chip, display, camera, battery; for a lamp type, material, socket, power), each as a short label and value.
+- released: when it came out, month and year if known.
+- launch_price: the recommended retail price at launch in Germany in euros if known, otherwise with its currency.
+- trivia: one or two interesting, true facts about this product.
+- Write everything in {language}."""
+PROFILE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "known": {"type": "boolean"},
+        "summary": {"type": "string"},
+        "facts": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"label": {"type": "string"}, "value": {"type": "string"}},
+            "required": ["label", "value"],
+            "additionalProperties": False,
+        }},
+        "released": _NULLABLE_STRING,
+        "launch_price": _NULLABLE_STRING,
+        "trivia": _STRINGS,
+    },
+    "required": ["known", "summary", "facts", "released", "launch_price", "trivia"],
+    "additionalProperties": False,
+}
+MAX_FACTS, MAX_TRIVIA = 8, 2
+
 
 @dataclass(frozen=True)
 class IdentifyRequest:
@@ -128,6 +158,23 @@ class SceneResult:
     model: str
 
 
+@dataclass(frozen=True)
+class ProductRequest:
+    product: str  # the display name, e.g. "Apple iPhone 14"
+    category: str
+    language: Lang
+
+
+@dataclass(frozen=True)
+class ProductResult:
+    profile: ProductProfile
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    latency_s: float
+    model: str
+
+
 class IdentifyError(Exception):
     def __init__(self, reason: Literal["refusal", "schema", "timeout", "api", "connection"]) -> None:
         super().__init__(reason)
@@ -140,6 +187,8 @@ class Identifier(Protocol):
     async def identify(self, req: IdentifyRequest) -> IdentifyResult: ...
 
     async def describe_scene(self, req: SceneRequest) -> SceneResult: ...
+
+    async def describe_product(self, req: ProductRequest) -> ProductResult: ...
 
 
 def format_history(observations: list[Observation], lang: Lang) -> str:
@@ -163,17 +212,17 @@ def request_text(req: IdentifyRequest) -> str:
     return "\n".join(text)
 
 
-def _request(s: Settings, system: str, jpeg: bytes, text: str, schema: dict[str, Any]) -> dict[str, Any]:
+def _request(s: Settings, system: str, jpeg: bytes | None, text: str, schema: dict[str, Any]) -> dict[str, Any]:
     output_config: dict[str, Any] = {"format": {"type": "json_schema", "schema": schema}}
+    content: list[dict[str, Any]] = [{"type": "text", "text": text}]
+    if jpeg is not None:
+        content.insert(0, {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
+                                                       "data": base64.standard_b64encode(jpeg).decode()}})
     request: dict[str, Any] = {
         "model": s.model,
         "max_tokens": MAX_TOKENS,
         "system": system,
-        "messages": [{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
-                                         "data": base64.standard_b64encode(jpeg).decode()}},
-            {"type": "text", "text": text},
-        ]}],
+        "messages": [{"role": "user", "content": content}],
         "output_config": output_config,
     }
     if s.model in EFFORT_AND_FALLBACK_MODELS:  # Haiku 4.5 knows neither effort nor server-side fallbacks
@@ -215,6 +264,34 @@ def parse_observation(text: str) -> Observation:
         raise IdentifyError("schema") from error
 
 
+def build_profile_request(s: Settings, req: ProductRequest) -> dict[str, Any]:
+    return _request(s, PROFILE_PROMPT.format(language=_language(req.language)), None,
+                    f"Product: {req.product}\nCategory: {req.category}", PROFILE_SCHEMA)
+
+
+def _clip(text: Any, limit: int) -> str:
+    """Whitespace collapsed, at most `limit` characters: the panel has room for short values only."""
+    text = " ".join(str(text).split())
+    return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
+
+
+def parse_profile(text: str) -> ProductProfile:
+    """Claude's profile, trimmed to what the panel shows; an unknown product keeps nothing but `known=False`."""
+    try:
+        data = json.loads(text)
+        if not data["known"]:
+            return ProductProfile(known=False, summary="", facts=[], released=None, launch_price=None, trivia=[])
+        facts = [ProfileFact(label=_clip(f["label"], 40), value=_clip(f["value"], 120)) for f in data["facts"]
+                 if _clip(f.get("label", ""), 40) and _clip(f.get("value", ""), 120)]
+        released, price = data.get("released"), data.get("launch_price")
+        return ProductProfile(known=True, summary=_clip(data["summary"], 400), facts=facts[:MAX_FACTS],
+                              released=_clip(released, 80) if released and _clip(released, 80) else None,
+                              launch_price=_clip(price, 80) if price and _clip(price, 80) else None,
+                              trivia=[_clip(t, 200) for t in data["trivia"] if _clip(t, 200)][:MAX_TRIVIA])
+    except (ValueError, TypeError, AttributeError, KeyError) as error:
+        raise IdentifyError("schema") from error
+
+
 def parse_scene(text: str) -> list[SceneItemWire]:
     """Claude's scene answer as display items: boxes clipped to the image and ordered, junk dropped, at most 15."""
     try:
@@ -253,6 +330,13 @@ class ClaudeIdentifier:
         return SceneResult(items=parse_scene(text), input_tokens=usage.input_tokens, output_tokens=usage.output_tokens,
                            cost_usd=cost_usd(self._s.model, usage.input_tokens, usage.output_tokens, self._s.prices),
                            latency_s=latency, model=self._s.model)
+
+    async def describe_product(self, req: ProductRequest) -> ProductResult:
+        text, usage, latency = await self._call(build_profile_request(self._s, req))
+        return ProductResult(profile=parse_profile(text), input_tokens=usage.input_tokens,
+                             output_tokens=usage.output_tokens,
+                             cost_usd=cost_usd(self._s.model, usage.input_tokens, usage.output_tokens, self._s.prices),
+                             latency_s=latency, model=self._s.model)
 
     async def _call(self, request: dict[str, Any]) -> tuple[str, Any, float]:
         """(answer text, usage, latency); every failure becomes an IdentifyError."""
@@ -299,12 +383,15 @@ class FakeIdentifier:
     model_label = "fake"
 
     def __init__(self, script: Sequence[Observation | IdentifyError] | None = None, delay_s: float = 0.0,
-                 scene: Sequence[SceneItemWire] | IdentifyError | None = None) -> None:
+                 scene: Sequence[SceneItemWire] | IdentifyError | None = None,
+                 profile: ProductProfile | IdentifyError | None = None) -> None:
         self._script = list(script) if script is not None else None
         self._delay = delay_s
         self._scene = scene
+        self._profile = profile
         self.requests: list[IdentifyRequest] = []
         self.scene_requests: list[SceneRequest] = []
+        self.product_requests: list[ProductRequest] = []
 
     async def identify(self, req: IdentifyRequest) -> IdentifyResult:
         self.requests.append(req)
@@ -329,6 +416,18 @@ class FakeIdentifier:
             raise self._scene
         return SceneResult(items=list(self._scene or []), input_tokens=0, output_tokens=0, cost_usd=0.0,
                            latency_s=self._delay, model=self.model_label)
+
+    async def describe_product(self, req: ProductRequest) -> ProductResult:
+        """The scripted profile, or "I don't know this product": canned facts would only pretend to know it."""
+        self.product_requests.append(req)
+        if self._delay:
+            await asyncio.sleep(self._delay)
+        if isinstance(self._profile, IdentifyError):
+            raise self._profile
+        profile = self._profile or ProductProfile(known=False, summary="", facts=[], released=None, launch_price=None,
+                                                  trivia=[])
+        return ProductResult(profile=profile, input_tokens=0, output_tokens=0, cost_usd=0.0, latency_s=self._delay,
+                             model=self.model_label)
 
 
 async def choose_identifier(s: Settings, fake: bool,
