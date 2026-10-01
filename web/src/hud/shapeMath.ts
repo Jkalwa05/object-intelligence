@@ -35,6 +35,38 @@ export function partGeometry(p: ShapePart): PartGeometry {
   }
 }
 
+const OUTLINE_STEPS = 64;
+
+function circle(points: Vec3[], at: (angle: number) => Vec3): void {
+  for (let i = 0; i < OUTLINE_STEPS; i++) {
+    points.push(at((i / OUTLINE_STEPS) * 2 * Math.PI), at(((i + 1) / OUTLINE_STEPS) * 2 * Math.PI));
+  }
+}
+
+// Line segments (pairs of points) that outline a sphere or a capsule. Smooth parts have no hard edges for three.js
+// to find, so they get the rings and outlines a draughtsman would draw: three great circles of a sphere; for a
+// capsule the two rings where its ends begin and its outline seen from the front and from the side. Null for parts
+// whose own edges are enough.
+export function outlinePoints(g: PartGeometry): Vec3[] | null {
+  const points: Vec3[] = [];
+  if (g.kind === "sphere") {
+    const r = g.args[0];
+    circle(points, (a) => [r * Math.cos(a), 0, r * Math.sin(a)]);
+    circle(points, (a) => [r * Math.cos(a), r * Math.sin(a), 0]);
+    circle(points, (a) => [0, r * Math.sin(a), r * Math.cos(a)]);
+    return points;
+  }
+  if (g.kind !== "capsule") return null;
+  const [r, length] = g.args;
+  const h = length / 2;
+  for (const y of [h, -h]) circle(points, (a) => [r * Math.cos(a), y, r * Math.sin(a)]);
+  for (const side of [(u: number, y: number): Vec3 => [u, y, 0], (u: number, y: number): Vec3 => [0, y, u]]) {
+    circle(points, (a) => side(r * Math.cos(a), r * Math.sin(a) + (Math.sin(a) >= 0 ? h : -h))); // both ends
+    points.push(side(r, h), side(r, -h), side(-r, h), side(-r, -h)); // the straight sides
+  }
+  return points;
+}
+
 export function formatSize(size: Vec3 | null, lang: Lang): string {
   if (!size) return "";
   const locale = lang === "de" ? "de-DE" : "en-US";

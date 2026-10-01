@@ -145,6 +145,13 @@ export function fullscreenView(s: Pick<HudState, "fullscreen" | "named" | "recen
   return { identity, shape, profile: s.profiles[name] };
 }
 
+// Whether the entry asks you to tap the right candidate: not while it is analysing or after you picked, and not when
+// it is certain with a single name (there is nothing to choose).
+export function pickable(identity: IdentityMsg): boolean {
+  if (identity.confirmed || identity.status === "analysing") return false;
+  return identity.level !== "certain" || identity.candidates.length > 1;
+}
+
 export function questionsFor(s: Pick<HudState, "questions">, name: string): QuestionMsg[] {
   return s.questions[name] ?? NO_QUESTIONS;
 }

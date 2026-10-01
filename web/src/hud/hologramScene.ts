@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import type { Lang, ShapeMsg } from "../protocol";
-import { clearGrey, millimetres, partGeometry, type PartGeometry } from "./shapeMath";
+import { clearGrey, millimetres, outlinePoints, partGeometry, type PartGeometry } from "./shapeMath";
 
 export const EDGE = 0x30d158; // the green of the object in your hand
 const EDGE_ANGLE = 10; // degrees: low enough that the soft corners of a rounded box still get their outline
@@ -39,7 +39,10 @@ export function buildModel(shape: ShapeMsg): Model {
   shape.parts.forEach((part, index) => {
     const g = partGeometry(part);
     const geometry = geometryOf(g);
-    const edges = new THREE.EdgesGeometry(geometry, EDGE_ANGLE);
+    const round = outlinePoints(g);
+    const edges = round
+      ? new THREE.BufferGeometry().setFromPoints(round.map(([x, y, z]) => new THREE.Vector3(x, y, z)))
+      : new THREE.EdgesGeometry(geometry, EDGE_ANGLE);
     const fill = new THREE.MeshBasicMaterial({ color: g.color, transparent: true, opacity: 0.28, depthWrite: false });
     const line = new THREE.LineBasicMaterial({ color: EDGE, transparent: true, opacity: 0.85 });
     const piece = new THREE.Group();

@@ -73,6 +73,17 @@ test("the profile panel shows the focus product's own profile while it is likely
 
 test("the voice stays off until M is pressed", () => expect(initialState.muted).toBe(true));
 
+test("there is something to pick unless it is certain with one name, confirmed or still analysing", async () => {
+  const { pickable } = await import("./store");
+  const two = [{ name: "A", share: 0.6 }, { name: "B", share: 0.4 }];
+  const unsure: IdentityMsg = { ...identity(1, ""), level: "unsure", candidates: two };
+  expect(pickable(unsure)).toBe(true);
+  expect(pickable({ ...unsure, level: "certain", candidates: [{ name: "A", share: 1 }] })).toBe(false);
+  expect(pickable({ ...unsure, level: "certain" })).toBe(true); // two names: you may still correct it
+  expect(pickable({ ...unsure, confirmed: true })).toBe(false);
+  expect(pickable({ ...unsure, status: "analysing" })).toBe(false);
+});
+
 describe("the sidebar", () => {
   const named = (trackId: number, name: string, level: "likely" | "unsure" | "certain" | null = "likely") =>
     ({ ...identity(trackId, `Das ist ${name}.`), display_name: name, level });

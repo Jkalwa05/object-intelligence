@@ -3,6 +3,7 @@
 
 import { t } from "../i18n";
 import type { IdentityMsg, Lang } from "../protocol";
+import { pickable } from "../store";
 
 interface Props {
   identity: IdentityMsg;
@@ -12,7 +13,7 @@ interface Props {
 }
 
 export default function IdentityView({ identity, lang, onRecheck, onConfirm }: Props) {
-  const pickable = onConfirm !== undefined && !identity.confirmed && identity.status !== "analysing";
+  const canPick = onConfirm !== undefined && pickable(identity);
   return (
     // fades in for a new name, not for a new tracker number
     <div key={identity.display_name} className="card-body">
@@ -20,11 +21,11 @@ export default function IdentityView({ identity, lang, onRecheck, onConfirm }: P
       {identity.confirmed && <span className="tag confirmed">{t("confirmedByYou", lang)}</span>}
       {identity.candidates.length > 0 && (
         <>
-          {pickable && <div className="pick-label">{t("pickOne", lang)}</div>}
+          {canPick && <div className="pick-label">{t("pickOne", lang)}</div>}
           <ul className="bars">
             {identity.candidates.map((c) => (
               <li key={c.name}>
-                {pickable
+                {canPick
                   ? <button type="button" className="pick" onClick={() => onConfirm(identity.track_id, c.name)}>{c.name}</button>
                   : <span>{c.name}</span>}
                 <i style={{ width: `${Math.round(c.share * 100)}%` }} />

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { ShapePart } from "../protocol";
-import { clearGrey, fitDistance, formatSize, partDescription, partGeometry, spread } from "./shapeMath";
+import { clearGrey, fitDistance, formatSize, outlinePoints, partDescription, partGeometry, spread } from "./shapeMath";
 
 const part = (shape: ShapePart["shape"], size: [number, number, number], extra: Partial<ShapePart> = {}): ShapePart =>
   ({ name: "Teil", shape, size_mm: size, position_mm: [1, 2, 3], rotation_deg: [90, 0, 45], color: "#9fc4e8",
@@ -64,4 +64,16 @@ test("labels also keep clear of the numbered dots, which never move", () => {
   const pin = (x: number, y: number) => ({ x, y, w: 20, h: 20 });
   expect(spread([pin(0, 0)], 2, [pin(10, 5)])).toEqual([27]);
   expect(spread([pin(0, 0), pin(0, 10)], 2, [pin(100, 0)])).toEqual([0, 12]);
+});
+
+test("round parts get rings and their outline from the front and the side, so a capsule never looks cut off", () => {
+  const capsule = outlinePoints(partGeometry(part("capsule", [38, 80, 38])))!;
+  expect(capsule.length % 2).toBe(0); // pairs of points: line segments
+  expect(Math.max(...capsule.map((p) => p[1]))).toBeCloseTo(40); // 80 mm long: the outline reaches both tips
+  expect(Math.min(...capsule.map((p) => p[1]))).toBeCloseTo(-40);
+  expect(Math.max(...capsule.map((p) => p[0]))).toBeCloseTo(19);
+  expect(Math.max(...capsule.map((p) => p[2]))).toBeCloseTo(19);
+  const sphere = outlinePoints(partGeometry(part("sphere", [10, 10, 10])))!;
+  expect(Math.max(...sphere.map((p) => p[1]))).toBeCloseTo(0.5); // the unit sphere, stretched by the piece
+  expect(outlinePoints(partGeometry(part("box", [1, 2, 3])))).toBeNull(); // hard edges come from three.js
 });
