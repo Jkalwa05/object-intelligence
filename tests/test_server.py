@@ -168,3 +168,20 @@ def test_profile_reaches_the_browser_and_is_shared_between_connections():
                 ready += [m for m in seen if m["type"] == "profile" and m["status"] == "ready"]
     assert [m["product"] for m in ready] == ["Apple iPhone 14", "Apple iPhone 14"]
     assert len(identifier.product_requests) == 1
+
+
+def test_hologram_reaches_the_browser():
+    from oi.contracts import ProductShape, ShapePart
+    from tests.helpers import cand, obs
+    shape = ProductShape(known=True, size_mm=(71.5, 146.7, 7.8), parts=[ShapePart(
+        name="Gehäuse", shape="box", size_mm=(71.5, 146.7, 7.8), position_mm=(0, 0, 0), rotation_deg=(0, 0, 0),
+        color="#9fc4e8")])
+    identifier = FakeIdentifier(script=[obs(cand("Apple", "iPhone 14"), cand("Apple", "iPhone 13"))], shape=shape)
+    app, _ = app_with((identifier, None, "hybrid"))
+    with TestClient(app) as client, client.websocket_connect("/ws") as ws:
+        seen, limit = drive(ws, sharp_image(boxes=(BOX,)), 13), 40
+        while not any(m["type"] == "shape" and m["status"] == "ready" for m in seen) and limit:
+            seen.append(ws.receive_json())
+            limit -= 1
+    ready = [m for m in seen if m["type"] == "shape" and m["status"] == "ready"]
+    assert ready and ready[0]["parts"][0]["shape"] == "box" and ready[0]["size_mm"] == [71.5, 146.7, 7.8]

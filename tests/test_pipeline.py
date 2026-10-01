@@ -601,3 +601,72 @@ async def test_a_confirmed_colour_needs_no_second_profile():
     assert identifier.product_requests[0].product == "Apple iPhone 14"
     ready = [p.product for p in rec.of("profile") if p.status == "ready"]
     assert ready == ["Apple iPhone 14", "Apple iPhone 14, Blau"]  # the card's new name gets the same profile
+
+
+# --- sub-project 3: the hologram -------------------------------------------------------------------------------------
+
+def _shape(known=True):
+    from oi.contracts import ProductShape, ShapePart
+    if not known:
+        return ProductShape(known=False, size_mm=None, parts=[])
+    return ProductShape(known=True, size_mm=(71.5, 146.7, 7.8), parts=[ShapePart(
+        name="Gehäuse", shape="rounded_box", size_mm=(71.5, 146.7, 7.8), position_mm=(0, 0, 0),
+        rotation_deg=(0, 0, 0), color="#9fc4e8", radius_mm=8.0)])
+
+
+def _with_shapes(identifier, store=None, settings=None):
+    from oi.profiles import ProfileStore, ShapeStore
+    settings = settings or Settings()
+    rec = Recorder()
+    telemetry = Telemetry(settings, "hybrid", "fake")
+    pipeline = Pipeline(settings, FakeDetector([[CUP, HAND]]), identifier, telemetry, None, rec,
+                        profiles=ProfileStore(None), shapes=store if store is not None else ShapeStore(None))
+    return pipeline, rec, telemetry
+
+
+async def test_a_likely_product_gets_its_hologram_from_the_crop():
+    identifier = FakeIdentifier(script=[obs(I14, I13)], profile=_profile(), shape=_shape())
+    pipeline, rec, telemetry = _with_shapes(identifier)
+    await _identify_cup(pipeline)
+    shapes = rec.of("shape")
+    assert [(s.product, s.status) for s in shapes] == [("Apple iPhone 14", "loading"), ("Apple iPhone 14", "ready")]
+    assert shapes[-1].parts[0].shape == "rounded_box" and shapes[-1].size_mm == (71.5, 146.7, 7.8)
+    request = identifier.shape_requests[0]
+    assert (request.product, request.category) == ("Apple iPhone 14", "Smartphone")
+    assert request.jpeg == identifier.requests[0].jpeg  # the same object-only crop as the identification
+    assert telemetry.calls_session == 3
+
+
+async def test_an_unsure_product_gets_no_hologram():
+    identifier = FakeIdentifier(script=[obs(I14, I13, sa="low")], shape=_shape())
+    pipeline, rec, _ = _with_shapes(identifier)
+    await _identify_cup(pipeline)
+    assert rec.of("shape") == [] and identifier.shape_requests == []
+
+
+async def test_the_same_model_again_needs_no_second_hologram():
+    from oi.profiles import ShapeStore
+    store = ShapeStore(None)
+    await _identify_cup(_with_shapes(FakeIdentifier(script=[obs(I14, I13)], shape=_shape()), store)[0])
+    later = FakeIdentifier(script=[obs(I14, I13)], shape=_shape())
+    pipeline, rec, _ = _with_shapes(later, store)
+    await _identify_cup(pipeline)
+    assert later.shape_requests == [] and [s.status for s in rec.of("shape")] == ["ready"]
+
+
+async def test_an_unknown_or_failed_hologram_says_so():
+    from oi.profiles import ShapeStore
+    pipeline, rec, _ = _with_shapes(FakeIdentifier(script=[obs(I14, I13)], shape=_shape(known=False)))
+    await _identify_cup(pipeline)
+    assert rec.of("shape")[-1].status == "unknown"
+    store = ShapeStore(None)
+    pipeline, rec, _ = _with_shapes(FakeIdentifier(script=[obs(I14, I13)], shape=IdentifyError("api")), store)
+    await _identify_cup(pipeline)
+    assert [s.status for s in rec.of("shape")] == ["loading", "error"] and store.get("Apple iPhone 14") is None
+
+
+async def test_no_hologram_without_budget():
+    identifier = FakeIdentifier(script=[obs(I14, I13)], profile=_profile(), shape=_shape())
+    pipeline, rec, _ = _with_shapes(identifier, settings=Settings(max_calls_session=2))  # identification + profile
+    await _identify_cup(pipeline)
+    assert identifier.shape_requests == [] and rec.of("shape") == []

@@ -19,18 +19,18 @@ import numpy as np
 from oi import appearance, lines
 from oi.belief import Belief, Product
 from oi.config import Settings
-from oi.contracts import (BeliefState, FocusMsg, IdentityMsg, Level, NoticeMsg, ProductProfile, ProfileMsg,
-                          RecalibrateMsg, RecheckMsg, SceneItemWire, SceneMsg, ServerMsg, Status, Track, TracksMsg,
-                          WireTrack)
+from oi.contracts import (BeliefState, FocusMsg, IdentityMsg, Level, NoticeMsg, ProductProfile, ProductShape,
+                          ProfileMsg, RecalibrateMsg, RecheckMsg, SceneItemWire, SceneMsg, ServerMsg, ShapeMsg, Status,
+                          Track, TracksMsg, WireTrack)
 from oi.faces import FaceFinder
 from oi.hands import HandConfirmer, HandFinder
 from oi.focus import FocusSelector, split_tracks
 from oi.identify import (Identifier, IdentifyError, IdentifyRequest, IdentifyResult, ProductRequest, ProductResult,
-                         SceneRequest, SceneResult, format_history, request_text)
+                         SceneRequest, SceneResult, ShapeRequest, ShapeResult, format_history, request_text)
 from oi.ingest import Frame, FrameFormatError, FrameSlot, decode_frame
 from oi.perception import Detector
 from oi.privacy import mask_people, on_person, privacy_veto
-from oi.profiles import ProfileStore
+from oi.profiles import ProfileStore, ShapeStore
 from oi.scene import SceneMap
 from oi.telemetry import CallLog, CallRecord, Telemetry
 from oi.trigger import Decision, TriggerInput, decide
@@ -92,6 +92,10 @@ def _area(box: Box) -> float:
     return max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
 
 
+def _shape_msg(product: str, shape: ProductShape) -> ShapeMsg:
+    return ShapeMsg.of(product, "ready" if shape.known else "unknown", shape)
+
+
 def _profile_msg(product: str, profile: ProductProfile) -> ProfileMsg:
     if not profile.known:
         return ProfileMsg.of(product, "unknown", profile)
@@ -101,7 +105,8 @@ def _profile_msg(product: str, profile: ProductProfile) -> ProfileMsg:
 class Pipeline:
     def __init__(self, settings: Settings, detector: Detector, identifier: Identifier | None, telemetry: Telemetry,
                  call_log: CallLog | None, emit: Emit, faces: FaceFinder | None = None,
-                 hands: HandFinder | None = None, profiles: ProfileStore | None = None) -> None:
+                 hands: HandFinder | None = None, profiles: ProfileStore | None = None,
+                 shapes: ShapeStore | None = None) -> None:
         self._s = settings
         self._detector = detector
         self._identifier = identifier
@@ -123,6 +128,9 @@ class Pipeline:
         self._profiles = profiles
         self._profiles_sent: set[str] = set()  # card names whose profile this connection has
         self._profiles_pending: dict[str, set[str]] = {}  # model being fetched -> card names waiting for it
+        self._shapes = shapes
+        self._shapes_sent: set[str] = set()
+        self._shapes_pending: dict[str, set[str]] = {}
         self._tasks: set[asyncio.Task[None]] = set()
         self._in_flight = 0
         self._calls_logged = 0
@@ -229,6 +237,7 @@ class Pipeline:
             await self._emit(SceneMsg(calibrating=False, items=local))
             return
         await self._emit(SceneMsg(calibrating=False, naming=True, items=[]))
+        self._telemetry.call_started()  # counted now, see _want_profile
         everyone = [t for _, zones in self._private for t in zones]
         task = asyncio.create_task(self._name_scene(self._scene_generation, _scene_jpeg(frame.image, everyone), local))
         self._tasks.add(task)
@@ -236,7 +245,6 @@ class Pipeline:
 
     async def _name_scene(self, generation: int, jpeg: bytes, local: list[SceneItemWire]) -> None:
         assert self._identifier is not None
-        self._telemetry.call_started()
         try:
             result = await self._identifier.describe_scene(SceneRequest(jpeg=jpeg, language=self._s.language))
         except asyncio.CancelledError:
@@ -351,6 +359,7 @@ class Pipeline:
             await self._send_identity(state.track_id, "ready", snapshot)
             if (product := state.belief.product()) is not None:
                 await self._want_profile(product)
+                await self._want_shape(product, ready.jpeg)
         finally:
             state.in_flight = False
             self._in_flight -= 1
@@ -374,6 +383,7 @@ class Pipeline:
         if self._telemetry.calls_session >= self._s.max_calls_session:
             return
         self._profiles_pending[product.model] = {product.name}
+        self._telemetry.call_started()  # counted now: a call decided in the same frame must see it (budget)
         await self._emit(ProfileMsg.of(product.name, "loading", None))
         task = asyncio.create_task(self._fetch_profile(ProductRequest(product=product.model, category=product.category,
                                                                       language=self._s.language)))
@@ -382,7 +392,6 @@ class Pipeline:
 
     async def _fetch_profile(self, req: ProductRequest) -> None:
         assert self._identifier is not None and self._profiles is not None
-        self._telemetry.call_started()
         try:
             result = await self._identifier.describe_product(req)
         except asyncio.CancelledError:
@@ -401,6 +410,65 @@ class Pipeline:
         for name in sorted(self._profiles_pending.pop(req.product, set())):
             self._profiles_sent.add(name)
             await self._emit(_profile_msg(name, result.profile))
+
+    # --- hologram (sub-project 3) ----------------------------------------------------------------------------------
+
+    async def _want_shape(self, product: Product, jpeg: bytes) -> None:
+        """A product reached "likely": the hologram of its model comes from the store, or from one Claude call with
+        the crop of the identification (object pixels only)."""
+        if self._shapes is None or self._identifier is None or product.name in self._shapes_sent:
+            return
+        cached = self._shapes.get(product.model)
+        if cached is not None:
+            self._shapes_sent.add(product.name)
+            await self._emit(_shape_msg(product.name, cached))
+            return
+        if (waiting := self._shapes_pending.get(product.model)) is not None:
+            waiting.add(product.name)
+            await self._emit(ShapeMsg.of(product.name, "loading", None))
+            return
+        if self._telemetry.calls_session >= self._s.max_calls_session:
+            return
+        self._shapes_pending[product.model] = {product.name}
+        self._telemetry.call_started()  # counted now, see _want_profile
+        await self._emit(ShapeMsg.of(product.name, "loading", None))
+        task = asyncio.create_task(self._fetch_shape(ShapeRequest(product=product.model, category=product.category,
+                                                                  jpeg=jpeg, language=self._s.language)))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def _fetch_shape(self, req: ShapeRequest) -> None:
+        assert self._identifier is not None and self._shapes is not None
+        try:
+            result = await self._identifier.describe_shape(req)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001 - the panel says so; the next identification may try again
+            if not isinstance(error, IdentifyError):
+                log.exception("the hologram of %s failed", req.product)
+            self._telemetry.call_failed()
+            self._write_shape_log(req, None, error.reason if isinstance(error, IdentifyError) else "api")
+            for name in self._shapes_pending.pop(req.product, set()):
+                await self._emit(ShapeMsg.of(name, "error", None))
+            return
+        self._telemetry.call_finished(result.latency_s, result.cost_usd)
+        self._write_shape_log(req, result, None)
+        self._shapes.put(req.product, result.shape)
+        for name in sorted(self._shapes_pending.pop(req.product, set())):
+            self._shapes_sent.add(name)
+            await self._emit(_shape_msg(name, result.shape))
+
+    def _write_shape_log(self, req: ShapeRequest, result: ShapeResult | None, error: str | None) -> None:
+        if self._call_log is None:
+            return
+        self._calls_logged += 1
+        self._call_log.write(CallRecord(
+            n=self._calls_logged, track_id=-2, jpeg=req.jpeg, request_text=f"shape: {req.product} ({req.category})",
+            observation=result.shape.model_dump(mode="json") if result else None, error=error,
+            input_tokens=result.input_tokens if result else 0, output_tokens=result.output_tokens if result else 0,
+            cost_usd=result.cost_usd if result else 0.0, latency_s=result.latency_s if result else 0.0,
+            model=result.model if result else (self._identifier.model_label if self._identifier else "–"),
+            level_after=None))
 
     def _write_profile_log(self, req: ProductRequest, result: ProductResult | None, error: str | None) -> None:
         if self._call_log is None:
