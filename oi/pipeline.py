@@ -8,7 +8,6 @@ When the scene calibration ends, one Claude call names the frozen background, wi
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -101,26 +100,6 @@ class _Seen:
 
 def _area(box: Box) -> float:
     return max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
-
-
-PHOTO_EDGE = 512  # the photo on a hologram: enough for a sidebar and the full-screen view
-GREY_TOLERANCE = 8  # the crops paint everything that is not the object 128 grey
-
-
-def object_photo(jpeg: bytes) -> str | None:
-    """The object-only crop cut down to the object itself (plus a thin margin), as base64 JPEG for the hologram;
-    None if there is no object in it."""
-    image = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
-    if image is None:
-        return None
-    rows, cols = np.nonzero((np.abs(image.astype(np.int16) - 128) > GREY_TOLERANCE).any(axis=2))
-    if len(rows) < 100:
-        return None
-    h, w = image.shape[:2]
-    margin = 4
-    y1, y2 = max(0, rows.min() - margin), min(h, rows.max() + 1 + margin)
-    x1, x2 = max(0, cols.min() - margin), min(w, cols.max() + 1 + margin)
-    return base64.b64encode(encode_for_claude(image[y1:y2, x1:x2], PHOTO_EDGE, 85)).decode()
 
 
 def _small(jpeg: bytes) -> bytes:
@@ -658,13 +637,10 @@ class Pipeline:
             return
         self._telemetry.call_finished(result.latency_s, result.cost_usd)
         self._write_shape_log(req, result, None)
-        shape = result.shape
-        if shape.known and req.jpeg is not None:
-            shape = shape.model_copy(update={"photo": object_photo(req.jpeg)})
-        self._shapes.put(req.product, shape)
+        self._shapes.put(req.product, result.shape)
         for name in sorted(self._shapes_pending.pop(req.product, set())):
             self._shapes_sent.add(name)
-            await self._emit(_shape_msg(name, shape))
+            await self._emit(_shape_msg(name, result.shape))
 
     def _write_shape_log(self, req: ShapeRequest, result: ShapeResult | None, error: str | None) -> None:
         if self._call_log is None:

@@ -133,7 +133,6 @@ export interface ShapeMsg {
   status: "loading" | "ready" | "unknown" | "error";
   size_mm: [number, number, number] | null;
   parts: ShapePart[];
-  photo?: string | null; // base64 JPEG of the object, laid onto the side facing the viewer
 }
 
 export interface Source {

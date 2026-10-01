@@ -100,7 +100,6 @@ class ProductShape(_Model):
     known: bool
     size_mm: Vec3 | None
     parts: list[ShapePart] = Field(max_length=16)
-    photo: str | None = None  # base64 JPEG of the object (sub-project 5): goes on the side facing the viewer (+z)
 
 
 # --- what the pipeline tracks (§2.2, §2.6) ----------------------------------------------------------------------
@@ -272,13 +271,12 @@ class ShapeMsg(_ServerMsg):
     status: ProfileStatus
     size_mm: Vec3 | None
     parts: list[ShapePart]
-    photo: str | None = None
 
     @classmethod
     def of(cls, product: str, status: ProfileStatus, shape: ProductShape | None) -> ShapeMsg:
         if shape is None:
             return cls(product=product, status=status, size_mm=None, parts=[])
-        return cls(product=product, status=status, size_mm=shape.size_mm, parts=shape.parts, photo=shape.photo)
+        return cls(product=product, status=status, size_mm=shape.size_mm, parts=shape.parts)
 
 
 class Source(_Model):

@@ -129,7 +129,7 @@ SHAPE_PROMPT = """You build a simplified 3D model of one product for a heads-up 
 - The photo shows the object a person holds; everything that is not the object is grey. Use it for the proportions and colours of this specimen.
 - Build it from at most 16 primitive parts in millimetres, true to the real product's size. The object's centre is the origin, x points right, y up, z towards the viewer. position_mm is the centre of a part; rotation_deg turns the part around x, then y, then z.
 - shape and size_mm: box and rounded_box: width, height, depth (rounded_box also radius_mm for its corners); cylinder: diameter, height, diameter (standing along y); cone: bottom diameter, height, top diameter (0 for a point); sphere: diameters along x, y, z; capsule: diameter, total length, diameter (along y).
-- Turn the model so that the side seen in the photo faces the viewer (+z), upright as in the photo: the photo will be laid onto that side. Use its characteristic parts (body, screen, camera, buttons, handles, shade, base), not tiny details.
+- Show the product upright in its usual orientation with its front towards the viewer. Use its characteristic parts (body, screen, camera, buttons, handles, shade, base), not tiny details.
 - color is "#rrggbb", the part's real colour. size_mm at the top level is the overall width, height and depth.
 - If you do not know this kind of object's shape at all, set known to false and leave parts empty.
 - Write the part names in {language}."""

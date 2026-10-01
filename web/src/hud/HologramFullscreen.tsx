@@ -8,7 +8,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import { t, type I18nKey } from "../i18n";
 import type { IdentityMsg, Lang, ProfileMsg, ShapeMsg } from "../protocol";
-import { addLabels, addPhoto, buildModel, type Pin } from "./hologramScene";
+import { addLabels, buildModel, type Pin } from "./hologramScene";
 import { fitDistance, formatSize, partDescription, spread } from "./shapeMath";
 
 const FOV = 35;
@@ -64,7 +64,6 @@ export default function HologramFullscreen({ shape, lang, identity, profile, onC
     const model = buildModel(shape);
     pins.current = addLabels(model, shape, lang);
     scene.add(model.group);
-    if (shape.photo) void addPhoto(model, shape.photo);
     const controls = new OrbitControls(camera, labels.domElement);
     controls.enableDamping = true;
     controls.autoRotate = true;

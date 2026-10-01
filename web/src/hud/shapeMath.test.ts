@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { ShapePart } from "../protocol";
-import { clearGrey, fitDistance, formatSize, outlinePoints, partDescription, partGeometry, spread } from "./shapeMath";
+import { fitDistance, formatSize, outlinePoints, partDescription, partGeometry, spread } from "./shapeMath";
 
 const part = (shape: ShapePart["shape"], size: [number, number, number], extra: Partial<ShapePart> = {}): ShapePart =>
   ({ name: "Teil", shape, size_mm: size, position_mm: [1, 2, 3], rotation_deg: [90, 0, 45], color: "#9fc4e8",
@@ -35,12 +35,6 @@ test("the camera stands back far enough for the whole object", () => {
   const far = fitDistance([part("box", [100, 100, 100], { position_mm: [0, 0, 0] })], 35);
   expect(near).toBeGreaterThan(10);
   expect(far / near).toBeCloseTo(10, 0);
-});
-
-test("grey, the colour of everything that is not the object, becomes transparent", () => {
-  const pixels = new Uint8ClampedArray([128, 128, 128, 255, 133, 124, 130, 255, 200, 120, 40, 255]);
-  clearGrey(pixels);
-  expect(Array.from(pixels)).toEqual([128, 128, 128, 0, 133, 124, 130, 0, 200, 120, 40, 255]);
 });
 
 test("every part is described with its shape and size", () => {

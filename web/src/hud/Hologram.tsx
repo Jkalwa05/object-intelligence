@@ -1,5 +1,5 @@
-// The hologram of one product in its sidebar entry (sub-projects 3 and 5): Claude's primitives with the photo of the
-// object on the side facing you, turning slowly, draggable; "⤢" opens the full-screen view with every measure.
+// The hologram of one product in its sidebar entry (sub-projects 3 and 5): Claude's primitives as a slowly turning
+// model you can drag around; "⤢" opens the full-screen view with every measure.
 
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
@@ -7,7 +7,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { t } from "../i18n";
 import type { Lang, ShapeMsg } from "../protocol";
 import { useHud } from "../store";
-import { addPhoto, buildModel } from "./hologramScene";
+import { buildModel } from "./hologramScene";
 import { fitDistance, formatSize } from "./shapeMath";
 
 const FOV = 35;
@@ -30,7 +30,6 @@ export default function Hologram({ shape, lang }: { shape: ShapeMsg; lang: Lang 
     camera.position.copy(VIEW).multiplyScalar(fitDistance(shape.parts, FOV));
     const model = buildModel(shape);
     scene.add(model.group);
-    if (shape.photo) void addPhoto(model, shape.photo);
     const controls = new OrbitControls(camera, el);
     controls.enableZoom = false; // the wheel scrolls the sidebar
     controls.enablePan = false;

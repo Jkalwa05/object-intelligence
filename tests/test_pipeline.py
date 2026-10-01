@@ -901,27 +901,3 @@ async def test_an_entry_whose_object_is_gone_can_still_be_asked_about():
     request = identifier.ask_requests[0]
     assert (request.product, request.category, request.jpeg) == ("Pendelleuchte", None, None)
     assert rec.of("question")[-1].product == "Pendelleuchte"
-
-
-# --- sub-project 5: the photo of the object on its hologram --------------------------------------------------------
-
-def test_the_photo_is_cut_to_the_object():
-    import base64
-    import cv2
-    import numpy as np
-    from oi.pipeline import object_photo
-    crop = np.full((400, 300, 3), 128, np.uint8)  # grey: everything that is not the object
-    crop[100:300, 50:200] = (200, 120, 40)
-    photo = cv2.imdecode(np.frombuffer(base64.b64decode(object_photo(cv2.imencode(".jpg", crop)[1].tobytes())),
-                                       np.uint8), cv2.IMREAD_COLOR)
-    h, w = photo.shape[:2]
-    assert 200 <= h <= 220 and 150 <= w <= 170  # the object plus a thin margin
-    assert object_photo(cv2.imencode(".jpg", np.full((50, 50, 3), 128, np.uint8))[1].tobytes()) is None
-
-
-async def test_the_hologram_carries_the_photo_of_the_object():
-    identifier = FakeIdentifier(script=[obs(I14, I13)], shape=_shape())
-    pipeline, rec, _ = _with_shapes(identifier)
-    await _identify_cup(pipeline)
-    ready = [s for s in rec.of("shape") if s.status == "ready"][0]
-    assert ready.photo and len(ready.photo) > 100  # base64 jpeg of the object

@@ -1,11 +1,11 @@
-// The three.js model of a hologram (sub-projects 3 and 5): Claude's primitives, the photo of the object on the side
-// that faces the viewer, and for the full-screen view the measure lines and a numbered name tag on every part.
+// The three.js model of a hologram (sub-projects 3 and 5): Claude's primitives, and for the full-screen view the
+// measure lines and a numbered name tag on every part.
 
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import type { Lang, ShapeMsg } from "../protocol";
-import { clearGrey, millimetres, outlinePoints, partGeometry, type PartGeometry } from "./shapeMath";
+import { millimetres, outlinePoints, partGeometry, type PartGeometry } from "./shapeMath";
 
 export const EDGE = 0x30d158; // the green of the object in your hand
 const EDGE_ANGLE = 10; // degrees: low enough that the soft corners of a rounded box still get their outline
@@ -57,38 +57,6 @@ export function buildModel(shape: ShapeMsg): Model {
   group.updateMatrixWorld(true);
   const bounds = new THREE.Box3().setFromObject(group);
   return { group, bounds, dispose: () => garbage.forEach((g) => g.dispose()) };
-}
-
-// The photo of the object, its grey surroundings made transparent, on the side of the box that faces the viewer.
-export async function addPhoto(model: Model, photo: string): Promise<void> {
-  const image = new Image();
-  image.src = `data:image/jpeg;base64,${photo}`;
-  await image.decode();
-  const canvas = document.createElement("canvas");
-  canvas.width = image.naturalWidth;
-  canvas.height = image.naturalHeight;
-  const context = canvas.getContext("2d");
-  if (!context) return;
-  context.drawImage(image, 0, 0);
-  const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-  clearGrey(pixels.data);
-  context.putImageData(pixels, 0, 0);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const size = model.bounds.getSize(new THREE.Vector3());
-  const center = model.bounds.getCenter(new THREE.Vector3());
-  const plane = new THREE.PlaneGeometry(size.x, size.y);
-  const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false });
-  const mesh = new THREE.Mesh(plane, material); // front side only: from behind the hologram stays
-  mesh.position.set(center.x, center.y, model.bounds.max.z + 0.3);
-  model.group.add(mesh);
-  const before = model.dispose;
-  model.dispose = () => {
-    before();
-    plane.dispose();
-    material.dispose();
-    texture.dispose();
-  };
 }
 
 function label(text: string, className: string): CSS2DObject {

@@ -10,12 +10,16 @@ ist.
 | UI-Stil | Edles Apple-Glas: weiches Milchglas, ruhige Animationen, Vision-Pro-Stil, wenig Effekte |
 | Start | per Doppelklick, ohne Terminal-Befehl |
 | Portfolio | README mit Architektur-Bild, Funktionsüberblick und Platzhaltern für Screenshots oder Video |
-| Hologramm | das Foto des Objekts als Oberfläche auf der passenden Seite |
+| Hologramm | ~~das Foto des Objekts als Oberfläche auf der passenden Seite~~ (wieder entfernt, siehe §2) |
 | Hologramm | Vollbild mit allen Seiten, Längen und technischen Daten beschriftet |
 
 Nicht gewählt wurde „Leiste merkt sich alles“: Nach dem Neuladen bleibt sie leer.
 
-## 2. Foto aufs Hologramm
+## 2. Foto aufs Hologramm (wieder entfernt)
+
+> **Nachtrag 2026-10-01:** Jonas hat das Foto nach dem Bau wieder herausgenommen („das kann wieder raus“). Das
+> Hologramm bleibt das reine Modell aus Claudes Grundformen; der Hologramm-Aufruf bekommt wieder die ursprüngliche
+> Anweisung (aufrecht, Vorderseite zum Betrachter). Der Abschnitt bleibt als Protokoll der Entscheidung stehen.
 
 - **Ausrichtung.** Der Hologramm-Aufruf dreht das Modell so, dass die Seite, die das Foto zeigt, zum Betrachter
   zeigt (+z), aufrecht wie im Foto.

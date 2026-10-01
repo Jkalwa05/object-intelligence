@@ -20,7 +20,7 @@ other way round:
   *category only*. When two products look alike, the entry says so and asks for the side that tells them apart.
 
 Everything is in German by default (`OI_LANGUAGE=en` switches to English). The pictures in this README are rendered
-from real, cached answers of Claude for a DualShock 3; the photo of the object is left out of them.
+from real, cached answers of Claude for a DualShock 3.
 
 <br clear="right">
 
@@ -48,9 +48,8 @@ The project was built in five sub-projects, each with its own design document:
      such as a price, and then names its sources.
    - The answer is read aloud.
 5. **Polish.** The interface is dark Apple glass.
-   - The hologram carries the photo of the object on the side that faces you.
-   - "⤢" opens it in full screen with measure lines for width, height and depth and a numbered tag on every part.
-     The parts list, the profile and the trivia sit beside it.
+   - "⤢" on the hologram opens it in full screen, with measure lines for width, height and depth and a numbered tag
+     on every part. The parts list, the profile and the trivia sit beside it.
    - You can start the whole program with a double-click.
 
 ## Principles
@@ -162,10 +161,10 @@ environment or `.env`.
 ## Tests
 
 ```bash
-uv run pytest               # 268 tests: all logic, no model, no network
+uv run pytest               # 265 tests: all logic, no model, no network
 uv run pytest -m model      # loads the real YOLOE weights
 uv run pytest -m claude     # one real Claude call, about 2 cents
-npm --prefix web test       # 52 tests: geometry, sidebar state, hologram maths, voice and labels
+npm --prefix web test       # 51 tests: geometry, sidebar state, hologram maths, voice and labels
 ```
 
 `--fake-claude` gives canned answers without any API call. It exists for the automated tests; real identification

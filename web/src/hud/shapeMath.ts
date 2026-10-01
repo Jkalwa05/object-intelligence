@@ -79,14 +79,6 @@ export function fitDistance(parts: ShapePart[], fovDegrees: number): number {
   return (reach / Math.sin(radians(fovDegrees) / 2)) * 1.1;
 }
 
-// The crops paint everything that is not the object 128 grey: those pixels become transparent on the hologram.
-export function clearGrey(pixels: Uint8ClampedArray, tolerance = 8): void {
-  for (let i = 0; i < pixels.length; i += 4) {
-    if (Math.abs(pixels[i] - 128) <= tolerance && Math.abs(pixels[i + 1] - 128) <= tolerance
-      && Math.abs(pixels[i + 2] - 128) <= tolerance) pixels[i + 3] = 0;
-  }
-}
-
 const SHAPE_NAMES: Record<ShapePart["shape"], Record<Lang, string>> = {
   box: { de: "Quader", en: "Box" },
   rounded_box: { de: "Abgerundeter Quader", en: "Rounded box" },
