@@ -4,16 +4,31 @@
 import { lazy, Suspense, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { t, type I18nKey } from "../i18n";
-import { entriesFor, useHud, type SidebarEntry } from "../store";
+import { entriesFor, fullscreenView, useHud, type SidebarEntry } from "../store";
 import IdentityView from "./IdentityView";
 import ProfileView from "./ProfileView";
 import QuestionsView from "./QuestionsView";
 
 const Hologram = lazy(() => import("./Hologram")); // three.js loads only once a hologram is shown
+const HologramFullscreen = lazy(() => import("./HologramFullscreen"));
 
 interface Actions {
   onRecheck(trackId: number): void;
   onConfirm(trackId: number, name: string): void;
+}
+
+// The hologram in full screen stays open on its own: putting the object down folds its entry up, not this view.
+function Fullscreen() {
+  const view = useHud(useShallow(fullscreenView));
+  const lang = useHud((s) => s.telemetry?.language ?? "de");
+  const close = useHud((s) => s.setFullscreen);
+  if (!view) return null;
+  return (
+    <Suspense fallback={null}>
+      <HologramFullscreen shape={view.shape} identity={view.identity} profile={view.profile} lang={lang}
+        onClose={() => close(null)} />
+    </Suspense>
+  );
 }
 
 function Entry({ entry, onRecheck, onConfirm }: { entry: SidebarEntry } & Actions) {
@@ -30,7 +45,7 @@ function Entry({ entry, onRecheck, onConfirm }: { entry: SidebarEntry } & Action
     <section className={entry.active ? "entry glass active" : "entry glass"}>
       <button type="button" className="entry-head" aria-expanded={entry.expanded} onClick={() => toggle(entry.name)}>
         <span className="entry-name">{entry.name}</span>
-        <span className="entry-state">{state}</span>
+        <span className="entry-state" data-level={identity.level ?? "none"} data-status={identity.status}>{state}</span>
         <span className="entry-chevron" aria-hidden="true">{entry.expanded ? "▾" : "▸"}</span>
       </button>
       {entry.expanded && (
@@ -56,6 +71,7 @@ export default function Sidebar({ onRecheck, onConfirm }: Actions) {
     <aside className="sidebar">
       <div className="sidebar-title card-level">{t("sidebar.title", lang)}</div>
       {entries.map((entry) => <Entry key={entry.name} entry={entry} onRecheck={onRecheck} onConfirm={onConfirm} />)}
+      <Fullscreen />
     </aside>
   );
 }

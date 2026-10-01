@@ -1,39 +1,22 @@
-// The hologram of one product (sub-project 3): Claude's primitives as a slowly turning model you can drag around.
-// Neon-green edges like the box of the object in your hand, faces in the part's own colour, half transparent.
+// The hologram of one product in its sidebar entry (sub-projects 3 and 5): Claude's primitives with the photo of the
+// object on the side facing you, turning slowly, draggable; "⤢" opens the full-screen view with every measure.
 
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { t } from "../i18n";
 import type { Lang, ShapeMsg } from "../protocol";
-import { fitDistance, formatSize, partGeometry, type PartGeometry } from "./shapeMath";
+import { useHud } from "../store";
+import { addPhoto, buildModel } from "./hologramScene";
+import { fitDistance, formatSize } from "./shapeMath";
 
 const FOV = 35;
-const EDGE = 0x7cff5a; // the neon green of the object in your hand
 const VIEW = new THREE.Vector3(0.55, 0.35, 0.8).normalize(); // a little from above and from the right
-const EDGE_ANGLE = 10; // degrees: low enough that the soft corners of a rounded box still get their outline
-const ROUND = 48; // segments around round parts: 7.5° steps stay below EDGE_ANGLE, so only their rims are drawn
 const NOTE = { loading: "hologram.loading", unknown: "hologram.unknown", error: "hologram.error", ready: null } as const;
-
-function geometryOf(g: PartGeometry): THREE.BufferGeometry {
-  switch (g.kind) {
-    case "box":
-      return new THREE.BoxGeometry(g.args[0], g.args[1], g.args[2]);
-    case "rounded_box":
-      return new RoundedBoxGeometry(g.args[0], g.args[1], g.args[2], 3, g.args[3]);
-    case "cylinder":
-    case "cone":
-      return new THREE.CylinderGeometry(g.args[0], g.args[1], g.args[2], ROUND, 1);
-    case "sphere":
-      return new THREE.SphereGeometry(g.args[0], ROUND, ROUND / 2);
-    case "capsule":
-      return new THREE.CapsuleGeometry(g.args[0], g.args[1], 8, ROUND);
-  }
-}
 
 export default function Hologram({ shape, lang }: { shape: ShapeMsg; lang: Lang }) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const showFullscreen = useHud((s) => s.setFullscreen);
   const drawable = shape.status === "ready" && shape.parts.length > 0;
 
   useEffect(() => {
@@ -45,21 +28,9 @@ export default function Hologram({ shape, lang }: { shape: ShapeMsg; lang: Lang 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(FOV, el.clientWidth / el.clientHeight, 1, 50000);
     camera.position.copy(VIEW).multiplyScalar(fitDistance(shape.parts, FOV));
-    const garbage: { dispose(): void }[] = [];
-    for (const part of shape.parts) {
-      const g = partGeometry(part);
-      const geometry = geometryOf(g);
-      const edges = new THREE.EdgesGeometry(geometry, EDGE_ANGLE);
-      const fill = new THREE.MeshBasicMaterial({ color: g.color, transparent: true, opacity: 0.28, depthWrite: false });
-      const line = new THREE.LineBasicMaterial({ color: EDGE, transparent: true, opacity: 0.9 });
-      const piece = new THREE.Group();
-      piece.add(new THREE.Mesh(geometry, fill), new THREE.LineSegments(edges, line));
-      piece.scale.set(...g.scale);
-      piece.position.set(...g.position);
-      piece.rotation.set(...g.rotation);
-      scene.add(piece);
-      garbage.push(geometry, edges, fill, line);
-    }
+    const model = buildModel(shape);
+    scene.add(model.group);
+    if (shape.photo) void addPhoto(model, shape.photo);
     const controls = new OrbitControls(camera, el);
     controls.enableZoom = false; // the wheel scrolls the sidebar
     controls.enablePan = false;
@@ -76,7 +47,7 @@ export default function Hologram({ shape, lang }: { shape: ShapeMsg; lang: Lang 
     return () => {
       cancelAnimationFrame(raf);
       controls.dispose();
-      garbage.forEach((g) => g.dispose());
+      model.dispose();
       renderer.dispose();
     };
   }, [shape, drawable]);
@@ -87,6 +58,10 @@ export default function Hologram({ shape, lang }: { shape: ShapeMsg; lang: Lang 
       <div className="profile-head">
         <span className="card-level">{t("hologram.title", lang)}</span>
         <span className="tag">{t("hologram.simplified", lang)}</span>
+        {drawable && (
+          <button type="button" className="icon-button" aria-label={t("hologram.full", lang)}
+            title={t("hologram.full", lang)} onClick={() => showFullscreen(shape.product)}>⤢</button>
+        )}
       </div>
       {drawable ? (
         <>

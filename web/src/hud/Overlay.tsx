@@ -14,9 +14,9 @@ const SCAN_MS = 2400;
 const ARM = 14;
 
 type Rgb = readonly [number, number, number];
-const HAND: Rgb = [46, 230, 255]; // cyan: your hand
-const FOCUS: Rgb = [124, 255, 90]; // neon green: the object in your hand, the one Claude analyses
-const SCENE: Rgb = [185, 156, 255]; // violet: the frozen background
+const HAND: Rgb = [100, 210, 255]; // Apple cyan: your hand
+const FOCUS: Rgb = [48, 209, 88]; // Apple green: the object in your hand, the one Claude analyses
+const SCENE: Rgb = [191, 90, 242]; // Apple violet: the frozen background
 const rgba = ([r, g, b]: Rgb, alpha: number) => `rgba(${r},${g},${b},${alpha})`;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
@@ -25,6 +25,8 @@ function drawBrackets(ctx: CanvasRenderingContext2D, r: Rect, inset: number, col
   const arm = Math.min(ARM, w / 3, h / 3);
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
   ctx.beginPath();
   ctx.moveTo(x, y + arm); ctx.lineTo(x, y); ctx.lineTo(x + arm, y);
   ctx.moveTo(x + w - arm, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + arm);
@@ -69,27 +71,33 @@ function drawHand(ctx: CanvasRenderingContext2D, points: [number, number][]) {
   ctx.stroke();
 }
 
-function drawLabel(ctx: CanvasRenderingContext2D, text: string, r: Rect) {
-  ctx.font = "11px -apple-system, system-ui, sans-serif";
-  const w = ctx.measureText(text).width + 12, h = 18, y = Math.max(0, r.y - h - 4);
-  ctx.fillStyle = "rgba(22,22,28,0.6)";
+// A glass capsule with a coloured dot: the look of every label on the camera picture.
+function drawCapsule(ctx: CanvasRenderingContext2D, text: string, r: Rect, dot: Rgb, size: number) {
+  ctx.font = `${size >= 12 ? 600 : 500} ${size}px -apple-system, system-ui, sans-serif`;
+  const h = size + 10, pad = 9, radius = 3;
+  const w = ctx.measureText(text).width + pad * 2 + radius * 2 + 6, y = Math.max(0, r.y - h - 6);
+  ctx.fillStyle = "rgba(28,28,30,0.72)";
   ctx.beginPath();
-  ctx.roundRect(r.x, y, w, h, 6);
+  ctx.roundRect(r.x, y, w, h, h / 2);
   ctx.fill();
-  ctx.fillStyle = rgba(SCENE, 0.95);
-  ctx.fillText(text, r.x + 6, y + 13);
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = rgba(dot, 1);
+  ctx.beginPath();
+  ctx.arc(r.x + pad + radius, y + h / 2, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.fillText(text, r.x + pad + radius * 2 + 6, y + h / 2 + size * 0.36);
+}
+
+function drawLabel(ctx: CanvasRenderingContext2D, text: string, r: Rect) {
+  drawCapsule(ctx, text, r, SCENE, 11);
 }
 
 // The name of the object in your hand, just above its box.
 function drawTag(ctx: CanvasRenderingContext2D, text: string, r: Rect) {
-  ctx.font = "600 12px -apple-system, system-ui, sans-serif";
-  const w = ctx.measureText(text).width + 14, h = 20, y = Math.max(0, r.y - h - 6);
-  ctx.fillStyle = "rgba(22,22,28,0.7)";
-  ctx.beginPath();
-  ctx.roundRect(r.x, y, w, h, 6);
-  ctx.fill();
-  ctx.fillStyle = rgba(FOCUS, 1);
-  ctx.fillText(text, r.x + 7, y + 14);
+  drawCapsule(ctx, text, r, FOCUS, 12);
 }
 
 // From the box to the right edge, at the height of the object's entry in the sidebar.

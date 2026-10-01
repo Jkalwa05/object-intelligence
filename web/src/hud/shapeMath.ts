@@ -46,3 +46,69 @@ export function fitDistance(parts: ShapePart[], fovDegrees: number): number {
   const reach = Math.max(1, ...parts.map((p) => Math.hypot(...p.position_mm) + Math.hypot(...p.size_mm) / 2));
   return (reach / Math.sin(radians(fovDegrees) / 2)) * 1.1;
 }
+
+// The crops paint everything that is not the object 128 grey: those pixels become transparent on the hologram.
+export function clearGrey(pixels: Uint8ClampedArray, tolerance = 8): void {
+  for (let i = 0; i < pixels.length; i += 4) {
+    if (Math.abs(pixels[i] - 128) <= tolerance && Math.abs(pixels[i + 1] - 128) <= tolerance
+      && Math.abs(pixels[i + 2] - 128) <= tolerance) pixels[i + 3] = 0;
+  }
+}
+
+const SHAPE_NAMES: Record<ShapePart["shape"], Record<Lang, string>> = {
+  box: { de: "Quader", en: "Box" },
+  rounded_box: { de: "Abgerundeter Quader", en: "Rounded box" },
+  cylinder: { de: "Zylinder", en: "Cylinder" },
+  cone: { de: "Kegel", en: "Cone" },
+  sphere: { de: "Kugel", en: "Sphere" },
+  capsule: { de: "Kapsel", en: "Capsule" },
+};
+
+export function millimetres(value: number, lang: Lang): string {
+  return value.toLocaleString(lang === "de" ? "de-DE" : "en-US", { maximumFractionDigits: 1 });
+}
+
+// "Zylinder ⌀ 13 × 2 mm": what the full-screen view lists for every part.
+export function partDescription(p: ShapePart, lang: Lang): string {
+  const [x, y, z] = p.size_mm.map((v) => millimetres(v, lang));
+  const name = SHAPE_NAMES[p.shape][lang];
+  switch (p.shape) {
+    case "box":
+    case "rounded_box":
+      return `${name} ${x} × ${y} × ${z} mm`;
+    case "cylinder":
+    case "capsule":
+      return `${name} ⌀ ${x} × ${y} mm`;
+    case "cone":
+      return `${name} ⌀ ${x} → ${z} × ${y} mm`;
+    case "sphere":
+      return x === y && y === z ? `${name} ⌀ ${x} mm` : `${name} ⌀ ${x} × ${y} × ${z} mm`;
+  }
+}
+
+export interface Rect {
+  x: number; // left
+  y: number; // top
+  w: number;
+  h: number;
+}
+
+// How far each label has to move down so that no two cover each other or one of the `fixed` boxes (at least `gap`
+// pixels apart), placed from top to bottom so that their order stays the order of their parts.
+export function spread(rects: Rect[], gap: number, fixed: Rect[] = []): number[] {
+  const order = rects.map((_, i) => i).sort((a, b) => rects[a].y - rects[b].y || a - b);
+  const placed: Rect[] = [...fixed];
+  const moves = rects.map(() => 0);
+  for (const i of order) {
+    const r = { ...rects[i] };
+    for (;;) {
+      const hit = placed.filter((q) => r.x < q.x + q.w + gap && q.x < r.x + r.w + gap
+        && r.y < q.y + q.h + gap && q.y < r.y + r.h + gap);
+      if (hit.length === 0) break;
+      r.y = Math.max(...hit.map((q) => q.y + q.h)) + gap;
+    }
+    moves[i] = r.y - rects[i].y;
+    placed.push(r);
+  }
+  return moves;
+}

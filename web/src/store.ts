@@ -14,6 +14,7 @@ export interface HudState {
   named: Record<string, IdentityMsg>; // the latest identity of every card name, for the sidebar
   recent: string[]; // card names in the sidebar, newest first
   open: string[]; // sidebar entries opened by hand
+  fullscreen: string | null; // the entry whose hologram fills the screen
   questions: Record<string, QuestionMsg[]>; // spoken questions by entry name, oldest first
   listening: boolean; // the space bar is held: the microphone is open
   micError: string | null;
@@ -36,6 +37,7 @@ export const initialState: HudState = {
   named: {},
   recent: [],
   open: [],
+  fullscreen: null,
   questions: {},
   listening: false,
   micError: null,
@@ -132,6 +134,17 @@ export function toggleEntry<S extends Pick<HudState, "open">>(s: S, name: string
 
 const NO_QUESTIONS: QuestionMsg[] = [];
 
+// What the full-screen hologram shows: it does not depend on its entry being expanded (you put the object down to
+// look at the screen), only on the entry still being in the sidebar with a finished hologram.
+export function fullscreenView(s: Pick<HudState, "fullscreen" | "named" | "recent" | "shapes" | "profiles">):
+  { identity: IdentityMsg; shape: ShapeMsg; profile?: ProfileMsg } | null {
+  const name = s.fullscreen;
+  if (name === null || !s.recent.includes(name)) return null;
+  const identity = s.named[name], shape = s.shapes[name];
+  if (!identity || shape?.status !== "ready") return null;
+  return { identity, shape, profile: s.profiles[name] };
+}
+
 export function questionsFor(s: Pick<HudState, "questions">, name: string): QuestionMsg[] {
   return s.questions[name] ?? NO_QUESTIONS;
 }
@@ -160,6 +173,7 @@ interface HudActions {
   toggleMute(): void;
   toggleTelemetry(): void;
   toggleEntry(name: string): void;
+  setFullscreen(name: string | null): void;
   setListening(listening: boolean): void;
   setMicError(error: string | null): void;
   setFlash(text: string | null): void;
@@ -174,6 +188,7 @@ export const useHud = create<HudState & HudActions>()((set) => ({
   toggleMute: () => set((s) => ({ muted: !s.muted })),
   toggleTelemetry: () => set((s) => ({ showTelemetry: !s.showTelemetry })),
   toggleEntry: (name) => set((s) => toggleEntry(s, name)),
+  setFullscreen: (fullscreen) => set({ fullscreen }),
   setListening: (listening) => set({ listening }),
   setMicError: (micError) => set({ micError }),
   setFlash: (flash) => set({ flash }),

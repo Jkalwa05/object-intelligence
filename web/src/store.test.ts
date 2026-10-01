@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { IdentityMsg, NoticeMsg, TracksMsg } from "./protocol";
+import type { IdentityMsg, NoticeMsg, ShapeMsg, TracksMsg } from "./protocol";
 import { applyServerMessage, initialState } from "./store";
 
 const tracks = (seq: number): TracksMsg =>
@@ -86,6 +86,20 @@ describe("the sidebar", () => {
     expect(sidebarEntries(s).map((e) => e.name)).toEqual(
       ["Ding 10", "Ding 9", "Ding 8", "Ding 7", "Ding 6", "Ding 5", "Ding 4", "Ding 3"]);
     expect(sidebarEntries(s).every((e) => !e.active && !e.expanded)).toBe(true);
+  });
+
+  test("the full-screen hologram stays open when its entry folds up, and closes once its entry is gone", async () => {
+    const { fullscreenView, sidebarEntries } = await import("./store");
+    const shape: ShapeMsg = { type: "shape", ts: 0, seq: 0, product: "Ding 1", status: "ready", size_mm: [1, 2, 3],
+      parts: [] };
+    let s = applyServerMessage(applyServerMessage(initialState, named(1, "Ding 1")), shape);
+    s = { ...applyServerMessage(s, focus(1)), fullscreen: "Ding 1" };
+    expect(fullscreenView(s)?.shape).toBe(shape);
+    s = applyServerMessage(s, focus(null)); // the object is put down: its entry folds up
+    expect(sidebarEntries(s)[0].expanded).toBe(false);
+    expect(fullscreenView(s)?.identity.display_name).toBe("Ding 1");
+    for (let i = 2; i <= 9; i++) s = applyServerMessage(s, named(i, `Ding ${i}`)); // pushed out of the sidebar
+    expect(fullscreenView(s)).toBeNull();
   });
 
   test("only the held object is expanded; a click opens or closes another one", async () => {
