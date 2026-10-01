@@ -1,7 +1,7 @@
 # Object Intelligence, Teilprojekt 1: Sehen & Identifizieren
 
 Stand: 2026-10-01 · Status: **abgeschlossen** (auf `main`, abgenommen durch Jonas' Live-Test), Anpassungen nach den
-Live-Tests in §8 bis §12
+Live-Tests in §8 bis §13
 
 Object Intelligence ist ein voll funktionsfähiges Programm und Portfolio-Projekt: Man hält einen beliebigen Gegenstand vor die
 Mac-Kamera, und das System sagt, *was* es ist und *wie sicher* es ist, zeigt ein 3D-Modell und beantwortet Fragen.
@@ -511,3 +511,14 @@ Nach Jonas' Test mit Steckbrief: „Der nimmt immer mein T-Shirt als Objekt“, 
   Rückmeldung. Der Prüfgrund erscheint nur noch in der Telemetrie (Taste D).
 - **Stimme aus.** Die Stimme ist beim Start aus und wird mit Taste M eingeschaltet. Dann steht unten links
   „Stimme an (M)“.
+
+## 13. Nachtrag 2026-10-01: Körperteile am letzten Wort erkennen
+
+Im Live-Test ging ein Ausschnitt von Jonas' Haaren an Claude, Antwort „Haarteil / Perücke“. YOLOE nannte die Region
+„short hair“, die Ausschlussliste kannte nur das exakte Wort „hair“. Im dunklen Raum fand YuNet kein Gesicht, deshalb
+griff auch die Gesichtszone nicht.
+
+Labels werden jetzt nach ihrem letzten Wort beurteilt (`privacy.label_in`). „short hair“, „long hair“ und
+„human face“ sind Körperteile: Sie werden nie Fokus, zählen für die Datenschutzregeln als Person bzw. Gesicht und
+werden beim Hintergrund-Bild grau übermalt. „hair dryer“ oder „face mask“ bleiben Gegenstände. Das gilt für die
+Ausschlussliste, die Personen- und Gesichtslabels und die Hand-Labels.

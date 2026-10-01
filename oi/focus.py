@@ -7,7 +7,7 @@ from collections.abc import Sequence
 
 from oi.config import Settings
 from oi.contracts import Track
-from oi.privacy import privacy_veto, worn
+from oi.privacy import label_in, privacy_veto, worn
 
 EPS = 1e-6  # tolerance for time comparisons
 SIZE_FULL = 0.15  # an object covering 15 % of the frame gets the full size factor
@@ -25,10 +25,8 @@ Box = tuple[float, float, float, float]
 
 def split_tracks(tracks: list[Track], s: Settings) -> tuple[list[Track], list[Track]]:
     """(visible, hands): visible drops people and body parts; hands only give the focus bonus."""
-    excluded = {label.lower() for label in s.excluded_labels}
-    hand_labels = {label.lower() for label in s.hand_labels}
-    visible = [t for t in tracks if t.label.lower() not in excluded]
-    hands = [t for t in tracks if t.label.lower() in hand_labels]
+    visible = [t for t in tracks if not label_in(t.label, s.excluded_labels)]
+    hands = [t for t in tracks if label_in(t.label, s.hand_labels)]
     return visible, hands
 
 

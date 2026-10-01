@@ -29,7 +29,7 @@ from oi.identify import (Identifier, IdentifyError, IdentifyRequest, IdentifyRes
                          SceneRequest, SceneResult, ShapeRequest, ShapeResult, format_history, request_text)
 from oi.ingest import Frame, FrameFormatError, FrameSlot, decode_frame
 from oi.perception import Detector
-from oi.privacy import mask_people, on_person, privacy_veto
+from oi.privacy import label_in, mask_people, on_person, privacy_veto
 from oi.profiles import ProfileStore, ShapeStore
 from oi.scene import SceneMap
 from oi.telemetry import CallLog, CallRecord, Telemetry
@@ -147,12 +147,11 @@ class Pipeline:
         if self._hands is not None:  # Apple Vision's checked hands replace YOLOE's rare "hand" labels
             hands = self._confirmer.confirm(await asyncio.to_thread(self._hands.find, frame.image))
         people_labels = set(self._s.person_labels) | set(self._s.face_labels)
-        people = [t for t in tracks if t.label.lower() in people_labels]
+        people = [t for t in tracks if label_in(t.label, people_labels)]
         faces = await asyncio.to_thread(self._faces.find, frame.image) if self._faces is not None else []
         people += faces
         focus_id = self._focus.update(visible, hands, w, h, frame.t, people=people, background=self._background)
-        excluded = {label.lower() for label in self._s.excluded_labels}
-        private = people + [t for t in tracks if t.label.lower() in excluded and t not in people]
+        private = people + [t for t in tracks if label_in(t.label, self._s.excluded_labels) and t not in people]
         await self._calibrate_scene(frame, visible, people, private, focus_id)
         for track in visible:
             self._remember(track, frame.t)

@@ -7,6 +7,7 @@ looks at geometry: the focus box may not cover most of a person, sit in a person
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 
 import numpy as np
 
@@ -21,6 +22,14 @@ FACE_WIDEN = 0.25  # a face box widened by 25 % per side includes hair, ears and
 ON_FACE_SHARE = 0.50  # half of the focus box lies on the widened face: it is worn, not held up
 
 Box = tuple[float, float, float, float]
+
+
+def label_in(label: str, words: Iterable[str]) -> bool:
+    """A detector label names one of `words` when it is that word or ends with it: "short hair" is hair, a "hair
+    dryer" is not (the last word of an English compound names the thing)."""
+    tokens = label.lower().replace("-", " ").split()
+    wanted = {word.lower() for word in words}
+    return bool(tokens) and (" ".join(tokens) in wanted or tokens[-1] in wanted)
 
 
 def _area(box: Box) -> float:
@@ -44,7 +53,7 @@ def person_zones(people: list[Track], frame_h: float) -> list[Box]:
     zones = []
     for other in people:
         x1, y1, x2, y2 = other.box
-        if other.label.lower() == "face":
+        if label_in(other.label, ("face",)):
             w, h = x2 - x1, y2 - y1
             zones.append((x1 - BODY_WIDEN * w, y1 - FACE_WIDEN * h, x2 + BODY_WIDEN * w, frame_h))
         else:
@@ -91,15 +100,14 @@ def privacy_veto(focus: Track, tracks: list[Track], s: Settings, head_zone: bool
     for other in tracks:
         if other.id == focus.id:
             continue
-        label = other.label.lower()
-        if label in person_labels:
+        if label_in(other.label, person_labels):
             x1, y1, x2, y2 = other.box
             zone = (x1, y1, x2, y1 + (y2 - y1) * HEAD_ZONE)
             if _overlap(focus.box, other.box) >= PERSON_COVER * _area(other.box):
                 return True
             if head_zone and focus_area and _overlap(focus.box, zone) >= HEAD_SHARE * focus_area:
                 return True
-        elif label in face_labels:
+        elif label_in(other.label, face_labels):
             if _overlap(focus.box, other.box) >= FACE_SHARE * _area(other.box):
                 return True
             x1, y1, x2, y2 = other.box

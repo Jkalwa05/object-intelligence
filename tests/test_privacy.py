@@ -88,3 +88,20 @@ def test_scene_mask_clips_at_the_frame_edges():
     from oi.privacy import mask_people
     masked = mask_people(np.full((720, 1280, 3), 200, np.uint8), [trk(-1, (0, 0, 80, 90), label="face")])
     assert (masked[0:720, 0:160] == 128).all() and (masked[:, 161:] == 200).all()
+
+
+def test_a_body_part_is_known_by_the_last_word_of_its_label():
+    # Live test 2026-10-01: YOLOE called Jonas's hair "short hair", the list only knew "hair", and in the dark room
+    # no face was found either: the crop of his hair went to Claude.
+    from oi.focus import split_tracks
+    from oi.privacy import label_in
+    labels = ["short hair", "Long Hair", "human face", "hair dryer", "face mask", "cup"]
+    visible, _ = split_tracks([trk(i, (0, 0, 10, 10), label=label) for i, label in enumerate(labels)], Settings())
+    assert [t.label for t in visible] == ["hair dryer", "face mask", "cup"]
+    assert label_in("short hair", Settings().face_labels) and not label_in("hair dryer", Settings().face_labels)
+
+
+def test_an_object_on_the_hair_is_never_sent_even_without_a_face():
+    hair = trk(2, (550, 0, 730, 75), label="short hair")
+    on_hair = trk(3, (560, 10, 700, 70), label="black")
+    assert privacy_veto(on_hair, [hair, on_hair], Settings(), head_zone=False)
