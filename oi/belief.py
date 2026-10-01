@@ -64,6 +64,18 @@ class Belief:
     def add(self, obs: Observation, view_id: int, q: float) -> None:
         self._seen.append((obs, view_id, q))
 
+    def product(self) -> tuple[str, str] | None:
+        """(display name, category) of a product worth a profile (sub-project 2): likely or certain, and named
+        down to the model; a brand alone or a mere category is no product to describe."""
+        v = self._verdict()
+        if v.level not in (Level.LIKELY, Level.CERTAIN) or not v.ranking:
+            return None
+        top = v.ranking[0]
+        candidate, observation = top.sightings[-1]
+        if candidate.depth not in (Depth.MODEL, Depth.VARIANT):
+            return None
+        return self._name(top), observation.category
+
     def snapshot(self, calls_used: int) -> BeliefState:
         v = self._verdict()
         if v.level is None:

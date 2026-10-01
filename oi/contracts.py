@@ -61,6 +61,22 @@ class Observation(_Model):
     generic_description: str | None
 
 
+class ProfileFact(_Model):
+    label: str
+    value: str
+
+
+class ProductProfile(_Model):
+    """What Claude knows about one product (sub-project 2): no sources, so it is always shown as "laut Claude"."""
+
+    known: bool  # False: Claude does not know this exact model and says so instead of guessing
+    summary: str
+    facts: list[ProfileFact] = Field(max_length=8)
+    released: str | None
+    launch_price: str | None
+    trivia: list[str] = Field(max_length=2)
+
+
 # --- what the pipeline tracks (§2.2, §2.6) ----------------------------------------------------------------------
 
 class Track(_Model):
@@ -196,7 +212,33 @@ class SceneMsg(_ServerMsg):
     items: list[SceneItemWire]
 
 
-ServerMsg = Annotated[TracksMsg | IdentityMsg | TelemetryMsg | NoticeMsg | SceneMsg, Field(discriminator="type")]
+ProfileStatus = Literal["loading", "ready", "unknown", "error"]
+
+
+class ProfileMsg(_ServerMsg):
+    """The product profile for one product name (sub-project 2); the browser shows it next to the card."""
+
+    type: Literal["profile"] = "profile"
+    product: str
+    status: ProfileStatus
+    summary: str
+    facts: list[ProfileFact]
+    released: str | None
+    launch_price: str | None
+    trivia: list[str]
+    line: str  # what the voice says once: the summary when ready, else nothing
+
+    @classmethod
+    def of(cls, product: str, status: ProfileStatus, profile: ProductProfile | None, line: str = "") -> ProfileMsg:
+        if profile is None:
+            return cls(product=product, status=status, summary="", facts=[], released=None, launch_price=None,
+                       trivia=[], line=line)
+        return cls(product=product, status=status, summary=profile.summary, facts=profile.facts,
+                   released=profile.released, launch_price=profile.launch_price, trivia=profile.trivia, line=line)
+
+
+ServerMsg = Annotated[TracksMsg | IdentityMsg | TelemetryMsg | NoticeMsg | SceneMsg | ProfileMsg,
+                      Field(discriminator="type")]
 
 
 class FocusMsg(_Model):
@@ -244,5 +286,10 @@ def protocol_examples() -> list[dict]:
         NoticeMsg(ts=1.3, seq=4, level="warn", text="Kein API-Key: nur lokale Erkennung."),
         SceneMsg(ts=1.4, seq=5, calibrating=False, naming=False,
                  items=[SceneItemWire(label="Pendelleuchte", box=(0.4, 0.02, 0.55, 0.25))]),
+        ProfileMsg.of("Apple iPhone 14", "ready", ProductProfile(
+            known=True, summary="Ein Smartphone von Apple aus dem Jahr 2022.",
+            facts=[ProfileFact(label="Chip", value="A15 Bionic"), ProfileFact(label="Display", value="6,1 Zoll OLED")],
+            released="September 2022", launch_price="999 € (128 GB)", trivia=["Erstes iPhone mit Unfallerkennung."]),
+            line="Ein Smartphone von Apple aus dem Jahr 2022.").model_copy(update={"ts": 1.5, "seq": 6}),
     ]
     return [m.model_dump(mode="json") for m in messages]

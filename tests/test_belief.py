@@ -136,3 +136,19 @@ def test_short_or_partial_model_names_are_not_decisive():
     b = Belief("de")
     b.add(obs(cand("Sony", "Alpha 7"), readable=("ALPHA 7 III",)), 1, 1.0)
     assert b.snapshot(1).level == Level.CERTAIN
+
+
+def test_product_needs_likely_and_a_model():
+    b = Belief("de")
+    assert b.product() is None
+    b.add(obs(I14, I13), 1, 1.0)  # likely
+    assert b.product() == ("Apple iPhone 14", "Smartphone")
+    unsure = Belief("de")
+    unsure.add(obs(I14, I13, sa="low"), 1, 1.0)
+    assert unsure.product() is None
+    category = Belief("de")
+    category.add(obs(desc="rote Keramiktasse", cat="Tasse"), 1, 1.0)
+    assert category.product() is None
+    brand = Belief("de")
+    brand.add(obs(cand("Apple", None, depth="brand")), 1, 1.0)  # "an Apple smartphone" is no product to describe
+    assert brand.product() is None

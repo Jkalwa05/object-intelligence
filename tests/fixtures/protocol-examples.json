@@ -132,5 +132,29 @@
         ]
       }
     ]
+  },
+  {
+    "ts": 1.5,
+    "seq": 6,
+    "type": "profile",
+    "product": "Apple iPhone 14",
+    "status": "ready",
+    "summary": "Ein Smartphone von Apple aus dem Jahr 2022.",
+    "facts": [
+      {
+        "label": "Chip",
+        "value": "A15 Bionic"
+      },
+      {
+        "label": "Display",
+        "value": "6,1 Zoll OLED"
+      }
+    ],
+    "released": "September 2022",
+    "launch_price": "999 € (128 GB)",
+    "trivia": [
+      "Erstes iPhone mit Unfallerkennung."
+    ],
+    "line": "Ein Smartphone von Apple aus dem Jahr 2022."
   }
 ]

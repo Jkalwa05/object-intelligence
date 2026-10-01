@@ -60,3 +60,15 @@ def test_scene_naming_and_hand_outlines_travel_to_the_browser():
     message = TracksMsg(frame_id=1, w=1280, h=720, focus_id=None, tracks=[], hint=None, hands=[hand])
     assert message.model_dump(mode="json")["hands"][0]["polygon"][2] == [0.5, 0.9]
     assert TracksMsg(frame_id=1, w=1280, h=720, focus_id=None, tracks=[], hint=None).hands == []
+
+
+def test_profile_message_travels():
+    from oi.contracts import ProductProfile, ProfileFact, ProfileMsg
+    profile = ProductProfile(known=True, summary="Ein Smartphone von Apple.", facts=[ProfileFact(label="Chip",
+                             value="A15 Bionic")], released="September 2022", launch_price="999 €", trivia=[])
+    data = ProfileMsg.of("Apple iPhone 14", "ready", profile, line=profile.summary).model_dump(mode="json")
+    assert data["type"] == "profile" and data["facts"] == [{"label": "Chip", "value": "A15 Bionic"}]
+    assert (data["product"], data["line"], data["released"]) == ("Apple iPhone 14", "Ein Smartphone von Apple.",
+                                                                 "September 2022")
+    loading = ProfileMsg.of("Apple iPhone 14", "loading", None)
+    assert (loading.summary, loading.facts, loading.trivia, loading.line) == ("", [], [], "")
