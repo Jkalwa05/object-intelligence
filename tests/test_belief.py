@@ -160,3 +160,20 @@ def test_the_profile_is_about_the_model_not_the_colour():
     b.add(obs(blue, I13), 1, 1.0)
     b.add(obs(blue, I13), 2, 1.0)  # the colour is confirmed: the card says "Apple iPhone 14, Blau"
     assert b.product() == ("Apple iPhone 14, Blau", "Apple iPhone 14", "Smartphone")
+
+
+def test_the_person_can_say_which_candidate_it_is():
+    # Live test 2026-10-01: from the back it stays "iPhone 14 or 15?"; Jonas knows which phone he holds.
+    b = Belief("de")
+    b.add(obs(I14, I15, dist=False, view="die Vorderseite", reason="Notch oder Dynamic Island"), 1, 1.0)
+    assert b.snapshot(1).level == Level.UNSURE and b.product() is None
+    assert not b.confirm("Samsung Galaxy S23")  # only one of the candidates
+    assert b.confirm("Apple iPhone 15")
+    state = b.snapshot(1)
+    assert (state.level, state.final, state.confirmed, state.display_name) == (Level.CERTAIN, True, True,
+                                                                               "Apple iPhone 15")
+    assert [(c.name, c.share) for c in state.candidates] == [("Apple iPhone 15", 1.0)]
+    assert (state.view_request, state.line) == (None, "Das ist Apple iPhone 15.")
+    assert b.product() == ("Apple iPhone 15", "Apple iPhone 15", "Smartphone")
+    b.add(obs(I14, I15), 2, 1.0)  # a late answer cannot overrule the person
+    assert b.snapshot(2).display_name == "Apple iPhone 15" and b.is_final

@@ -80,7 +80,8 @@ for a moment and gives it a new number, entry, result and call count stay (same 
 
 Every identified object stays pinned in a sidebar on the right. The one in your hand is expanded on top, linked to
 its box by a thin green line; the others collapse and open again with a click. An expanded entry shows the
-identification, the hologram and the profile:
+identification, the hologram and the profile. If it stays *unsure* ("iPhone 14 or 15?"), tap the right candidate:
+it becomes *certain*, marked *von dir bestätigt*, and its profile and hologram follow.
 
 - **Hologram:** once an object is at least *likely*, Claude describes its shape as primitives in millimetres (from its
   own knowledge and the object-only crop). The browser builds a true-to-scale model with three.js: neon-green edges,

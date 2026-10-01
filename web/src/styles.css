@@ -175,6 +175,34 @@ body {
   font-size: 12px;
 }
 
+.pick-label {
+  margin: 0 0 4px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.pick {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline dotted rgba(255, 255, 255, 0.4);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.pick:hover {
+  color: var(--accent);
+  text-decoration-color: var(--accent);
+}
+
+.tag.confirmed {
+  display: inline-block;
+  margin-bottom: 8px;
+}
+
 .bars i {
   display: block;
   height: 4px;

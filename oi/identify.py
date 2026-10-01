@@ -219,7 +219,7 @@ class ProductResult:
 class ShapeRequest:
     product: str  # the model, e.g. "Apple iPhone 14"
     category: str
-    jpeg: bytes  # the crop of the identification: only the object's pixels
+    jpeg: bytes | None  # the crop of the identification (only the object's pixels); None: text only
     language: Lang
 
 

@@ -670,3 +670,48 @@ async def test_no_hologram_without_budget():
     pipeline, rec, _ = _with_shapes(identifier, settings=Settings(max_calls_session=2))  # identification + profile
     await _identify_cup(pipeline)
     assert identifier.shape_requests == [] and rec.of("shape") == []
+
+
+# --- the person picks the right candidate: certain, then profile and hologram ---------------------------------------
+
+I15 = cand("Apple", "iPhone 15")
+
+
+async def test_a_picked_candidate_is_certain_and_brings_profile_and_hologram():
+    from oi.contracts import ConfirmMsg
+    unsure = obs(I14, I15, dist=False, view="die Vorderseite", reason="Notch oder Dynamic Island")
+    identifier = FakeIdentifier(script=[unsure], profile=_profile(), shape=_shape())
+    pipeline, rec, _ = _with_shapes(identifier)
+    await _identify_cup(pipeline)
+    assert rec.of("profile") == [] and rec.of("shape") == []  # unsure: nothing yet
+    await pipeline.on_client_message(ConfirmMsg(track_id=CUP.id, name="Apple iPhone 15"))
+    await pipeline.wait_idle()
+    last = rec.of("identity")[-1]
+    assert (last.track_id, last.level, last.confirmed, last.final, last.display_name) == (
+        CUP.id, "certain", True, True, "Apple iPhone 15")
+    assert identifier.product_requests[0].product == "Apple iPhone 15"
+    assert identifier.shape_requests[0].jpeg == identifier.requests[0].jpeg  # the crop of the identification
+    await feed(pipeline, sharp_image(boxes=(BOX,), mirrored=True), 13, start=1.3, first_id=13)  # a new side
+    await pipeline.wait_idle()
+    assert len(identifier.requests) == 1  # confirmed is final: no more calls for this object
+
+
+async def test_an_entry_can_be_confirmed_after_the_object_is_gone():
+    from oi.contracts import ConfirmMsg
+    identifier = FakeIdentifier(script=[obs(I14, I15, dist=False, view="die Vorderseite", reason="Notch")])
+    pipeline, rec, _ = _with_shapes(identifier)
+    pipeline._detector = FakeDetector([[CUP, HAND]] * 13 + [[]])  # then the phone is put away
+    await _identify_cup(pipeline)
+    await feed(pipeline, sharp_image(), 10, start=1.3, first_id=13, step=60.0)  # ten minutes without it
+    await pipeline.on_client_message(ConfirmMsg(track_id=CUP.id, name="Apple iPhone 14"))
+    assert rec.of("identity")[-1].confirmed
+
+
+async def test_a_wrong_pick_changes_nothing():
+    from oi.contracts import ConfirmMsg
+    pipeline, rec, _ = _with_shapes(FakeIdentifier(script=[obs(I14, I15, dist=False, view="x", reason="y")]))
+    await _identify_cup(pipeline)
+    before = len(rec.messages)
+    await pipeline.on_client_message(ConfirmMsg(track_id=CUP.id, name="Samsung Galaxy S23"))
+    await pipeline.on_client_message(ConfirmMsg(track_id=777, name="Apple iPhone 14"))
+    assert len(rec.messages) == before

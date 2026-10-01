@@ -85,3 +85,11 @@ def test_shape_message_travels():
     assert (data["product"], data["size_mm"]) == ("Apple iPhone 14", [71.5, 146.7, 7.8])
     loading = ShapeMsg.of("Apple iPhone 14", "loading", None)
     assert (loading.parts, loading.size_mm) == ([], None)
+
+
+def test_confirm_message_from_the_browser():
+    from oi.contracts import ConfirmMsg, IdentityMsg
+    assert parse_client_message('{"type":"confirm","track_id":14,"name":"Apple iPhone 14"}') == ConfirmMsg(
+        track_id=14, name="Apple iPhone 14")
+    assert parse_client_message('{"type":"confirm","track_id":14}') is None
+    assert "confirmed" in IdentityMsg.model_fields

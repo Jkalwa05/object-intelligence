@@ -9,6 +9,8 @@ const TEXTS = {
   "level.category_only": { de: "NUR KATEGORIE", en: "CATEGORY ONLY" },
   analysing: { de: "ANALYSIERE …", en: "ANALYSING …" },
   recheck: { de: "Neu prüfen", en: "Check again" },
+  pickOne: { de: "Welches ist es? Tippe es an.", en: "Which one is it? Tap it." },
+  confirmedByYou: { de: "von dir bestätigt", en: "confirmed by you" },
   showMe: { de: "Zeig mir bitte", en: "Please show me" },
   cameraDenied: {
     de: "Kein Kamerazugriff. Erlaube ihn unter Systemeinstellungen → Datenschutz & Sicherheit → Kamera.",

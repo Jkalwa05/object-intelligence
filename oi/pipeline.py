@@ -19,7 +19,7 @@ import numpy as np
 from oi import appearance, lines
 from oi.belief import Belief, Product
 from oi.config import Settings
-from oi.contracts import (BeliefState, FocusMsg, IdentityMsg, Level, NoticeMsg, ProductProfile, ProductShape,
+from oi.contracts import (BeliefState, ConfirmMsg, FocusMsg, IdentityMsg, Level, NoticeMsg, ProductProfile, ProductShape,
                           ProfileMsg, RecalibrateMsg, RecheckMsg, SceneItemWire, SceneMsg, ServerMsg, ShapeMsg, Status,
                           Track, TracksMsg, WireTrack)
 from oi.faces import FaceFinder
@@ -40,6 +40,7 @@ log = logging.getLogger(__name__)
 
 Emit = Callable[[ServerMsg], Awaitable[None]]
 FORGET_AFTER_S = 30.0
+FORGET_IDENTIFIED_AFTER_S = 600.0  # an identified object stays 10 minutes: its sidebar entry can still be confirmed
 SCENE_WIDTH = 1280  # the scene image for Claude is at most this wide
 SCENE_JPEG_QUALITY = 85
 PRIVATE_MEMORY_S = 2.0  # everyone seen in the last 2 s of the calibration is greyed, even if missed in the last frame
@@ -64,6 +65,7 @@ class _TrackState:
     in_flight: bool = False
     forced: bool = False
     paused_sent: bool = False
+    last_jpeg: bytes | None = None  # the last crop sent to Claude: the hologram's picture after a confirmation
 
 
 def _scene_jpeg(image: np.ndarray, private: list[Track]) -> bytes:
@@ -178,7 +180,7 @@ class Pipeline:
                                    faces=[WireTrack.from_track(f, w, h).box for f in faces],
                                    hands=[WireTrack.from_track(hand, w, h) for hand in hands]))
 
-    async def on_client_message(self, message: FocusMsg | RecheckMsg | RecalibrateMsg) -> None:
+    async def on_client_message(self, message: FocusMsg | RecheckMsg | RecalibrateMsg | ConfirmMsg) -> None:
         if isinstance(message, RecalibrateMsg):
             self._scene.reset()
             self._scene_announced = False
@@ -187,6 +189,8 @@ class Pipeline:
             self._private = []
         elif isinstance(message, FocusMsg):
             self._focus.pin(message.track_id)
+        elif isinstance(message, ConfirmMsg):
+            await self._confirm(message)
         elif (state := self._states.get(message.track_id)) is not None:
             state.forced = True
             state.collector.force_next()
@@ -278,6 +282,17 @@ class Pipeline:
             model=result.model if result else (self._identifier.model_label if self._identifier else "–"),
             level_after=None))
 
+    async def _confirm(self, message: ConfirmMsg) -> None:
+        """The person picked the right candidate in the sidebar: certain by their word, then profile and hologram.
+        Works for entries whose object is gone, too, as long as its state is kept (10 minutes)."""
+        state = self._states.get(message.track_id)
+        if state is None or not state.belief.confirm(message.name):
+            return
+        await self._send_identity(state.track_id, "ready", self._snapshot(state))
+        if (product := state.belief.product()) is not None:
+            await self._want_profile(product)
+            await self._want_shape(product, state.last_jpeg)
+
     async def _recognise_again(self, focus: Track, frame: Frame, visible_ids: set[int]) -> None:
         """The tracker sometimes loses the held object for a moment and gives it a new number. A fresh focus is the
         last identified object if that one has vanished, was held at most 3 s ago, and size and colours still fit:
@@ -316,6 +331,7 @@ class Pipeline:
             self._in_flight += 1
             self._telemetry.call_started()
             state.collector.mark_sent(ready)
+            state.last_jpeg = ready.jpeg
             await self._send_identity(track.id, "analysing", self._snapshot(state))
             task = asyncio.create_task(self._identify(state, ready))
             self._tasks.add(task)
@@ -413,7 +429,7 @@ class Pipeline:
 
     # --- hologram (sub-project 3) ----------------------------------------------------------------------------------
 
-    async def _want_shape(self, product: Product, jpeg: bytes) -> None:
+    async def _want_shape(self, product: Product, jpeg: bytes | None) -> None:
         """A product reached "likely": the hologram of its model comes from the store, or from one Claude call with
         the crop of the identification (object pixels only)."""
         if self._shapes is None or self._identifier is None or product.name in self._shapes_sent:
@@ -514,5 +530,7 @@ class Pipeline:
         state.label, state.last_seen = track.label, now
 
     def _forget(self, now: float) -> None:
-        for track_id in [i for i, s in self._states.items() if now - s.last_seen > FORGET_AFTER_S and not s.in_flight]:
+        keep = {True: FORGET_IDENTIFIED_AFTER_S, False: FORGET_AFTER_S}
+        for track_id in [i for i, s in self._states.items()
+                         if not s.in_flight and now - s.last_seen > keep[bool(s.belief.observations)]]:
             del self._states[track_id]

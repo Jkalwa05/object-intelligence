@@ -6,7 +6,8 @@ const tracks = (seq: number): TracksMsg =>
   ({ type: "tracks", ts: 0, seq, frame_id: seq, w: 1280, h: 720, focus_id: 1, tracks: [], faces: [], hands: [] });
 const identity = (trackId: number, line: string): IdentityMsg => ({
   type: "identity", ts: 0, seq: 0, track_id: trackId, status: "ready", level: "likely", display_name: "X",
-  candidates: [], evidence: [], view_request: null, final: false, calls_used: 1, line, previous_id: null,
+  candidates: [], evidence: [], view_request: null, final: false, calls_used: 1, line, confirmed: false,
+  previous_id: null,
 });
 const notice = (text: string): NoticeMsg => ({ type: "notice", ts: 0, seq: 0, level: "info", text });
 
@@ -73,7 +74,7 @@ test("the profile panel shows the focus product's own profile while it is likely
 test("the voice stays off until M is pressed", () => expect(initialState.muted).toBe(true));
 
 describe("the sidebar", () => {
-  const named = (trackId: number, name: string, level: "likely" | "unsure" | null = "likely") =>
+  const named = (trackId: number, name: string, level: "likely" | "unsure" | "certain" | null = "likely") =>
     ({ ...identity(trackId, `Das ist ${name}.`), display_name: name, level });
   const focus = (id: number | null) => ({ ...tracks(99), focus_id: id });
 
@@ -107,6 +108,15 @@ describe("the sidebar", () => {
     expect(sidebarEntries(s).map((e) => [e.name, e.active])).toEqual([["gadget", true], ["Lampe", false]]);
     s = applyServerMessage(applyServerMessage(s, focus(null)), focus(null));
     expect(sidebarEntries(s).map((e) => e.name)).toEqual(["Lampe"]);
+  });
+
+  test("picking the right model merges the entries of the same phone", async () => {
+    const { sidebarEntries } = await import("./store");
+    let s = applyServerMessage(applyServerMessage(initialState, named(14, "Apple iPhone 13", "unsure")),
+      named(198, "Apple iPhone 14", "unsure"));
+    s = applyServerMessage(s, { ...named(14, "Apple iPhone 14", "certain"), confirmed: true });
+    expect(sidebarEntries(s).map((e) => [e.name, e.identity.track_id, e.identity.confirmed])).toEqual(
+      [["Apple iPhone 14", 14, true]]);
   });
 
   test("a new name for the same object replaces its entry", async () => {

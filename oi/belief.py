@@ -59,6 +59,16 @@ class Belief:
     def __init__(self, language: Lang) -> None:
         self._lang = language
         self._seen: list[tuple[Observation, int, float]] = []  # observation, view id, quality
+        self._confirmed: str | None = None  # key of the candidate the person picked
+
+    def confirm(self, name: str) -> bool:
+        """The person says which of the candidates it is (by its display name). It is certain from then on, and no
+        later answer can overrule them. False if no candidate has that name."""
+        for entry in self._ranking():
+            if self._name(entry) == name:
+                self._confirmed = entry.key
+                return True
+        return False
 
     @property
     def observations(self) -> list[Observation]:
@@ -89,6 +99,12 @@ class Belief:
         v = self._verdict()
         if v.level is None:
             return BeliefState.empty("").model_copy(update={"calls_used": calls_used})
+        if self._confirmed is not None:
+            top = v.ranking[0]
+            name = self._name(top)
+            return BeliefState(level=Level.CERTAIN, display_name=name, candidates=[RankedCandidate(name=name, share=1.0)],
+                               evidence=top.evidence[:MAX_EVIDENCE], view_request=None, final=True,
+                               calls_used=calls_used, line=lines.line_certain(name, self._lang), confirmed=True)
         latest = self._seen[-1][0]
         names = [self._name(e) for e in v.ranking]
         ranked = [RankedCandidate(name=n, share=e.points / v.total) for n, e in zip(names, v.ranking)][:MAX_RANKED]
@@ -119,6 +135,9 @@ class Belief:
             return _Verdict(None, False, [], 0.0, False)
         ranking = self._ranking()
         total = sum(e.points for e in ranking) or 1.0
+        picked = next((e for e in ranking if e.key == self._confirmed), None)
+        if picked is not None:  # the person's word comes first
+            return _Verdict(Level.CERTAIN, True, [picked] + [e for e in ranking if e is not picked], total, False)
         latest = self._seen[-1][0]
         top = ranking[0] if ranking else None
         if top is None or top.sightings[-1][0].depth == Depth.CATEGORY:

@@ -5,7 +5,7 @@ import Overlay from "./hud/Overlay";
 import Sidebar from "./hud/Sidebar";
 import Telemetry from "./hud/Telemetry";
 import { connect, type Connection } from "./net/socket";
-import type { Lang, RecalibrateMsg, RecheckMsg } from "./protocol";
+import type { ConfirmMsg, Lang, RecalibrateMsg, RecheckMsg } from "./protocol";
 import { focusProfile, useHud } from "./store";
 import { SpeechGate, pickVoice } from "./voice/speech";
 import "./styles.css";
@@ -99,7 +99,7 @@ export default function App() {
 
   useVoice();
 
-  const send = (message: RecheckMsg) => connection.current?.send(JSON.stringify(message));
+  const send = (message: RecheckMsg | ConfirmMsg) => connection.current?.send(JSON.stringify(message));
 
   return (
     <>
@@ -109,7 +109,8 @@ export default function App() {
         <Telemetry video={video} />
         <Banner onRetryCamera={() => setCameraAttempt((n) => n + 1)} />
       </main>
-      <Sidebar onRecheck={(trackId) => send({ type: "recheck", track_id: trackId })} />
+      <Sidebar onRecheck={(trackId) => send({ type: "recheck", track_id: trackId })}
+        onConfirm={(trackId, name) => send({ type: "confirm", track_id: trackId, name })} />
     </>
   );
 }

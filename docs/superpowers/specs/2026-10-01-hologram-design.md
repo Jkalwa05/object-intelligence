@@ -81,3 +81,21 @@ angeheftet.
   - Leisten-Logik: Einträge, Reihenfolge, aktiv, auf und zu, höchstens 8.
   - Hologramm-Mathematik: Teile werden zu Geometrie-Parametern, dazu der Maße-Text.
 - **Echt:** Form fürs iPhone 14 mit einem echten Ausschnitt, dazu eine Sichtprüfung des gerenderten Hologramms.
+
+## 6. Nachtrag 2026-10-01: das richtige Modell antippen
+
+Im Live-Test blieb Jonas' iPhone von hinten „unsicher“ (iPhone 14, 15 oder 13?). Deshalb kamen weder Steckbrief noch
+Hologramm, denn beide gibt es erst ab „wahrscheinlich“. Seine Lösung: „Sorg dafür, dass ich auswählen kann, welches es
+ist, sodass es dann auf sicher steht. Und dann kommt das Hologramm.“
+
+- **Antippen.** Im aufgeklappten Eintrag stehen über den Kandidaten die Worte „Welches ist es? Tippe es an.“ Ein
+  Klick auf einen Namen schickt `confirm` (`track_id`, `name`). Das geht auch in älteren, eingeklappten Einträgen:
+  Erkannte Objekte bleiben 10 Minuten im Speicher, alle anderen wie bisher 30 s.
+- **Sicher durch dein Wort.** `Belief.confirm(name)` macht den Kandidaten sicher und endgültig, kein weiterer Aufruf
+  für dieses Objekt. Eine spätere Antwort von Claude kann das nicht mehr ändern.
+  - Die Karte zeigt nur noch diesen Namen mit 100 % und die Plakette „von dir bestätigt“ (`identity.confirmed`).
+  - Ehrlich bleibt es, weil sichtbar ist, woher die Sicherheit kommt.
+- **Dann Steckbrief und Hologramm.** Wie bei „wahrscheinlich“ kommen sie für das gewählte Modell, aus dem Speicher
+  oder mit je einem Aufruf. Das Hologramm bekommt den zuletzt gesendeten Ausschnitt des Objekts.
+- **Einträge verschmelzen.** Wählst du im Eintrag „Apple iPhone 13“ das iPhone 14, heißt der Eintrag danach so, und
+  ein bestehender Eintrag gleichen Namens wird mit ihm zu einem.

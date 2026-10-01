@@ -131,6 +131,7 @@ class BeliefState(_Model):
     final: bool
     calls_used: int
     line: str
+    confirmed: bool = False  # the person picked this candidate: certain because they said so
 
     @classmethod
     def empty(cls, display_name: str) -> BeliefState:
@@ -192,6 +193,7 @@ class IdentityMsg(_ServerMsg):
     final: bool
     calls_used: int
     line: str
+    confirmed: bool = False  # the person picked this candidate in the sidebar (sub-project 3)
     previous_id: int | None = None  # the tracker's old number for this same object (spec §11): nothing new to say
 
     @classmethod
@@ -295,11 +297,19 @@ class RecalibrateMsg(_Model):
     type: Literal["recalibrate"] = "recalibrate"
 
 
-ClientMsg = Annotated[FocusMsg | RecheckMsg | RecalibrateMsg, Field(discriminator="type")]
-_client_messages: TypeAdapter[FocusMsg | RecheckMsg | RecalibrateMsg] = TypeAdapter(ClientMsg)
+class ConfirmMsg(_Model):
+    """The person picks the right candidate of an entry: that object is certain, by their word (sub-project 3)."""
+
+    type: Literal["confirm"] = "confirm"
+    track_id: int
+    name: str
 
 
-def parse_client_message(text: str) -> FocusMsg | RecheckMsg | RecalibrateMsg | None:
+ClientMsg = Annotated[FocusMsg | RecheckMsg | RecalibrateMsg | ConfirmMsg, Field(discriminator="type")]
+_client_messages: TypeAdapter[FocusMsg | RecheckMsg | RecalibrateMsg | ConfirmMsg] = TypeAdapter(ClientMsg)
+
+
+def parse_client_message(text: str) -> FocusMsg | RecheckMsg | RecalibrateMsg | ConfirmMsg | None:
     """A browser message, or None for anything malformed or unknown."""
     try:
         return _client_messages.validate_json(text)

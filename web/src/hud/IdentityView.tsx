@@ -8,19 +8,30 @@ interface Props {
   identity: IdentityMsg;
   lang: Lang;
   onRecheck?: (trackId: number) => void; // only for the object in the hand
+  onConfirm?: (trackId: number, name: string) => void; // pick the right candidate: certain by your word
 }
 
-export default function IdentityView({ identity, lang, onRecheck }: Props) {
+export default function IdentityView({ identity, lang, onRecheck, onConfirm }: Props) {
+  const pickable = onConfirm !== undefined && !identity.confirmed && identity.status !== "analysing";
   return (
     // fades in for a new name, not for a new tracker number
     <div key={identity.display_name} className="card-body">
       {identity.line && <div className="card-line">{identity.line}</div>}
+      {identity.confirmed && <span className="tag confirmed">{t("confirmedByYou", lang)}</span>}
       {identity.candidates.length > 0 && (
-        <ul className="bars">
-          {identity.candidates.map((c) => (
-            <li key={c.name}><span>{c.name}</span><i style={{ width: `${Math.round(c.share * 100)}%` }} /></li>
-          ))}
-        </ul>
+        <>
+          {pickable && <div className="pick-label">{t("pickOne", lang)}</div>}
+          <ul className="bars">
+            {identity.candidates.map((c) => (
+              <li key={c.name}>
+                {pickable
+                  ? <button type="button" className="pick" onClick={() => onConfirm(identity.track_id, c.name)}>{c.name}</button>
+                  : <span>{c.name}</span>}
+                <i style={{ width: `${Math.round(c.share * 100)}%` }} />
+              </li>
+            ))}
+          </ul>
+        </>
       )}
       {identity.evidence.length > 0 && (
         <div className="chips">

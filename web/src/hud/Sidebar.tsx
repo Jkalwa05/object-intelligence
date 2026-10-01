@@ -10,7 +10,12 @@ import ProfileView from "./ProfileView";
 
 const Hologram = lazy(() => import("./Hologram")); // three.js loads only once a hologram is shown
 
-function Entry({ entry, onRecheck }: { entry: SidebarEntry; onRecheck(trackId: number): void }) {
+interface Actions {
+  onRecheck(trackId: number): void;
+  onConfirm(trackId: number, name: string): void;
+}
+
+function Entry({ entry, onRecheck, onConfirm }: { entry: SidebarEntry } & Actions) {
   const lang = useHud((s) => s.telemetry?.language ?? "de");
   const profile = useHud((s) => s.profiles[entry.name]);
   const shape = useHud((s) => s.shapes[entry.name]);
@@ -29,7 +34,8 @@ function Entry({ entry, onRecheck }: { entry: SidebarEntry; onRecheck(trackId: n
       </button>
       {entry.expanded && (
         <div className="entry-body">
-          <IdentityView identity={identity} lang={lang} onRecheck={entry.active ? onRecheck : undefined} />
+          <IdentityView identity={identity} lang={lang} onRecheck={entry.active ? onRecheck : undefined}
+            onConfirm={onConfirm} />
           {known && shape && <Suspense fallback={null}><Hologram shape={shape} lang={lang} /></Suspense>}
           {known && profile && <ProfileView profile={profile} lang={lang} />}
         </div>
@@ -38,7 +44,7 @@ function Entry({ entry, onRecheck }: { entry: SidebarEntry; onRecheck(trackId: n
   );
 }
 
-export default function Sidebar({ onRecheck }: { onRecheck(trackId: number): void }) {
+export default function Sidebar({ onRecheck, onConfirm }: Actions) {
   const lang = useHud((s) => s.telemetry?.language ?? "de");
   const focusId = useHud((s) => s.tracks?.focus_id ?? null); // tracks change every frame, the focus rarely
   const slice = useHud(useShallow((s) => ({ identities: s.identities, named: s.named, recent: s.recent, open: s.open })));
@@ -47,7 +53,7 @@ export default function Sidebar({ onRecheck }: { onRecheck(trackId: number): voi
   return (
     <aside className="sidebar">
       <div className="sidebar-title card-level">{t("sidebar.title", lang)}</div>
-      {entries.map((entry) => <Entry key={entry.name} entry={entry} onRecheck={onRecheck} />)}
+      {entries.map((entry) => <Entry key={entry.name} entry={entry} onRecheck={onRecheck} onConfirm={onConfirm} />)}
     </aside>
   );
 }

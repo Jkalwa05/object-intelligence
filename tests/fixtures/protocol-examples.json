@@ -89,6 +89,7 @@
     "final": false,
     "calls_used": 1,
     "line": "Das ist wahrscheinlich Apple iPhone 14.",
+    "confirmed": false,
     "previous_id": null
   },
   {
