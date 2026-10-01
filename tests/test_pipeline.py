@@ -613,3 +613,16 @@ async def test_no_profile_once_the_budget_is_used_up():
     pipeline, rec, _ = _with_profiles(identifier, settings=Settings(max_calls_session=1))
     await _identify_cup(pipeline)
     assert identifier.product_requests == [] and rec.of("profile") == []
+
+
+async def test_a_confirmed_colour_needs_no_second_profile():
+    blue = cand("Apple", "iPhone 14", depth="variant", variant="Blau")
+    identifier = FakeIdentifier(script=[obs(blue, I13), obs(blue, I13)], profile=_profile())
+    pipeline, rec, _ = _with_profiles(identifier)
+    await _identify_cup(pipeline)
+    await feed(pipeline, sharp_image(boxes=(BOX,), mirrored=True), 13, start=1.3, first_id=13)  # the other side
+    await pipeline.wait_idle()
+    assert len(identifier.requests) == 2 and len(identifier.product_requests) == 1
+    assert identifier.product_requests[0].product == "Apple iPhone 14"
+    ready = [p.product for p in rec.of("profile") if p.status == "ready"]
+    assert ready == ["Apple iPhone 14", "Apple iPhone 14, Blau"]  # the card's new name gets the same profile

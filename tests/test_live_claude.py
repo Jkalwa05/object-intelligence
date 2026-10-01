@@ -7,7 +7,7 @@ from ultralytics.utils import ASSETS
 
 from oi.config import Settings
 from oi.contracts import Observation
-from oi.identify import ClaudeIdentifier, IdentifyRequest, SceneRequest
+from oi.identify import ClaudeIdentifier, IdentifyRequest, ProductRequest, SceneRequest
 from oi.views import encode_for_claude
 
 
@@ -35,4 +35,13 @@ async def test_real_scene_call_names_and_places_the_objects():
     assert any(abs(x - 0.75) < 0.1 and abs(y - 0.7) < 0.1 for x, y in centres)
     assert result.cost_usd > 0
     print(f"\n{result.model}: {[(i.label, i.box) for i in result.items]}\n"
+          f"tokens {result.input_tokens}/{result.output_tokens}, ${result.cost_usd:.4f}, {result.latency_s:.1f} s")
+
+
+@pytest.mark.claude
+async def test_real_profile_knows_the_iphone_14():
+    result = await ClaudeIdentifier(Settings.from_env()).describe_product(
+        ProductRequest(product="Apple iPhone 14", category="Smartphone", language="de"))
+    assert result.profile.known and result.profile.summary and len(result.profile.facts) >= 4
+    print(f"\n{result.model}: {result.profile.model_dump_json()}\n"
           f"tokens {result.input_tokens}/{result.output_tokens}, ${result.cost_usd:.4f}, {result.latency_s:.1f} s")

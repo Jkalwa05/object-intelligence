@@ -96,11 +96,11 @@ MIN_SCENE_BOX = 5  # of 1000: anything thinner is no object
 PROFILE_PROMPT = """You write a short product profile for a heads-up display, from your own knowledge.
 - Only facts about exactly this model. Leave a field out (null, or fewer entries) rather than guess.
 - If you do not know this exact model well, set known to false and leave everything else empty.
-- summary: one or two sentences: what it is, what it is for, who it is for.
-- facts: the 4 to 8 most telling technical facts for this kind of product (for a phone for example chip, display, camera, battery; for a lamp type, material, socket, power), each as a short label and value.
+- summary: one or two short sentences, at most 30 words: what it is, what it is for, who it is for. It is read aloud.
+- facts: the 4 to 8 most telling technical facts for this kind of product (for a phone for example chip, display, camera, battery; for a lamp type, material, socket, power), each as a short label and a value of at most 8 words.
 - released: when it came out, month and year if known.
 - launch_price: the recommended retail price at launch in Germany in euros if known, otherwise with its currency.
-- trivia: one or two interesting, true facts about this product.
+- trivia: one or two interesting, true facts about this product, at most 25 words each.
 - Write everything in {language}."""
 PROFILE_SCHEMA: dict[str, Any] = {
     "type": "object",

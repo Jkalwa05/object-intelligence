@@ -147,3 +147,24 @@ def test_foreign_origin_is_rejected():
         with client.websocket_connect("/ws", headers={"origin": "http://127.0.0.1:8766"}) as ws:
             ws.send_bytes(frame_message())
             assert next_of(ws, "tracks")["type"] == "tracks"
+
+
+def test_profile_reaches_the_browser_and_is_shared_between_connections():
+    from oi.contracts import ProductProfile, ProfileFact
+    from tests.helpers import cand, obs
+    profile = ProductProfile(known=True, summary="Ein Smartphone.", facts=[ProfileFact(label="Chip", value="A15")],
+                             released=None, launch_price=None, trivia=[])
+    identifier = FakeIdentifier(script=[obs(cand("Apple", "iPhone 14"), cand("Apple", "iPhone 13"))], profile=profile)
+    app, _ = app_with((identifier, None, "hybrid"))
+    image = sharp_image(boxes=(BOX,))
+    ready = []
+    with TestClient(app) as client:
+        for _ in range(2):  # the second connection gets the profile from the shared store
+            with client.websocket_connect("/ws") as ws:
+                seen, limit = drive(ws, image, 13), 40
+                while not any(m["type"] == "profile" and m["status"] == "ready" for m in seen) and limit:
+                    seen.append(ws.receive_json())
+                    limit -= 1
+                ready += [m for m in seen if m["type"] == "profile" and m["status"] == "ready"]
+    assert [m["product"] for m in ready] == ["Apple iPhone 14", "Apple iPhone 14"]
+    assert len(identifier.product_requests) == 1

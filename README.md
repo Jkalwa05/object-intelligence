@@ -5,8 +5,8 @@ you are holding, and identifies it as precisely as the visible evidence honestly
 alike, it says so, and it asks for the one view that would tell them apart ("Show me the bottom side: Lightning or
 USB-C?").
 
-Sub-project 1 ("see and identify") is complete. 3D models, voice questions and the final polish follow in their own
-sub-projects.
+Sub-projects 1 ("see and identify") and 2 ("product profile") are complete. 3D models, voice questions and the final
+polish follow in their own sub-projects.
 
 ## Principles
 
@@ -77,6 +77,12 @@ separates them, for example "Zeig mir bitte die Unterseite" for iPhone 14 (Light
 hold still: a snapshot, the sharpest frame of half a second, is taken from the video. If the tracker loses the object
 for a moment and gives it a new number, card, result and call count stay (same size and colours, gone at most 3 s).
 
+Once an object is at least *likely*, a second glass panel next to the card shows its profile from Claude's own
+knowledge: a short description (read aloud once), 4 to 8 technical facts, release date and launch price, and one or
+two things worth knowing. There are no sources, so the panel always says *laut Claude*; if Claude does not know the
+exact model, it says so instead of guessing. Each product costs one text-only call (no image), ever: profiles are kept
+in `cache/profiles.json`.
+
 Keys: `M` mutes the voice, `D` shows the telemetry (including which quality check a crop fails), `S` toggles the mirror
 view, `R` calibrates the scene again. Settings such as `OI_MODEL=claude-sonnet-5-5` (faster), `OI_LANGUAGE=en` or
 `OI_MIN_SHARPNESS` are read from the environment or `.env`. `--fake-claude` gives canned answers without any API call;
@@ -96,11 +102,13 @@ npm --prefix web test       # browser logic (geometry, card placement, state, vo
 - Design: [`docs/superpowers/specs/2026-09-30-see-and-identify-design.md`](docs/superpowers/specs/2026-09-30-see-and-identify-design.md)
 - Plan: [`docs/superpowers/plans/2026-09-30-see-and-identify.md`](docs/superpowers/plans/2026-09-30-see-and-identify.md)
 - Acceptance checklist: [`docs/acceptance/sp1-checklist.md`](docs/acceptance/sp1-checklist.md)
+- Product profile (sub-project 2): [`docs/superpowers/specs/2026-10-01-product-profile-design.md`](docs/superpowers/specs/2026-10-01-product-profile-design.md),
+  plan [`docs/superpowers/plans/2026-10-01-product-profile.md`](docs/superpowers/plans/2026-10-01-product-profile.md)
 
 ## Roadmap
 
 1. **See and identify** (complete)
-2. ~~Facts with sources~~ (dropped on 2026-10-01)
+2. **Product profile** (complete): Claude's own knowledge about the product, no sources, marked as such
 3. 3D: generic, generated or exact models, honestly labelled
 4. Questions and voice: ask about the object you hold
 5. Polish and portfolio

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import NamedTuple
 
 from oi import lines
 from oi.config import Lang
@@ -48,6 +49,12 @@ class _Verdict:
     indistinct: bool
 
 
+
+class Product(NamedTuple):
+    name: str  # what the card shows, e.g. "Apple iPhone 14, Blau"
+    model: str  # what the profile is about: the model, never the colour ("Apple iPhone 14")
+    category: str
+
 class Belief:
     def __init__(self, language: Lang) -> None:
         self._lang = language
@@ -64,9 +71,9 @@ class Belief:
     def add(self, obs: Observation, view_id: int, q: float) -> None:
         self._seen.append((obs, view_id, q))
 
-    def product(self) -> tuple[str, str] | None:
-        """(display name, category) of a product worth a profile (sub-project 2): likely or certain, and named
-        down to the model; a brand alone or a mere category is no product to describe."""
+    def product(self) -> Product | None:
+        """The product worth a profile (sub-project 2): likely or certain, and named down to the model; a brand
+        alone or a mere category is no product to describe."""
         v = self._verdict()
         if v.level not in (Level.LIKELY, Level.CERTAIN) or not v.ranking:
             return None
@@ -74,7 +81,9 @@ class Belief:
         candidate, observation = top.sightings[-1]
         if candidate.depth not in (Depth.MODEL, Depth.VARIANT):
             return None
-        return self._name(top), observation.category
+        model = lines.display_name(candidate.model_copy(update={"depth": Depth.MODEL}), observation.category,
+                                   observation.generic_description, self._lang)
+        return Product(name=self._name(top), model=model, category=observation.category)
 
     def snapshot(self, calls_used: int) -> BeliefState:
         v = self._verdict()

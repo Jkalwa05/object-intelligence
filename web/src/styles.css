@@ -75,6 +75,11 @@ body {
   padding: 14px 16px;
 }
 
+.profile {
+  max-height: calc(100vh - 24px); /* never taller than the window */
+  overflow-y: auto;
+}
+
 .card-body {
   animation: fade 200ms ease-out;
 }

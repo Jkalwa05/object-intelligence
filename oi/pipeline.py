@@ -17,7 +17,7 @@ import cv2
 import numpy as np
 
 from oi import appearance, lines
-from oi.belief import Belief
+from oi.belief import Belief, Product
 from oi.config import Settings
 from oi.contracts import (BeliefState, FocusMsg, IdentityMsg, Level, NoticeMsg, ProductProfile, ProfileMsg,
                           RecalibrateMsg, RecheckMsg, SceneItemWire, SceneMsg, ServerMsg, Status, Track, TracksMsg,
@@ -121,8 +121,8 @@ class Pipeline:
         self._private: list[tuple[float, list[Track]]] = []  # recent person zones during the calibration
         self._identified: _Seen | None = None
         self._profiles = profiles
-        self._profiles_sent: set[str] = set()  # products whose profile this connection has
-        self._profiles_pending: set[str] = set()
+        self._profiles_sent: set[str] = set()  # card names whose profile this connection has
+        self._profiles_pending: dict[str, set[str]] = {}  # model being fetched -> card names waiting for it
         self._tasks: set[asyncio.Task[None]] = set()
         self._in_flight = 0
         self._calls_logged = 0
@@ -354,27 +354,32 @@ class Pipeline:
             self._write_log(state.track_id, ready, req, result, None, snapshot.level)
             await self._send_identity(state.track_id, "ready", snapshot)
             if (product := state.belief.product()) is not None:
-                await self._want_profile(*product)
+                await self._want_profile(product)
         finally:
             state.in_flight = False
             self._in_flight -= 1
 
     # --- product profile (sub-project 2) ---------------------------------------------------------------------------
 
-    async def _want_profile(self, product: str, category: str) -> None:
-        """A product reached "likely": its profile comes from the store, or from one text-only Claude call."""
-        if self._profiles is None or self._identifier is None or product in self._profiles_sent:
+    async def _want_profile(self, product: Product) -> None:
+        """A product reached "likely": the profile of its model comes from the store, or from one text-only Claude
+        call. It is sent under the card's name, which may also carry a colour ("Apple iPhone 14, Blau")."""
+        if self._profiles is None or self._identifier is None or product.name in self._profiles_sent:
             return
-        cached = self._profiles.get(product, self._s.language)
+        cached = self._profiles.get(product.model, self._s.language)
         if cached is not None:
-            self._profiles_sent.add(product)
-            await self._emit(_profile_msg(product, cached))
+            self._profiles_sent.add(product.name)
+            await self._emit(_profile_msg(product.name, cached))
             return
-        if product in self._profiles_pending or self._telemetry.calls_session >= self._s.max_calls_session:
+        if (waiting := self._profiles_pending.get(product.model)) is not None:
+            waiting.add(product.name)
+            await self._emit(ProfileMsg.of(product.name, "loading", None))
             return
-        self._profiles_pending.add(product)
-        await self._emit(ProfileMsg.of(product, "loading", None))
-        task = asyncio.create_task(self._fetch_profile(ProductRequest(product=product, category=category,
+        if self._telemetry.calls_session >= self._s.max_calls_session:
+            return
+        self._profiles_pending[product.model] = {product.name}
+        await self._emit(ProfileMsg.of(product.name, "loading", None))
+        task = asyncio.create_task(self._fetch_profile(ProductRequest(product=product.model, category=product.category,
                                                                       language=self._s.language)))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
@@ -391,15 +396,15 @@ class Pipeline:
                 log.exception("the profile of %s failed", req.product)
             self._telemetry.call_failed()
             self._write_profile_log(req, None, error.reason if isinstance(error, IdentifyError) else "api")
-            await self._emit(ProfileMsg.of(req.product, "error", None))
+            for name in self._profiles_pending.pop(req.product, set()):
+                await self._emit(ProfileMsg.of(name, "error", None))
             return
-        finally:
-            self._profiles_pending.discard(req.product)
         self._telemetry.call_finished(result.latency_s, result.cost_usd)
         self._write_profile_log(req, result, None)
         self._profiles.put(req.product, req.language, result.profile)
-        self._profiles_sent.add(req.product)
-        await self._emit(_profile_msg(req.product, result.profile))
+        for name in sorted(self._profiles_pending.pop(req.product, set())):
+            self._profiles_sent.add(name)
+            await self._emit(_profile_msg(name, result.profile))
 
     def _write_profile_log(self, req: ProductRequest, result: ProductResult | None, error: str | None) -> None:
         if self._call_log is None:

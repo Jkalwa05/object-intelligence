@@ -142,7 +142,7 @@ def test_product_needs_likely_and_a_model():
     b = Belief("de")
     assert b.product() is None
     b.add(obs(I14, I13), 1, 1.0)  # likely
-    assert b.product() == ("Apple iPhone 14", "Smartphone")
+    assert b.product() == ("Apple iPhone 14", "Apple iPhone 14", "Smartphone")
     unsure = Belief("de")
     unsure.add(obs(I14, I13, sa="low"), 1, 1.0)
     assert unsure.product() is None
@@ -152,3 +152,11 @@ def test_product_needs_likely_and_a_model():
     brand = Belief("de")
     brand.add(obs(cand("Apple", None, depth="brand")), 1, 1.0)  # "an Apple smartphone" is no product to describe
     assert brand.product() is None
+
+
+def test_the_profile_is_about_the_model_not_the_colour():
+    blue = cand("Apple", "iPhone 14", depth="variant", variant="Blau")
+    b = Belief("de")
+    b.add(obs(blue, I13), 1, 1.0)
+    b.add(obs(blue, I13), 2, 1.0)  # the colour is confirmed: the card says "Apple iPhone 14, Blau"
+    assert b.product() == ("Apple iPhone 14, Blau", "Apple iPhone 14", "Smartphone")
