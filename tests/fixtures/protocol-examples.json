@@ -155,5 +155,61 @@
       "Erstes iPhone mit Unfallerkennung."
     ],
     "line": "Ein Smartphone von Apple aus dem Jahr 2022."
+  },
+  {
+    "ts": 1.6,
+    "seq": 7,
+    "type": "shape",
+    "product": "Apple iPhone 14",
+    "status": "ready",
+    "size_mm": [
+      71.5,
+      146.7,
+      7.8
+    ],
+    "parts": [
+      {
+        "name": "Gehäuse",
+        "shape": "rounded_box",
+        "size_mm": [
+          71.5,
+          146.7,
+          7.8
+        ],
+        "position_mm": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation_deg": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "color": "#9fc4e8",
+        "radius_mm": 10.0
+      },
+      {
+        "name": "Kameralinse",
+        "shape": "cylinder",
+        "size_mm": [
+          12.0,
+          2.0,
+          12.0
+        ],
+        "position_mm": [
+          -22.0,
+          60.0,
+          -4.5
+        ],
+        "rotation_deg": [
+          90.0,
+          0.0,
+          0.0
+        ],
+        "color": "#1b1b1f",
+        "radius_mm": null
+      }
+    ]
   }
 ]

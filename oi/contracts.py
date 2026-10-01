@@ -77,6 +77,31 @@ class ProductProfile(_Model):
     trivia: list[str] = Field(max_length=2)
 
 
+Vec3 = tuple[float, float, float]
+ShapeKind = Literal["box", "rounded_box", "cylinder", "cone", "sphere", "capsule"]
+
+
+class ShapePart(_Model):
+    """One primitive of a hologram (sub-project 3), in millimetres around the object's centre, y pointing up."""
+
+    name: str
+    shape: ShapeKind
+    size_mm: Vec3  # box: width, height, depth · cylinder/capsule: diameter, height, diameter · cone: bottom
+    #                diameter, height, top diameter · sphere: the diameters along x, y, z
+    position_mm: Vec3
+    rotation_deg: Vec3
+    color: str  # "#rrggbb"
+    radius_mm: float | None = None  # rounded_box only
+
+
+class ProductShape(_Model):
+    """A simplified, true-to-scale model of one product built from primitives: always "vereinfacht · laut Claude"."""
+
+    known: bool
+    size_mm: Vec3 | None
+    parts: list[ShapePart] = Field(max_length=16)
+
+
 # --- what the pipeline tracks (§2.2, §2.6) ----------------------------------------------------------------------
 
 class Track(_Model):
@@ -236,7 +261,23 @@ class ProfileMsg(_ServerMsg):
                    released=profile.released, launch_price=profile.launch_price, trivia=profile.trivia, line=line)
 
 
-ServerMsg = Annotated[TracksMsg | IdentityMsg | TelemetryMsg | NoticeMsg | SceneMsg | ProfileMsg,
+class ShapeMsg(_ServerMsg):
+    """The hologram of one product name (sub-project 3); the browser shows it in the sidebar entry of that name."""
+
+    type: Literal["shape"] = "shape"
+    product: str
+    status: ProfileStatus
+    size_mm: Vec3 | None
+    parts: list[ShapePart]
+
+    @classmethod
+    def of(cls, product: str, status: ProfileStatus, shape: ProductShape | None) -> ShapeMsg:
+        if shape is None:
+            return cls(product=product, status=status, size_mm=None, parts=[])
+        return cls(product=product, status=status, size_mm=shape.size_mm, parts=shape.parts)
+
+
+ServerMsg = Annotated[TracksMsg | IdentityMsg | TelemetryMsg | NoticeMsg | SceneMsg | ProfileMsg | ShapeMsg,
                       Field(discriminator="type")]
 
 
@@ -290,5 +331,10 @@ def protocol_examples() -> list[dict]:
             facts=[ProfileFact(label="Chip", value="A15 Bionic"), ProfileFact(label="Display", value="6,1 Zoll OLED")],
             released="September 2022", launch_price="999 € (128 GB)", trivia=["Erstes iPhone mit Unfallerkennung."]),
             line="Ein Smartphone von Apple aus dem Jahr 2022.").model_copy(update={"ts": 1.5, "seq": 6}),
+        ShapeMsg.of("Apple iPhone 14", "ready", ProductShape(known=True, size_mm=(71.5, 146.7, 7.8), parts=[
+            ShapePart(name="Gehäuse", shape="rounded_box", size_mm=(71.5, 146.7, 7.8), position_mm=(0, 0, 0),
+                      rotation_deg=(0, 0, 0), color="#9fc4e8", radius_mm=10.0),
+            ShapePart(name="Kameralinse", shape="cylinder", size_mm=(12, 2, 12), position_mm=(-22, 60, -4.5),
+                      rotation_deg=(90, 0, 0), color="#1b1b1f")])).model_copy(update={"ts": 1.6, "seq": 7}),
     ]
     return [m.model_dump(mode="json") for m in messages]

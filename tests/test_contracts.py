@@ -73,3 +73,15 @@ def test_profile_message_travels():
                                                                  "September 2022")
     loading = ProfileMsg.of("Apple iPhone 14", "loading", None)
     assert (loading.summary, loading.facts, loading.trivia, loading.line) == ("", [], [], "")
+
+
+def test_shape_message_travels():
+    from oi.contracts import ProductShape, ShapeMsg, ShapePart
+    body = ShapePart(name="Gehäuse", shape="rounded_box", size_mm=(71.5, 146.7, 7.8), position_mm=(0, 0, 0),
+                     rotation_deg=(0, 0, 0), color="#9fc4e8", radius_mm=10.0)
+    shape = ProductShape(known=True, size_mm=(71.5, 146.7, 7.8), parts=[body])
+    data = ShapeMsg.of("Apple iPhone 14", "ready", shape).model_dump(mode="json")
+    assert data["type"] == "shape" and data["parts"][0]["shape"] == "rounded_box"
+    assert (data["product"], data["size_mm"]) == ("Apple iPhone 14", [71.5, 146.7, 7.8])
+    loading = ShapeMsg.of("Apple iPhone 14", "loading", None)
+    assert (loading.parts, loading.size_mm) == ([], None)
