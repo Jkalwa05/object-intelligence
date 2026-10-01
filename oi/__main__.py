@@ -20,6 +20,7 @@ from oi.faces import FaceFinder, ensure_model
 from oi.hands import HandFinder
 from oi.identify import choose_identifier
 from oi.perception import YoloeDetector
+from oi.profiles import ProfileStore
 from oi.server import create_app
 
 
@@ -64,8 +65,10 @@ def main(argv: list[str] | None = None) -> None:
 
     detector = YoloeDetector(settings)
     faces = FaceFinder(ensure_model())  # the privacy veto needs it; no face model, no start
+    # the fake's "unknown product" answers must never end up in the real profile cache
+    profiles = None if args.fake_claude else ProfileStore(settings.profile_cache)
     app = create_app(settings, detector, lambda: choose_identifier(settings, args.fake_claude), faces=faces,
-                     hands=HandFinder())
+                     hands=HandFinder(), profiles=profiles)
     url = f"http://127.0.0.1:{port}"
     print(f"Object Intelligence: {url}  (Detektor {detector.model_name}, Modell "
           f"{'fake' if args.fake_claude else settings.model})")

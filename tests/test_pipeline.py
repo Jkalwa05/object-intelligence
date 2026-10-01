@@ -539,3 +539,77 @@ async def test_an_object_put_down_in_view_is_not_taken_over():
     await feed(pipeline, blue, 30, start=1.3, first_id=13)
     await pipeline.wait_idle()
     assert len(identifier.requests) == 2  # two cups that look alike, both in view: two objects
+
+
+# --- sub-project 2: the product profile ------------------------------------------------------------------------------
+
+def _profile(known=True):
+    from oi.contracts import ProductProfile, ProfileFact
+    if not known:
+        return ProductProfile(known=False, summary="", facts=[], released=None, launch_price=None, trivia=[])
+    return ProductProfile(known=True, summary="Ein Smartphone von Apple.", facts=[ProfileFact(label="Chip",
+                          value="A15 Bionic")], released="September 2022", launch_price="999 €", trivia=[])
+
+
+def _with_profiles(identifier, store=None, settings=None):
+    from oi.profiles import ProfileStore
+    settings = settings or Settings()
+    rec = Recorder()
+    telemetry = Telemetry(settings, "hybrid", "fake")
+    pipeline = Pipeline(settings, FakeDetector([[CUP, HAND]]), identifier, telemetry, None, rec,
+                        profiles=store if store is not None else ProfileStore(None))
+    return pipeline, rec, telemetry
+
+
+async def _identify_cup(pipeline):
+    await feed(pipeline, sharp_image(boxes=(BOX,)), 13)
+    await pipeline.wait_idle()
+
+
+async def test_a_likely_product_gets_its_profile():
+    identifier = FakeIdentifier(script=[obs(I14, I13)], profile=_profile())
+    pipeline, rec, telemetry = _with_profiles(identifier)
+    await _identify_cup(pipeline)
+    profiles = rec.of("profile")
+    assert [(p.product, p.status) for p in profiles] == [("Apple iPhone 14", "loading"), ("Apple iPhone 14", "ready")]
+    assert profiles[-1].line == "Ein Smartphone von Apple." and profiles[-1].facts[0].value == "A15 Bionic"
+    assert identifier.product_requests[0].category == "Smartphone" and telemetry.calls_session == 2
+
+
+async def test_an_unsure_product_gets_no_profile():
+    identifier = FakeIdentifier(script=[obs(I14, I13, sa="low")], profile=_profile())
+    pipeline, rec, _ = _with_profiles(identifier)
+    await _identify_cup(pipeline)
+    assert rec.of("profile") == [] and identifier.product_requests == []
+
+
+async def test_the_same_product_again_costs_nothing():
+    from oi.profiles import ProfileStore
+    store = ProfileStore(None)
+    await _identify_cup(_with_profiles(FakeIdentifier(script=[obs(I14, I13)], profile=_profile()), store)[0])
+    later = FakeIdentifier(script=[obs(I14, I13)], profile=_profile())  # another connection, the same phone
+    pipeline, rec, _ = _with_profiles(later, store)
+    await _identify_cup(pipeline)
+    assert later.product_requests == [] and [p.status for p in rec.of("profile")] == ["ready"]
+
+
+async def test_an_unknown_product_says_so():
+    pipeline, rec, _ = _with_profiles(FakeIdentifier(script=[obs(I14, I13)], profile=_profile(known=False)))
+    await _identify_cup(pipeline)
+    assert (rec.of("profile")[-1].status, rec.of("profile")[-1].line) == ("unknown", "")
+
+
+async def test_a_failed_profile_says_so_and_is_not_kept():
+    from oi.profiles import ProfileStore
+    store = ProfileStore(None)
+    pipeline, rec, _ = _with_profiles(FakeIdentifier(script=[obs(I14, I13)], profile=IdentifyError("connection")),
+                                      store)
+    await _identify_cup(pipeline)
+    assert [p.status for p in rec.of("profile")] == ["loading", "error"] and store.get("Apple iPhone 14", "de") is None
+
+
+async def test_no_profile_once_the_budget_is_used_up():
+    identifier = FakeIdentifier(script=[obs(I14, I13)], profile=_profile())
+    pipeline, rec, _ = _with_profiles(identifier, settings=Settings(max_calls_session=1))
+    await _identify_cup(pipeline)
+    assert identifier.product_requests == [] and rec.of("profile") == []

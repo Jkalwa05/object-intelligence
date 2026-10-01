@@ -19,16 +19,18 @@ import numpy as np
 from oi import appearance, lines
 from oi.belief import Belief
 from oi.config import Settings
-from oi.contracts import (BeliefState, FocusMsg, IdentityMsg, Level, NoticeMsg, RecalibrateMsg, RecheckMsg,
-                          SceneItemWire, SceneMsg, ServerMsg, Status, Track, TracksMsg, WireTrack)
+from oi.contracts import (BeliefState, FocusMsg, IdentityMsg, Level, NoticeMsg, ProductProfile, ProfileMsg,
+                          RecalibrateMsg, RecheckMsg, SceneItemWire, SceneMsg, ServerMsg, Status, Track, TracksMsg,
+                          WireTrack)
 from oi.faces import FaceFinder
 from oi.hands import HandConfirmer, HandFinder
 from oi.focus import FocusSelector, split_tracks
-from oi.identify import (Identifier, IdentifyError, IdentifyRequest, IdentifyResult, SceneRequest, SceneResult,
-                         format_history, request_text)
+from oi.identify import (Identifier, IdentifyError, IdentifyRequest, IdentifyResult, ProductRequest, ProductResult,
+                         SceneRequest, SceneResult, format_history, request_text)
 from oi.ingest import Frame, FrameFormatError, FrameSlot, decode_frame
 from oi.perception import Detector
 from oi.privacy import mask_people, on_person, privacy_veto
+from oi.profiles import ProfileStore
 from oi.scene import SceneMap
 from oi.telemetry import CallLog, CallRecord, Telemetry
 from oi.trigger import Decision, TriggerInput, decide
@@ -90,10 +92,16 @@ def _area(box: Box) -> float:
     return max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
 
 
+def _profile_msg(product: str, profile: ProductProfile) -> ProfileMsg:
+    if not profile.known:
+        return ProfileMsg.of(product, "unknown", profile)
+    return ProfileMsg.of(product, "ready", profile, line=profile.summary)
+
+
 class Pipeline:
     def __init__(self, settings: Settings, detector: Detector, identifier: Identifier | None, telemetry: Telemetry,
                  call_log: CallLog | None, emit: Emit, faces: FaceFinder | None = None,
-                 hands: HandFinder | None = None) -> None:
+                 hands: HandFinder | None = None, profiles: ProfileStore | None = None) -> None:
         self._s = settings
         self._detector = detector
         self._identifier = identifier
@@ -112,6 +120,9 @@ class Pipeline:
         self._background: list[Box] = []  # frozen background boxes in pixels: never the focus
         self._private: list[tuple[float, list[Track]]] = []  # recent person zones during the calibration
         self._identified: _Seen | None = None
+        self._profiles = profiles
+        self._profiles_sent: set[str] = set()  # products whose profile this connection has
+        self._profiles_pending: set[str] = set()
         self._tasks: set[asyncio.Task[None]] = set()
         self._in_flight = 0
         self._calls_logged = 0
@@ -342,9 +353,65 @@ class Pipeline:
             snapshot = self._snapshot(state)
             self._write_log(state.track_id, ready, req, result, None, snapshot.level)
             await self._send_identity(state.track_id, "ready", snapshot)
+            if (product := state.belief.product()) is not None:
+                await self._want_profile(*product)
         finally:
             state.in_flight = False
             self._in_flight -= 1
+
+    # --- product profile (sub-project 2) ---------------------------------------------------------------------------
+
+    async def _want_profile(self, product: str, category: str) -> None:
+        """A product reached "likely": its profile comes from the store, or from one text-only Claude call."""
+        if self._profiles is None or self._identifier is None or product in self._profiles_sent:
+            return
+        cached = self._profiles.get(product, self._s.language)
+        if cached is not None:
+            self._profiles_sent.add(product)
+            await self._emit(_profile_msg(product, cached))
+            return
+        if product in self._profiles_pending or self._telemetry.calls_session >= self._s.max_calls_session:
+            return
+        self._profiles_pending.add(product)
+        await self._emit(ProfileMsg.of(product, "loading", None))
+        task = asyncio.create_task(self._fetch_profile(ProductRequest(product=product, category=category,
+                                                                      language=self._s.language)))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def _fetch_profile(self, req: ProductRequest) -> None:
+        assert self._identifier is not None and self._profiles is not None
+        self._telemetry.call_started()
+        try:
+            result = await self._identifier.describe_product(req)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001 - the panel says so; the next identification may try again
+            if not isinstance(error, IdentifyError):
+                log.exception("the profile of %s failed", req.product)
+            self._telemetry.call_failed()
+            self._write_profile_log(req, None, error.reason if isinstance(error, IdentifyError) else "api")
+            await self._emit(ProfileMsg.of(req.product, "error", None))
+            return
+        finally:
+            self._profiles_pending.discard(req.product)
+        self._telemetry.call_finished(result.latency_s, result.cost_usd)
+        self._write_profile_log(req, result, None)
+        self._profiles.put(req.product, req.language, result.profile)
+        self._profiles_sent.add(req.product)
+        await self._emit(_profile_msg(req.product, result.profile))
+
+    def _write_profile_log(self, req: ProductRequest, result: ProductResult | None, error: str | None) -> None:
+        if self._call_log is None:
+            return
+        self._calls_logged += 1
+        self._call_log.write(CallRecord(
+            n=self._calls_logged, track_id=-1, jpeg=b"", request_text=f"profile: {req.product} ({req.category})",
+            observation=result.profile.model_dump(mode="json") if result else None, error=error,
+            input_tokens=result.input_tokens if result else 0, output_tokens=result.output_tokens if result else 0,
+            cost_usd=result.cost_usd if result else 0.0, latency_s=result.latency_s if result else 0.0,
+            model=result.model if result else (self._identifier.model_label if self._identifier else "–"),
+            level_after=None))
 
     def _hints_wanted(self, state: _TrackState) -> bool:
         """Hints guide the first capture of an object (and a requested re-check). Once an answer is on the card they
