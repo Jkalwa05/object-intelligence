@@ -70,6 +70,7 @@ class Settings:
     log_calls: bool = True
     runs_dir: Path = Path("runs")
     profile_cache: Path = Path(__file__).resolve().parent.parent / "cache" / "profiles.json"  # sub-project 2
+    shape_cache: Path = Path(__file__).resolve().parent.parent / "cache" / "shapes.json"  # sub-project 3
     port: int = 8766
     prices: Mapping[str, tuple[float, float]] = field(default_factory=lambda: dict(DEFAULT_PRICES), hash=False)
 
