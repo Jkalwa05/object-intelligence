@@ -115,26 +115,6 @@ export interface ProfileMsg {
 }
 
 // Sub-project 3: one primitive of a hologram, in millimetres around the object's centre, y pointing up.
-export interface ShapePart {
-  name: string;
-  shape: "box" | "rounded_box" | "cylinder" | "cone" | "sphere" | "capsule";
-  size_mm: [number, number, number];
-  position_mm: [number, number, number];
-  rotation_deg: [number, number, number];
-  color: string;
-  radius_mm: number | null;
-}
-
-export interface ShapeMsg {
-  type: "shape";
-  ts: number;
-  seq: number;
-  product: string;
-  status: "loading" | "ready" | "unknown" | "error";
-  size_mm: [number, number, number] | null;
-  parts: ShapePart[];
-}
-
 export interface Source {
   title: string;
   url: string;
@@ -209,8 +189,8 @@ export interface ModelMsg {
   manifest: ModelManifest | null; // only when ready
 }
 
-export type ServerMsg = TracksMsg | IdentityMsg | TelemetryMsg | NoticeMsg | SceneMsg | ProfileMsg | ShapeMsg
-  | ModelMsg | QuestionMsg;
+export type ServerMsg = TracksMsg | IdentityMsg | TelemetryMsg | NoticeMsg | SceneMsg | ProfileMsg | ModelMsg
+  | QuestionMsg;
 
 export interface FocusMsg {
   type: "focus";
@@ -257,7 +237,6 @@ const REQUIRED: Record<ServerMsg["type"], string[]> = {
   notice: ["level", "text"],
   scene: ["calibrating", "naming", "items"],
   profile: ["product", "status", "summary", "facts", "released", "launch_price", "trivia", "line"],
-  shape: ["product", "status", "size_mm", "parts"],
   model: ["product", "status", "round", "manifest"],
   question: ["product", "qid", "status", "question", "answer", "sources", "line"],
 };

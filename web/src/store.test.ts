@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { IdentityMsg, NoticeMsg, ShapeMsg, TracksMsg } from "./protocol";
+import type { IdentityMsg, ModelManifest, ModelMsg, NoticeMsg, TracksMsg } from "./protocol";
 import { applyServerMessage, initialState } from "./store";
 
 const tracks = (seq: number): TracksMsg =>
@@ -84,6 +84,25 @@ test("there is something to pick unless it is certain with one name, confirmed o
   expect(pickable({ ...unsure, status: "analysing" })).toBe(false);
 });
 
+const manifest: ModelManifest = { model: "Ding", slug: "ding", parts: [], size_mm: [1, 2, 3],
+  sheet: { size_mm: null, size_source: null, measures: [], features: [], sources: [], drawing: null },
+  drawing_pages: [], notes: "", verdict: "good", rounds: 1, cost_usd: 0.9, created: "" };
+const ready = (product: string): ModelMsg =>
+  ({ type: "model", ts: 0, seq: 0, product, status: "ready", round: 1, manifest });
+
+test("model messages are kept per entry, and the full screen needs a ready model", async () => {
+  const { fullscreenView } = await import("./store");
+  const working: ModelMsg = { type: "model", ts: 0, seq: 0, product: "Ding 1", status: "checking", round: 1,
+    manifest: null };
+  let s = applyServerMessage(initialState, { ...identity(1, "x"), display_name: "Ding 1", level: "certain" });
+  s = { ...applyServerMessage(s, working), fullscreen: "Ding 1" };
+  expect(s.models["Ding 1"]).toBe(working);
+  expect(fullscreenView(s)).toBeNull(); // still being built
+  s = applyServerMessage(s, ready("Ding 1"));
+  expect(fullscreenView(s)?.model.manifest?.slug).toBe("ding");
+  expect(applyServerMessage(s, ready("Ding 2")).models["Ding 1"]).toEqual(ready("Ding 1"));
+});
+
 describe("the sidebar", () => {
   const named = (trackId: number, name: string, level: "likely" | "unsure" | "certain" | null = "likely") =>
     ({ ...identity(trackId, `Das ist ${name}.`), display_name: name, level });
@@ -101,11 +120,10 @@ describe("the sidebar", () => {
 
   test("the full-screen hologram stays open when its entry folds up, and closes once its entry is gone", async () => {
     const { fullscreenView, sidebarEntries } = await import("./store");
-    const shape: ShapeMsg = { type: "shape", ts: 0, seq: 0, product: "Ding 1", status: "ready", size_mm: [1, 2, 3],
-      parts: [] };
-    let s = applyServerMessage(applyServerMessage(initialState, named(1, "Ding 1")), shape);
+    const model = ready("Ding 1");
+    let s = applyServerMessage(applyServerMessage(initialState, named(1, "Ding 1")), model);
     s = { ...applyServerMessage(s, focus(1)), fullscreen: "Ding 1" };
-    expect(fullscreenView(s)?.shape).toBe(shape);
+    expect(fullscreenView(s)?.model).toBe(model);
     s = applyServerMessage(s, focus(null)); // the object is put down: its entry folds up
     expect(sidebarEntries(s)[0].expanded).toBe(false);
     expect(fullscreenView(s)?.identity.display_name).toBe("Ding 1");

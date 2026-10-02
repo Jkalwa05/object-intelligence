@@ -1,62 +1,52 @@
-// The three.js model of a hologram (sub-projects 3 and 5): Claude's primitives, and for the full-screen view the
-// measure lines and a numbered name tag on every part.
+// The three.js model of a precision model (sub-projects 3, 5 and 6): the CAD parts (STL from the server) in the
+// hologram look, and for the full-screen view the measure lines and a numbered name tag on every part.
 
 import * as THREE from "three";
-import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
-import type { Lang, ShapeMsg } from "../protocol";
-import { millimetres, outlinePoints, partGeometry, type PartGeometry } from "./shapeMath";
+import type { Lang, ModelManifest } from "../protocol";
+import { millimetres, partCenter, partSize } from "./shapeMath";
 
 export const EDGE = 0x30d158; // the green of the object in your hand
-const EDGE_ANGLE = 10; // degrees: low enough that the soft corners of a rounded box still get their outline
-const ROUND = 48; // segments around round parts: 7.5° steps stay below EDGE_ANGLE, so only their rims are drawn
-
-function geometryOf(g: PartGeometry): THREE.BufferGeometry {
-  switch (g.kind) {
-    case "box":
-      return new THREE.BoxGeometry(g.args[0], g.args[1], g.args[2]);
-    case "rounded_box":
-      return new RoundedBoxGeometry(g.args[0], g.args[1], g.args[2], 3, g.args[3]);
-    case "cylinder":
-    case "cone":
-      return new THREE.CylinderGeometry(g.args[0], g.args[1], g.args[2], ROUND, 1);
-    case "sphere":
-      return new THREE.SphereGeometry(g.args[0], ROUND, ROUND / 2);
-    case "capsule":
-      return new THREE.CapsuleGeometry(g.args[0], g.args[1], 8, ROUND);
-  }
-}
+const EDGE_ANGLE = 20; // degrees: CAD meshes are finely divided; only real edges get a line, roundings stay calm
 
 export interface Model {
-  group: THREE.Group;
-  bounds: THREE.Box3;
+  group: THREE.Group; // what goes into the scene: centred on the origin
+  content: THREE.Group; // the parts in CAD millimetres; labels go here too
+  bounds: THREE.Box3; // in CAD millimetres
   dispose(): void;
 }
 
-export function buildModel(shape: ShapeMsg): Model {
-  const group = new THREE.Group();
+export function boundsOf(manifest: ModelManifest): THREE.Box3 {
+  const box = new THREE.Box3();
+  for (const part of manifest.parts) {
+    box.expandByPoint(new THREE.Vector3(...part.min_mm)).expandByPoint(new THREE.Vector3(...part.max_mm));
+  }
+  return box;
+}
+
+export async function loadModel(manifest: ModelManifest): Promise<Model> {
+  const loader = new STLLoader();
+  const geometries = await Promise.all(manifest.parts.map((part) =>
+    loader.loadAsync(`/models/${manifest.slug}/${part.file}`)));
+  const content = new THREE.Group();
   const garbage: { dispose(): void }[] = [];
-  shape.parts.forEach((part, index) => {
-    const g = partGeometry(part);
-    const geometry = geometryOf(g);
-    const round = outlinePoints(g);
-    const edges = round
-      ? new THREE.BufferGeometry().setFromPoints(round.map(([x, y, z]) => new THREE.Vector3(x, y, z)))
-      : new THREE.EdgesGeometry(geometry, EDGE_ANGLE);
-    const fill = new THREE.MeshBasicMaterial({ color: g.color, transparent: true, opacity: 0.28, depthWrite: false });
+  geometries.forEach((geometry, index) => {
+    const edges = new THREE.EdgesGeometry(geometry, EDGE_ANGLE);
+    const fill = new THREE.MeshBasicMaterial({ color: manifest.parts[index].color, transparent: true, opacity: 0.28,
+      depthWrite: false });
     const line = new THREE.LineBasicMaterial({ color: EDGE, transparent: true, opacity: 0.85 });
     const piece = new THREE.Group();
     piece.add(new THREE.Mesh(geometry, fill), new THREE.LineSegments(edges, line));
-    piece.scale.set(...g.scale);
-    piece.position.set(...g.position);
-    piece.rotation.set(...g.rotation);
     piece.userData.part = index;
-    group.add(piece);
+    content.add(piece);
     garbage.push(geometry, edges, fill, line);
   });
-  group.updateMatrixWorld(true);
-  const bounds = new THREE.Box3().setFromObject(group);
-  return { group, bounds, dispose: () => garbage.forEach((g) => g.dispose()) };
+  const bounds = boundsOf(manifest);
+  content.position.copy(bounds.getCenter(new THREE.Vector3())).negate();
+  const group = new THREE.Group();
+  group.add(content);
+  return { group, content, bounds, dispose: () => garbage.forEach((g) => g.dispose()) };
 }
 
 function label(text: string, className: string): CSS2DObject {
@@ -100,10 +90,10 @@ function pin(index: number, name: string): Pin {
 }
 
 // Measure lines for width, height and depth along the box, and a name tag on every part (full screen).
-export function addLabels(model: Model, shape: ShapeMsg, lang: Lang): Pin[] {
+export function addLabels(model: Model, manifest: ModelManifest, lang: Lang): Pin[] {
   const { min, max } = model.bounds;
   const extent = model.bounds.getSize(new THREE.Vector3());
-  const size = shape.size_mm ?? [extent.x, extent.y, extent.z];
+  const size = manifest.size_mm;
   const gap = 0.12 * Math.max(extent.x, extent.y);
   const tick = gap * 0.35;
   const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
@@ -118,21 +108,19 @@ export function addLabels(model: Model, shape: ShapeMsg, lang: Lang): Pin[] {
       to.clone().add(across));
     const text = label(`${millimetres(value, lang)} mm`, "measure");
     text.position.copy(from.clone().add(to).multiplyScalar(0.5));
-    model.group.add(text);
+    model.content.add(text);
   }
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
   const material = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 });
-  model.group.add(new THREE.LineSegments(geometry, material));
-  const pieces = model.group.children.filter((piece) => typeof piece.userData.part === "number");
-  const pins = pieces.map((piece) => {
-    const index: number = piece.userData.part;
-    const p = pin(index, shape.parts[index].name);
-    const box = new THREE.Box3().setFromObject(piece);
-    const own = box.getSize(new THREE.Vector3());
+  model.content.add(new THREE.LineSegments(geometry, material));
+  const pins = manifest.parts.map((part, index) => {
+    const p = pin(index, part.name);
+    const [w, h] = partSize(part);
+    const [cx, cy, cz] = partCenter(part);
     // the body's centre would sit under the parts on its face (a logo, a display): its dot goes to its lower edge
-    const body = own.x >= LARGE * extent.x && own.y >= LARGE * extent.y;
-    p.object.position.copy(body ? V((box.min.x + box.max.x) / 2, box.min.y, box.max.z) : piece.position);
-    model.group.add(p.object);
+    const body = w >= LARGE * extent.x && h >= LARGE * extent.y;
+    p.object.position.copy(body ? V(cx, part.min_mm[1], part.max_mm[2]) : V(cx, cy, cz));
+    model.content.add(p.object);
     return p;
   });
   const before = model.dispose;

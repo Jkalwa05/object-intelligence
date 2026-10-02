@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { ConnectionStatus } from "./net/socket";
-import type { IdentityMsg, NoticeMsg, ProfileMsg, QuestionMsg, SceneMsg, ServerMsg, ShapeMsg, TelemetryMsg, TracksMsg }
+import type { IdentityMsg, ModelMsg, NoticeMsg, ProfileMsg, QuestionMsg, SceneMsg, ServerMsg, TelemetryMsg, TracksMsg }
   from "./protocol";
 
 export const MAX_ENTRIES = 8;
@@ -10,7 +10,7 @@ export interface HudState {
   scene: SceneMsg | null;
   identities: Record<number, IdentityMsg>;
   profiles: Record<string, ProfileMsg>; // by product name
-  shapes: Record<string, ShapeMsg>; // by product name
+  models: Record<string, ModelMsg>; // the precision model by sidebar entry name (sub-project 6)
   named: Record<string, IdentityMsg>; // the latest identity of every card name, for the sidebar
   recent: string[]; // card names in the sidebar, newest first
   open: string[]; // sidebar entries opened by hand
@@ -33,7 +33,7 @@ export const initialState: HudState = {
   scene: null,
   identities: {},
   profiles: {},
-  shapes: {},
+  models: {},
   named: {},
   recent: [],
   open: [],
@@ -67,10 +67,8 @@ export function applyServerMessage(s: HudState, m: ServerMsg): HudState {
       return { ...s, scene: m };
     case "profile":
       return { ...s, profiles: { ...s.profiles, [m.product]: m } };
-    case "shape":
-      return { ...s, shapes: { ...s.shapes, [m.product]: m } };
-    case "model": // kept from Task 11 of the precision-model plan on
-      return s;
+    case "model":
+      return { ...s, models: { ...s.models, [m.product]: m } };
     case "question": {
       const earlier = s.questions[m.product] ?? [];
       const list = earlier.some((q) => q.qid === m.qid) ? earlier.map((q) => (q.qid === m.qid ? m : q)) : [...earlier, m];
@@ -83,7 +81,7 @@ export function applyServerMessage(s: HudState, m: ServerMsg): HudState {
 // to new objects, and boxes of a closed connection must not stay frozen on screen.
 export function applyConnection(s: HudState, connection: ConnectionStatus): HudState {
   if (connection === "open") {
-    return { ...s, connection, identities: {}, notices: [], scene: null, profiles: {}, shapes: {}, named: {}, recent: [],
+    return { ...s, connection, identities: {}, notices: [], scene: null, profiles: {}, models: {}, named: {}, recent: [],
       open: [], questions: {} };
   }
   return { ...s, connection, tracks: null };
@@ -138,13 +136,13 @@ const NO_QUESTIONS: QuestionMsg[] = [];
 
 // What the full-screen hologram shows: it does not depend on its entry being expanded (you put the object down to
 // look at the screen), only on the entry still being in the sidebar with a finished hologram.
-export function fullscreenView(s: Pick<HudState, "fullscreen" | "named" | "recent" | "shapes" | "profiles">):
-  { identity: IdentityMsg; shape: ShapeMsg; profile?: ProfileMsg } | null {
+export function fullscreenView(s: Pick<HudState, "fullscreen" | "named" | "recent" | "models" | "profiles">):
+  { identity: IdentityMsg; model: ModelMsg; profile?: ProfileMsg } | null {
   const name = s.fullscreen;
   if (name === null || !s.recent.includes(name)) return null;
-  const identity = s.named[name], shape = s.shapes[name];
-  if (!identity || shape?.status !== "ready") return null;
-  return { identity, shape, profile: s.profiles[name] };
+  const identity = s.named[name], model = s.models[name];
+  if (!identity || model?.status !== "ready" || !model.manifest) return null;
+  return { identity, model, profile: s.profiles[name] };
 }
 
 // Whether the entry asks you to tap the right candidate: not while it is analysing or after you picked, and not when

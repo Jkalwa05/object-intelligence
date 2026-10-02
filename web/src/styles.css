@@ -466,6 +466,49 @@ body {
   text-decoration: none;
 }
 
+/* --- the precision model (sub-project 6) ------------------------------------------------------------------------- */
+
+.model-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.model-progress .profile-note {
+  margin: 0;
+}
+
+.model-progress:is([data-status="queued"], [data-status="researching"], [data-status="drawing"],
+  [data-status="modeling"], [data-status="building"], [data-status="checking"]) .profile-note::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--cyan);
+  vertical-align: 1px;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.measures dd small {
+  color: var(--text-2);
+}
+
+.measures a,
+.sources a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.sources {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .hologram-canvas {
   display: block;
   width: 100%;

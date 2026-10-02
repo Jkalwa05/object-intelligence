@@ -5,7 +5,7 @@ import Overlay from "./hud/Overlay";
 import Sidebar from "./hud/Sidebar";
 import Telemetry from "./hud/Telemetry";
 import { connect, type Connection } from "./net/socket";
-import type { AskMsg, ConfirmMsg, Lang, RecalibrateMsg, RecheckMsg } from "./protocol";
+import type { AskMsg, ConfirmMsg, Lang, RebuildMsg, RecalibrateMsg, RecheckMsg } from "./protocol";
 import { askTarget, focusProfile, useHud } from "./store";
 import { t } from "./i18n";
 import { MAX_SECONDS, MIN_SECONDS, RATE, record, toPcmBase64, type Recording } from "./voice/recorder";
@@ -169,7 +169,7 @@ export default function App() {
     };
   }, []);
 
-  const send = (message: RecheckMsg | ConfirmMsg) => connection.current?.send(JSON.stringify(message));
+  const send = (message: RecheckMsg | ConfirmMsg | RebuildMsg) => connection.current?.send(JSON.stringify(message));
 
   return (
     <>
@@ -180,7 +180,8 @@ export default function App() {
         <Banner onRetryCamera={() => setCameraAttempt((n) => n + 1)} />
       </main>
       <Sidebar onRecheck={(trackId) => send({ type: "recheck", track_id: trackId })}
-        onConfirm={(trackId, name) => send({ type: "confirm", track_id: trackId, name })} />
+        onConfirm={(trackId, name) => send({ type: "confirm", track_id: trackId, name })}
+        onRebuild={(name) => send({ type: "rebuild", name })} />
     </>
   );
 }
