@@ -23,6 +23,7 @@ CAD_PROMPT = """You write an OpenSCAD program (OpenSCAD 2025 with the BOSL2 libr
 
 BOSL2_GUIDE = """BOSL2 cheat sheet (all sizes in mm):
 - cuboid([x, y, z], rounding=r, edges="Z" | EDGES_ALL | [TOP+FRONT, …], chamfer=c, anchor=CENTER)  e.g. cuboid([71.5, 146.7, 7.8], rounding=9, edges="Z");
+- thin plates with rounded corners (a camera bump, a display glass): linear_extrude(h, center=true) rect([x, y], rounding=r);  more robust than a rounded cuboid that is thinner than its rounding
 - cyl(h=h, d=d | d1=, d2=, rounding=r | rounding1=, rounding2=, chamfer=c, anchor=CENTER, orient=UP)  e.g. cyl(h=2, d=13, rounding2=0.5, orient=FWD);
 - prismoid(size1=[x, y], size2=[x, y], h=h, rounding=r)  tapered blocks, e.g. a foot or a cap;
 - tube(h=h, od=outer, id=inner)  rings around lenses or buttons;

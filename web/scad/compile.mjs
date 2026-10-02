@@ -23,7 +23,8 @@ try {
   scad.callMain(["/model.scad", "--backend=manifold", "-o", "/out.stl", "--export-format=binstl"]);
   stl = scad.FS.readFile("/out.stl");
 } catch (error) {
-  keep(`ERROR: ${error}`); // no output file: the collected lines say why
+  // no output file: the collected lines say why; OpenSCAD itself ends with an exit status, not an Error
+  keep(`ERROR: ${error instanceof Error ? error.message : `OpenSCAD beendet (Status ${error?.status ?? "?"})`}`);
 }
 const triangles = stl && stl.length >= 84 ? new DataView(stl.buffer, stl.byteOffset).getUint32(80, true) : 0;
 process.stdout.write(JSON.stringify({
