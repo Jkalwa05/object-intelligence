@@ -11,7 +11,9 @@ const manifest = (sizeSource: number | null): ModelManifest => ({
 
 test("domain and badge", () => {
   expect(domain("https://www.apple.com/de/iphone-14/specs/")).toBe("apple.com");
-  expect(domain("https://developer.apple.com/accessories/")).toBe("developer.apple.com");
+  expect(domain("https://developer.apple.com/accessories/")).toBe("apple.com");
+  expect(domain("https://support.apple.com/en-in/111850")).toBe("apple.com");
+  expect(domain("https://www.amazon.co.uk/dp/1")).toBe("amazon.co.uk");
   expect(domain("kaputt")).toBe("kaputt");
   expect(sourceTag(manifest(0), "de")).toBe("CAD · Maße laut apple.com");
   expect(sourceTag(manifest(0), "en")).toBe("CAD · dimensions per apple.com");

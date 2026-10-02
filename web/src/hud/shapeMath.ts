@@ -14,10 +14,18 @@ export function partCenter(p: ModelPart): Vec3 {
   return [0, 1, 2].map((i) => (p.min_mm[i] + p.max_mm[i]) / 2) as Vec3;
 }
 
+// Where the k-th of `count` large shells (frame, display, back glass) puts its dot: around the rim of its front face,
+// the first at the lower edge, so that their name tags do not all start from one point.
+export function rimPoint(p: ModelPart, k: number, count: number): Vec3 {
+  const [w, h] = partSize(p);
+  const [cx, cy] = partCenter(p);
+  const angle = -Math.PI / 2 + (k * 2 * Math.PI) / Math.max(4, count);
+  const clean = (v: number) => Math.round(v * 1e9) / 1e9;
+  return [clean(cx + (Math.cos(angle) * w) / 2), clean(cy + (Math.sin(angle) * h) / 2), p.max_mm[2]];
+}
+
 export function formatSize(size: Vec3 | null, lang: Lang): string {
-  if (!size) return "";
-  const locale = lang === "de" ? "de-DE" : "en-US";
-  return `${size.map((v) => v.toLocaleString(locale, { maximumFractionDigits: 1 })).join(" × ")} mm`;
+  return size ? `${size.map((v) => millimetres(v, lang)).join(" × ")} mm` : "";
 }
 
 // How far the camera stands back so that an object of this size fits into its field of view, with a little margin.
@@ -26,8 +34,9 @@ export function fitDistance(size: Vec3, fovDegrees: number): number {
   return (reach / Math.sin(radians(fovDegrees) / 2)) * 1.1;
 }
 
+// Tenths of a millimetre, hundredths below 1 mm (a display film is 0,04 mm, not 0).
 export function millimetres(value: number, lang: Lang): string {
-  return value.toLocaleString(lang === "de" ? "de-DE" : "en-US", { maximumFractionDigits: 1 });
+  return value.toLocaleString(lang === "de" ? "de-DE" : "en-US", { maximumFractionDigits: Math.abs(value) < 1 ? 2 : 1 });
 }
 
 export interface Rect {

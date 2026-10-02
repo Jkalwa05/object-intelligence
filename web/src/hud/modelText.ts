@@ -25,12 +25,19 @@ const KINDS: Record<MeasureKind, Record<Lang, string>> = {
   estimate: { de: "geschätzt", en: "estimated" },
 };
 
+const SECOND_LEVEL = new Set(["co", "com", "org", "net", "gov", "ac", "edu"]); // amazon.co.uk, not co.uk
+
+// The site's own domain without subdomains: "support.apple.com" -> "apple.com".
 export function domain(url: string): string {
+  let host: string;
   try {
-    return new URL(url).hostname.replace(/^www\./, "");
+    host = new URL(url).hostname;
   } catch {
     return url;
   }
+  const labels = host.split(".");
+  const keep = labels.length >= 3 && SECOND_LEVEL.has(labels.at(-2)!) && labels.at(-1)!.length === 2 ? 3 : 2;
+  return labels.slice(-keep).join(".");
 }
 
 // „CAD · Maße laut apple.com“ when the overall size has a source, else „CAD · Maße geschätzt“.

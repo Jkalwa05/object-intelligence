@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { ModelPart } from "../protocol";
-import { fitDistance, formatSize, partCenter, partSize, spread } from "./shapeMath";
+import { fitDistance, formatSize, millimetres, partCenter, partSize, rimPoint, spread } from "./shapeMath";
 
 const part = (min: [number, number, number], max: [number, number, number]): ModelPart =>
   ({ name: "Teil", color: "#9fc4e8", file: "part-01.stl", min_mm: min, max_mm: max, triangles: 12 });
@@ -38,4 +38,20 @@ test("labels also keep clear of the numbered dots, which never move", () => {
   const pin = (x: number, y: number) => ({ x, y, w: 20, h: 20 });
   expect(spread([pin(0, 0)], 2, [pin(10, 5)])).toEqual([27]);
   expect(spread([pin(0, 0), pin(0, 10)], 2, [pin(100, 0)])).toEqual([0, 12]);
+});
+
+test("large shells put their dots around the rim, not on one point", () => {
+  const shell = part([-35.75, -73.35, -3.9], [35.75, 73.35, 3.9]);
+  expect(rimPoint(shell, 0, 5)).toEqual([0, -73.35, 3.9]); // the first one at the lower edge, as before
+  const points = [0, 1, 2, 3, 4].map((k) => rimPoint(shell, k, 5));
+  expect(new Set(points.map((p) => p.map((v) => v.toFixed(1)).join())).size).toBe(5);
+  for (const [x, y, z] of points) {
+    expect(Math.abs(x) <= 35.75 + 1e-9 && Math.abs(y) <= 73.35 + 1e-9 && z === 3.9).toBe(true);
+  }
+});
+
+test("thin parts keep their hundredths", () => {
+  expect(millimetres(0.04, "de")).toBe("0,04");
+  expect(millimetres(12.345, "de")).toBe("12,3");
+  expect(formatSize([64.6, 139.8, 0.04], "de")).toBe("64,6 × 139,8 × 0,04 mm");
 });

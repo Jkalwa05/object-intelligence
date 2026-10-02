@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import type { Lang, ModelManifest } from "../protocol";
-import { millimetres, partCenter, partSize } from "./shapeMath";
+import { millimetres, partCenter, partSize, rimPoint } from "./shapeMath";
 
 export const EDGE = 0x30d158; // the green of the object in your hand
 const EDGE_ANGLE = 20; // degrees: CAD meshes are finely divided; only real edges get a line, roundings stay calm
@@ -113,13 +113,16 @@ export function addLabels(model: Model, manifest: ModelManifest, lang: Lang): Pi
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
   const material = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 });
   model.content.add(new THREE.LineSegments(geometry, material));
+  // a shell's centre would sit under the parts on its face (a logo, a display): shells put their dots on the rim
+  const shells = manifest.parts.map((part) => {
+    const [w, h] = partSize(part);
+    return w >= LARGE * extent.x && h >= LARGE * extent.y;
+  });
+  const count = shells.filter(Boolean).length;
+  let k = 0;
   const pins = manifest.parts.map((part, index) => {
     const p = pin(index, part.name);
-    const [w, h] = partSize(part);
-    const [cx, cy, cz] = partCenter(part);
-    // the body's centre would sit under the parts on its face (a logo, a display): its dot goes to its lower edge
-    const body = w >= LARGE * extent.x && h >= LARGE * extent.y;
-    p.object.position.copy(body ? V(cx, part.min_mm[1], part.max_mm[2]) : V(cx, cy, cz));
+    p.object.position.copy(V(...(shells[index] ? rimPoint(part, k++, count) : partCenter(part))));
     model.content.add(p.object);
     return p;
   });
