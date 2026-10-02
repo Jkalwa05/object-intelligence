@@ -5,8 +5,9 @@ from PIL import Image
 
 from oi.builder import ModelBuilder
 from oi.config import Settings
-from oi.contracts import DrawingRef, MeasureSheet, Source
+from oi.contracts import DrawingRef, MeasureSheet, PhotoRef, Source
 from oi.identify import IdentifyError
+from oi.measure import ViewBoxes
 from oi.modelcalls import CadPart, CadProgram, CheckAnswer, FakeModelCalls
 from oi.modelstore import ModelStore
 from oi.scad import FakeCompiler
@@ -193,3 +194,65 @@ async def test_calls_count_in_the_session_budget_and_the_log():
                      f"model check 2: {MODEL}"]
     assert all(r.track_id == -2 for r in log.records) and budget.calls == 4
     assert budget.cost_usd == pytest.approx(0.1 + 0.2 + 0.05 + 0.05)
+
+
+# --- sub-project 7: measuring ---------------------------------------------------------------------------------------
+
+PAD = "Sony DualShock 3"
+PHOTO_SHEET = MeasureSheet(size_mm=(160.0, 97.0, 55.0), size_source=0, measures=[], features=[],
+                           sources=[Source(title="Dimensions", url="https://www.dimensions.com/e/ds3")], drawing=None,
+                           photos=[PhotoRef(url="https://www.dimensions.com/front.png", view="front"),
+                                   PhotoRef(url="https://www.dimensions.com/top.png", view="top")])
+# the photos are 40 × 20 px (fetch_png): this box is 32 × 19.4 px, 5 mm per pixel both ways
+FRONT = ViewBoxes(picture=1, view="front", object=(0.1, 0.0, 0.9, 0.97),
+                  parts=[("Gehäuse", (0.1, 0.0, 0.9, 0.97)), ("Dreieck-Taste", (0.7, 0.2, 0.75, 0.3))])
+
+
+async def test_measuring_step_feeds_cad_and_checks():
+    calls = FakeModelCalls(research=PHOTO_SHEET, measure=[FRONT])
+    built, events = builder(calls)
+    await build(built, PAD)
+    assert statuses(events, PAD) == ["queued", "researching", "drawing", "measuring", "modeling", "building",
+                                     ("checking", 1), "ready"]
+    assert [label for _, label in calls.measure_requests[0].pictures] == ["photo, front", "photo, top"]
+    cad = calls.cad_requests[0]
+    assert "Dreieck-Taste: x 40.0…50.0, y 18.5…28.5 mm (1 view)" in cad.part_map
+    assert [view for _, view in cad.photos] == ["front", "top"]
+    off = calls.check_requests[0].deviations  # the fake CAD is one 10 mm cube
+    assert off[0].startswith("Dreieck-Taste: missing") and off[1].startswith("Gehäuse: x model -5.0…5.0")
+    manifest = events[-1][3]
+    assert [p.name for p in manifest.part_map] == ["Gehäuse", "Dreieck-Taste"]
+    assert "Noch 3 Abweichungen über der Toleranz." in manifest.notes
+
+
+async def test_no_pictures_or_no_size_means_no_measuring():
+    calls = FakeModelCalls(measure=[FRONT])  # no research: no drawing, no photos
+    built, events = builder(calls)
+    await build(built)
+    assert "measuring" not in statuses(events) and calls.measure_requests == []
+    calls = FakeModelCalls(research=PHOTO_SHEET.model_copy(update={"size_mm": None}), measure=[FRONT])
+    built, events = builder(calls)
+    await build(built, PAD)
+    assert "measuring" not in statuses(events, PAD) and calls.measure_requests == []
+    assert calls.cad_requests[0].part_map == "" and len(calls.cad_requests[0].photos) == 2
+
+
+async def test_measure_error_builds_without_map():
+    calls = FakeModelCalls(research=PHOTO_SHEET, measure=IdentifyError("api"))
+    built, events = builder(calls)
+    await build(built, PAD)
+    assert events[-1][1] == "ready" and events[-1][3].part_map == []
+    assert calls.cad_requests[0].part_map == "" and calls.check_requests[0].deviations == []
+
+
+async def test_measure_respects_the_reserve():
+    calls = FakeModelCalls(research=PHOTO_SHEET, measure=[FRONT], costs=(1.2, 0.0, 0.0, 0.0))
+    built, events = builder(calls)
+    await build(built, PAD)
+    assert calls.measure_requests == [] and "measuring" not in statuses(events, PAD)
+    assert statuses(events, PAD)[-1] == "failed"  # 1.20 + 0.45 for the CAD is over 1.60, as before
+    calls = FakeModelCalls(research=PHOTO_SHEET, measure=[FRONT], costs=(0.95, 0.0, 0.0, 0.0))
+    built, events = builder(calls)
+    await build(built, PAD)
+    assert calls.measure_requests == []  # 0.95 + 0.25 + 0.45 > 1.60: the CAD could not follow the map
+    assert calls.cad_requests and statuses(events, PAD)[-1] == "ready"

@@ -1,9 +1,9 @@
 """The precision model builder (sub-project 6, spec §3–§10).
 
-One product at a time: research → drawing → CAD → compile → up to two check rounds → store. The builder belongs to
-the app, not to a browser connection, so a reload or a closed tab does not stop a model; every connection listens to
-it. Each step first checks that the product's budget still has room for it, and every call counts in the shared
-session budget and goes to the call log.
+One product at a time: research → drawing and photos → measuring (sub-project 7) → CAD → compile → up to two check
+rounds → store. The builder belongs to the app, not to a browser connection, so a reload or a closed tab does not
+stop a model; every connection listens to it. Each step first checks that the product's budget still has room for it,
+and every call counts in the shared session budget and goes to the call log.
 """
 
 from __future__ import annotations
@@ -21,12 +21,13 @@ import numpy as np
 from oi import download
 from oi.cache import normalize
 from oi.config import Settings
-from oi.contracts import MeasureSheet, ModelManifest, ModelPart, ModelStatus
-from oi.drawings import Fetch, Picture, drawing_pictures
+from oi.contracts import MeasuredPart, MeasureSheet, ModelManifest, ModelPart, ModelStatus, PhotoView
+from oi.drawings import Fetch, Picture, drawing_pictures, photo_pictures, picture_size
 from oi.identify import IdentifyError
+from oi.measure import deviations, map_text, part_map
 from oi.mesh import bounds, read_stl, size_hint, union
-from oi.modelcalls import (CadProgram, CadRequest, CheckRequest, ModelCalls, ResearchRequest, apply_check,
-                           scad_source)
+from oi.modelcalls import (CadProgram, CadRequest, CheckRequest, MeasureRequest, ModelCalls, ResearchRequest,
+                           apply_check, scad_source)
 from oi.modelstore import ModelStore, slug
 from oi.render import render_views
 from oi.scad import MAX_MODEL_TRIANGLES, CompiledPart, Compiler
@@ -35,8 +36,9 @@ from oi.telemetry import CallLog, CallRecord, SessionBudget
 log = logging.getLogger(__name__)
 
 Listener = Callable[[str, ModelStatus, int, ModelManifest | None], Awaitable[None]]
-RESERVE = {"research": 0.45, "cad": 0.45, "check": 0.35}  # dollars a step may need: checked before it starts
-BUSY = ("queued", "researching", "drawing", "modeling", "building", "checking")
+# dollars a step may need: checked before it starts
+RESERVE = {"research": 0.45, "measure": 0.25, "cad": 0.45, "check": 0.35}
+BUSY = ("queued", "researching", "drawing", "measuring", "modeling", "building", "checking")
 R = TypeVar("R")
 
 
@@ -175,16 +177,20 @@ class ModelBuilder:
             pass  # no research: every dimension is Claude's estimate
         pictures: list[Picture] = []
         pages: list[int] = []
-        if sheet.drawing is not None:
+        photos: list[tuple[Picture, PhotoView]] = []
+        if sheet.drawing is not None or sheet.photos:
             await self._set(job.model, "drawing")
             pictures, pages = await drawing_pictures(sheet.drawing, allowed, fetch=self._fetch)
+            photos = await photo_pictures(sheet.photos, allowed, fetch=self._fetch)
+        mapped, spent = await self._measure(job, sheet, pictures, pages, photos, spent)
         if not self._affordable(spent, "cad"):
             await self._set(job.model, "failed")
             return
         await self._set(job.model, "modeling")
         try:
             made = await self._call("cad", job, lambda: self._calls.build_cad(CadRequest(
-                job.model, job.category, sheet, pictures, job.jpeg, lang)), lambda r: _program(r.program))
+                job.model, job.category, sheet, pictures, job.jpeg, lang, photos=photos, part_map=map_text(mapped))),
+                lambda r: _program(r.program))
         except IdentifyError:
             await self._set(job.model, "failed")
             return
@@ -197,14 +203,18 @@ class ModelBuilder:
                 notes += " Budget erreicht."
                 break
             ok = [compiled[p.name] for p in program.parts if compiled[p.name].stl is not None]
-            renders = self._render([(read_stl(c.stl), c.color) for c in ok]) if ok else []  # type: ignore[arg-type]
+            meshes = [(c, read_stl(c.stl)) for c in ok]  # type: ignore[arg-type]
+            renders = self._render([(triangles, c.color) for c, triangles in meshes]) if meshes else []
+            off = deviations({c.name: bounds(triangles) for c, triangles in meshes}, mapped, sheet.size_mm) \
+                if mapped and sheet.size_mm else []
             errors = {name: c.errors for name, c in compiled.items() if c.stl is None}
             hint = size_hint(_size([c for c in ok]), sheet.size_mm) if ok else None
             await self._set(job.model, "checking", round_)
             try:
                 checked = await self._call(f"check {round_}", job, lambda: self._calls.check_cad(CheckRequest(
                     job.model, sheet, pictures, job.jpeg, program, renders, errors, hint, round_,
-                    self._s.model_check_rounds, lang)), lambda r: _answer(r.answer))
+                    self._s.model_check_rounds, lang, photos=photos, part_map=map_text(mapped), deviations=off)),
+                    lambda r: _answer(r.answer))
             except IdentifyError:
                 break  # the model so far stays
             rounds, spent = round_, spent + checked.cost_usd
@@ -219,10 +229,29 @@ class ModelBuilder:
             if checked.answer.verdict == "good":
                 good = True
                 break
-        await self._finish(job, sheet, pages, program, compiled, rounds, good, spent, notes)
+        await self._finish(job, sheet, pages, program, compiled, rounds, good, spent, notes, mapped)
+
+    async def _measure(self, job: _Job, sheet: MeasureSheet, pictures: list[Picture], pages: list[int],
+                       photos: list[tuple[Picture, PhotoView]], spent: float) -> tuple[list[MeasuredPart], float]:
+        """The part map from the drawing and the photos (spec §5), and what has been spent so far. Without pictures,
+        without the product's size, over the budget or after a failed call, nothing is measured."""
+        labels = ([f"technical drawing page {page}" for page in pages] if pages
+                  else ["technical drawing"] * len(pictures))
+        references = [*zip(pictures, labels, strict=True), *((p, f"photo, {view}") for p, view in photos)]
+        if not references or sheet.size_mm is None or not self._affordable(spent + RESERVE["cad"], "measure"):
+            return [], spent  # a map without the CAD after it would be paid for nothing
+        await self._set(job.model, "measuring")
+        try:
+            result = await self._call("measure", job, lambda: self._calls.measure(MeasureRequest(
+                job.model, sheet, references, self._s.language)), lambda r: {"views": len(r.views), "notes": r.notes})
+        except IdentifyError:
+            return [], spent  # built without the part map, as before sub-project 7
+        sizes = [picture_size(picture) for picture, _ in references]
+        return part_map(result.views, sizes, sheet.size_mm), spent + result.cost_usd
 
     async def _finish(self, job: _Job, sheet: MeasureSheet, pages: list[int], program: CadProgram,
-                      compiled: dict[str, CompiledPart], rounds: int, good: bool, spent: float, notes: str) -> None:
+                      compiled: dict[str, CompiledPart], rounds: int, good: bool, spent: float, notes: str,
+                      mapped: list[MeasuredPart]) -> None:
         kept: list[tuple[CompiledPart, np.ndarray]] = []
         dropped, total = [], 0
         for part in program.parts:
@@ -246,13 +275,18 @@ class ModelBuilder:
             low, high = bounds(triangles)
             parts.append(ModelPart(name=result.name, color=result.color, file=f"part-{number:02d}.stl", min_mm=low,
                                    max_mm=high, triangles=len(triangles)))
+        if mapped and sheet.size_mm is not None:
+            off = len(deviations({p.name: (p.min_mm, p.max_mm) for p in parts}, mapped, sheet.size_mm))
+            if off:
+                notes += (f" Noch {off} Abweichungen über der Toleranz." if self._s.language == "de"
+                          else f" Still {off} deviations above the tolerance.")
         low, high = union([(p.min_mm, p.max_mm) for p in parts])
         measured = (high[0] - low[0], high[1] - low[1], high[2] - low[2])
         manifest = ModelManifest(
             model=job.model, slug=slug(job.model), parts=parts, size_mm=sheet.size_mm or measured, sheet=sheet,
             drawing_pages=pages, notes=" ".join(f"{program.notes} {notes}".split()),
             verdict="good" if good else "fix" if rounds else "unchecked", rounds=rounds, cost_usd=round(spent, 4),
-            created=self._now().isoformat(timespec="seconds"))
+            created=self._now().isoformat(timespec="seconds"), part_map=mapped)
         final = CadProgram(shared=program.shared, parts=[p for p in program.parts if p.name not in dropped],
                            notes=program.notes)
         self._store.put(manifest, [result.stl for result, _ in kept], scad_source(final))  # type: ignore[misc]

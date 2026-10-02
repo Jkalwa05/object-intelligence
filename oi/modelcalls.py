@@ -512,7 +512,8 @@ class FakeModelCalls:
         if isinstance(self.research_sheet, IdentifyError):
             raise self.research_sheet
         sheet = self.research_sheet or MeasureSheet.estimated()
-        allowed = {s.url for s in sheet.sources} | ({sheet.drawing.url} if sheet.drawing else set())
+        allowed = {s.url for s in sheet.sources} | ({sheet.drawing.url} if sheet.drawing else set()) \
+            | {p.url for p in sheet.photos}
         return ResearchResult(sheet=sheet, allowed_urls=allowed, searches=0, input_tokens=0, output_tokens=0,
                               cost_usd=self.costs[0], latency_s=0.0, model="fake")
 
