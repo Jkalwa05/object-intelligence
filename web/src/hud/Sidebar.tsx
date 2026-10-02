@@ -16,10 +16,11 @@ interface Actions {
   onRecheck(trackId: number): void;
   onConfirm(trackId: number, name: string): void;
   onRebuild(name: string): void;
+  onKeep(model: string, kept: boolean): void;
 }
 
 // The hologram in full screen stays open on its own: putting the object down folds its entry up, not this view.
-function Fullscreen() {
+function Fullscreen({ onKeep }: Pick<Actions, "onKeep">) {
   const view = useHud(useShallow(fullscreenView));
   const lang = useHud((s) => s.telemetry?.language ?? "de");
   const close = useHud((s) => s.setFullscreen);
@@ -27,12 +28,12 @@ function Fullscreen() {
   return (
     <Suspense fallback={null}>
       <HologramFullscreen model={view.model} identity={view.identity} profile={view.profile} lang={lang}
-        onClose={() => close(null)} />
+        onClose={() => close(null)} onKeep={onKeep} />
     </Suspense>
   );
 }
 
-function Entry({ entry, onRecheck, onConfirm, onRebuild }: { entry: SidebarEntry } & Actions) {
+function Entry({ entry, onRecheck, onConfirm, onRebuild }: { entry: SidebarEntry } & Omit<Actions, "onKeep">) {
   const lang = useHud((s) => s.telemetry?.language ?? "de");
   const profile = useHud((s) => s.profiles[entry.name]);
   const model = useHud((s) => s.models[entry.name]);
@@ -67,7 +68,7 @@ function Entry({ entry, onRecheck, onConfirm, onRebuild }: { entry: SidebarEntry
   );
 }
 
-export default function Sidebar({ onRecheck, onConfirm, onRebuild }: Actions) {
+export default function Sidebar({ onRecheck, onConfirm, onRebuild, onKeep }: Actions) {
   const lang = useHud((s) => s.telemetry?.language ?? "de");
   const focusId = useHud((s) => s.tracks?.focus_id ?? null); // tracks change every frame, the focus rarely
   const slice = useHud(useShallow((s) => ({ identities: s.identities, named: s.named, recent: s.recent, open: s.open })));
@@ -79,7 +80,7 @@ export default function Sidebar({ onRecheck, onConfirm, onRebuild }: Actions) {
       {entries.map((entry) => (
         <Entry key={entry.name} entry={entry} onRecheck={onRecheck} onConfirm={onConfirm} onRebuild={onRebuild} />
       ))}
-      <Fullscreen />
+      <Fullscreen onKeep={onKeep} />
     </aside>
   );
 }

@@ -85,8 +85,8 @@ test("there is something to pick unless it is certain with one name, confirmed o
 });
 
 const manifest: ModelManifest = { model: "Ding", slug: "ding", parts: [], size_mm: [1, 2, 3],
-  sheet: { size_mm: null, size_source: null, measures: [], features: [], sources: [], drawing: null },
-  drawing_pages: [], notes: "", verdict: "good", rounds: 1, cost_usd: 0.9, created: "" };
+  sheet: { size_mm: null, size_source: null, measures: [], features: [], sources: [], drawing: null, photos: [] },
+  drawing_pages: [], notes: "", verdict: "good", rounds: 1, cost_usd: 0.9, created: "", kept: false, part_map: [] };
 const ready = (product: string): ModelMsg =>
   ({ type: "model", ts: 0, seq: 0, product, status: "ready", round: 1, manifest });
 

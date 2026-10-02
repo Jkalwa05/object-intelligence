@@ -144,6 +144,14 @@ export interface Measure {
   kind: MeasureKind;
 }
 
+export type PhotoView = "front" | "back" | "side-front-left" | "side-front-right" | "top";
+
+// A product photo the research found (sub-project 7).
+export interface PhotoRef {
+  url: string;
+  view: PhotoView;
+}
+
 export interface MeasureSheet {
   size_mm: [number, number, number] | null; // width (x), height (y), depth (z)
   size_source: number | null;
@@ -151,6 +159,16 @@ export interface MeasureSheet {
   features: string[];
   sources: Source[];
   drawing: { url: string; find: string } | null;
+  photos: PhotoRef[];
+}
+
+// One part as measured on the drawing and the photos, in mm from the centre of the product (sub-project 7).
+export interface MeasuredPart {
+  name: string;
+  x: [number, number] | null; // left to right
+  y: [number, number] | null; // bottom to top
+  z: [number, number] | null; // back to front
+  views: number;
 }
 
 export interface ModelPart {
@@ -174,10 +192,12 @@ export interface ModelManifest {
   rounds: number;
   cost_usd: number;
   created: string;
+  kept: boolean; // Jonas keeps it: shown again instead of being built anew (sub-project 7)
+  part_map: MeasuredPart[];
 }
 
-export type ModelStatus = "queued" | "researching" | "drawing" | "modeling" | "building" | "checking" | "ready"
-  | "failed" | "limit";
+export type ModelStatus = "queued" | "researching" | "drawing" | "measuring" | "modeling" | "building" | "checking"
+  | "ready" | "failed" | "limit";
 
 export interface ModelMsg {
   type: "model";
@@ -213,6 +233,13 @@ export interface AskMsg {
   name: string | null;
   rate: number;
   audio: string;
+}
+
+// „Behalten“: the shown precision model is kept and comes again; false takes that back (sub-project 7).
+export interface KeepMsg {
+  type: "keep";
+  model: string; // manifest.model
+  kept: boolean;
 }
 
 // „Neu bauen“ after a failed precision model (sub-project 6).

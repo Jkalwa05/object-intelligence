@@ -721,6 +721,23 @@ body {
   display: inline-block;
 }
 
+.fullscreen-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.fullscreen-tags .pill {
+  padding: 3px 11px;
+  font-size: 11px;
+}
+
+.pill.kept {
+  background: rgba(48, 209, 88, 0.2);
+  color: var(--green);
+}
+
 .icon-button.close {
   position: absolute;
   top: 16px;

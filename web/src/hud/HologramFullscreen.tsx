@@ -1,6 +1,7 @@
 // The precision model in full screen (sub-projects 5 and 6): the large CAD model with measure lines for width,
 // height and depth, next to its parts, the researched dimensions with their sources, and the profile. A click on a
-// part in the list puts its numbered name tag on the model; "Alle abwählen" takes all of them away. Esc or ✕ closes it.
+// part in the list puts its numbered name tag on the model; "Alle abwählen" takes all of them away. "Behalten" keeps
+// the model, so it comes again instead of being built anew (sub-project 7). Esc or ✕ closes it.
 
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -11,7 +12,7 @@ import { t, type I18nKey } from "../i18n";
 import type { IdentityMsg, Lang, ModelMsg, ProfileMsg } from "../protocol";
 import { useHud } from "../store";
 import { addLabels, loadModel, type Pin } from "./hologramScene";
-import { domain, kindText, sourceTag } from "./modelText";
+import { domain, kindText, sourceTag, viewText } from "./modelText";
 import { fitDistance, formatSize, millimetres, partSize, spread, type Vec3 } from "./shapeMath";
 
 const FOV = 35;
@@ -26,9 +27,10 @@ interface Props {
   identity: IdentityMsg;
   profile?: ProfileMsg;
   onClose(): void;
+  onKeep(model: string, kept: boolean): void;
 }
 
-export default function HologramFullscreen({ model, lang, identity, profile, onClose }: Props) {
+export default function HologramFullscreen({ model, lang, identity, profile, onClose, onKeep }: Props) {
   const manifest = model.manifest!;
   const stage = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -140,7 +142,13 @@ export default function HologramFullscreen({ model, lang, identity, profile, onC
         <div className="card-level">{level}</div>
         <h2 className="fullscreen-name">{identity.display_name}</h2>
         <p className="fullscreen-size">{formatSize(manifest.size_mm, lang)}</p>
-        <span className="tag">{sourceTag(manifest, lang)}</span>
+        <div className="fullscreen-tags">
+          <span className="tag">{sourceTag(manifest, lang)}</span>
+          <button type="button" className={manifest.kept ? "pill kept" : "pill"} aria-pressed={manifest.kept}
+            onClick={() => onKeep(manifest.model, !manifest.kept)}>
+            {t(manifest.kept ? "model.kept" : "model.keep", lang)}
+          </button>
+        </div>
         <div className="card-level section parts-head">
           {t("hologram.parts", lang)}
           {labelled.length > 0
@@ -179,12 +187,19 @@ export default function HologramFullscreen({ model, lang, identity, profile, onC
             </dl>
           </>
         )}
-        {manifest.sheet.sources.length > 0 && (
+        {manifest.sheet.sources.length + manifest.sheet.photos.length > 0 && (
           <>
             <div className="card-level section">{t("hologram.sources", lang)}</div>
             <ul className="sources">
               {manifest.sheet.sources.map((source) => (
                 <li key={source.url}><a href={source.url} target="_blank" rel="noreferrer">{source.title}</a></li>
+              ))}
+              {manifest.sheet.photos.map((photo) => (
+                <li key={photo.url}>
+                  <a href={photo.url} target="_blank" rel="noreferrer">
+                    {t("hologram.photo", lang)} ({viewText(photo.view, lang)}) · {domain(photo.url)}
+                  </a>
+                </li>
               ))}
             </ul>
           </>
