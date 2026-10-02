@@ -11,15 +11,17 @@ from __future__ import annotations
 import json
 import math
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal, Protocol
 
 from oi.config import Lang, Settings
-from oi.contracts import DrawingRef, Measure, MeasureSheet, PhotoRef, Source
+from oi.contracts import DrawingRef, Measure, MeasureSheet, PhotoRef, PhotoView, Source
 from oi.drawings import MAX_PHOTOS, Picture
 from oi.identify import (GERMANY, SEARCH_PRICE_USD, ClaudeIdentifier, IdentifyError, _clip, _image, _language,
                          _with_content, cost_usd)
-from oi.modelprompts import BOSL2_GUIDE, CAD_PROMPT, CAD_SCHEMA, CHECK_PROMPT, CHECK_SCHEMA, RESEARCH_PROMPT
+from oi.measure import ViewBoxes, parse_measure
+from oi.modelprompts import (BOSL2_GUIDE, CAD_PROMPT, CAD_SCHEMA, CHECK_PROMPT, CHECK_SCHEMA, MEASURE_PROMPT,
+                             MEASURE_SCHEMA, RESEARCH_PROMPT, SAME_PRODUCT_PROMPT, SAME_PRODUCT_SCHEMA)
 from oi.render import VIEWS
 from oi.scad import HEADER
 
@@ -32,6 +34,7 @@ FETCH_TOOL = {"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": 3, 
 KINDS = ("drawing", "datasheet", "estimate")
 MAX_PARTS, MAX_SHARED, MAX_PART_CODE, MAX_ISSUES = 40, 20_000, 12_000, 10
 CAD_MAX_TOKENS = 32000
+MEASURE_MAX_TOKENS = 16000
 CAD_EFFORT = "high"
 DEFAULT_COLOR = "#9aa0a6"
 
@@ -168,6 +171,8 @@ class CadRequest:
     drawings: list[Picture]
     jpeg: bytes | None  # the object-only crop of the identification
     language: Lang
+    photos: list[tuple[Picture, PhotoView]] = field(default_factory=list)  # reference photos (sub-project 7)
+    part_map: str = ""  # measure.map_text of the measured parts, "" when nothing was measured
 
 
 @dataclass(frozen=True)
@@ -202,6 +207,9 @@ class CheckRequest:
     round: int
     rounds: int
     language: Lang
+    photos: list[tuple[Picture, PhotoView]] = field(default_factory=list)
+    part_map: str = ""
+    deviations: list[str] = field(default_factory=list)  # measure.deviations of the current model
 
 
 @dataclass(frozen=True)
@@ -228,6 +236,20 @@ def _pictures(drawings: list[Picture], jpeg: bytes | None) -> list[dict[str, Any
     return content
 
 
+def _photos(photos: list[tuple[Picture, PhotoView]]) -> list[dict[str, Any]]:
+    content: list[dict[str, Any]] = []
+    for (data, media), view in photos:
+        content += [{"type": "text", "text": f"Reference photo ({view}):"}, _image(data, media)]
+    return content
+
+
+def _measured(part_map: str, deviations: list[str] | None = None) -> list[dict[str, Any]]:
+    content = [{"type": "text", "text": part_map}] if part_map else []
+    if deviations:
+        content.append({"type": "text", "text": "Measured deviations (fix them):\n" + "\n".join(deviations)})
+    return content
+
+
 def _structured(s: Settings, system: str, content: list[dict[str, Any]], schema: dict[str, Any]) -> dict[str, Any]:
     request = _with_content(s, system, content, schema)
     request["max_tokens"] = CAD_MAX_TOKENS
@@ -238,6 +260,7 @@ def _structured(s: Settings, system: str, content: list[dict[str, Any]], schema:
 
 def build_cad_request(s: Settings, req: CadRequest) -> dict[str, Any]:
     content = [{"type": "text", "text": _sheet_text(req.sheet)}, *_pictures(req.drawings, req.jpeg),
+               *_photos(req.photos), *_measured(req.part_map),
                {"type": "text", "text": f"Product: {req.model}\nCategory: {req.category}\n"
                                         "Write the OpenSCAD program for this product."}]
     system = CAD_PROMPT.format(language=_language(req.language)) + "\n\n" + BOSL2_GUIDE
@@ -255,14 +278,16 @@ def build_check_request(s: Settings, req: CheckRequest) -> dict[str, Any]:
                                                               "Renders of the current CAD model:"}]
     for view, png in zip(VIEWS, req.renders, strict=False):
         content += [{"type": "text", "text": f"Render „{view}“:"}, _image(png, "image/png")]
-    content += _pictures(req.drawings, req.jpeg)
+    content += [*_pictures(req.drawings, req.jpeg), *_photos(req.photos)]
     content.append({"type": "text", "text": _sheet_text(req.sheet)})
+    content += _measured(req.part_map)
     content.append({"type": "text", "text": "Current OpenSCAD program:\n" + scad_source(req.program)})
     if req.errors:
         lines = [f"{name}: {' | '.join(errors)}" for name, errors in req.errors.items()]
         content.append({"type": "text", "text": "Compile errors per part:\n" + "\n".join(lines)})
     if req.size_hint:
         content.append({"type": "text", "text": req.size_hint})
+    content += _measured("", req.deviations)
     content.append({"type": "text", "text": f"Product: {req.model}. Check the model and correct it."})
     return _structured(s, CHECK_PROMPT.format(language=_language(req.language)), content, CHECK_SCHEMA)
 
@@ -329,6 +354,69 @@ def apply_check(program: CadProgram, answer: CheckAnswer) -> CadProgram:
                       parts=list(parts.values())[:MAX_PARTS], notes=program.notes)
 
 
+# --- measuring and product names (sub-project 7) -----------------------------------------------------------------
+
+@dataclass(frozen=True)
+class MeasureRequest:
+    model: str
+    sheet: MeasureSheet
+    pictures: list[tuple[Picture, str]]  # (picture, label): the drawing pages, then the photos
+    language: Lang
+
+
+@dataclass(frozen=True)
+class MeasureResult:
+    views: list[ViewBoxes]
+    notes: str
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    latency_s: float
+    model: str
+
+
+@dataclass(frozen=True)
+class SameProductRequest:
+    model: str  # the name of the product held now
+    candidates: list[str]  # the names of the kept models
+    language: Lang
+
+
+@dataclass(frozen=True)
+class SameProductResult:
+    match: str | None  # one of the candidates, or None
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    latency_s: float
+    model: str
+
+
+def build_measure_request(s: Settings, req: MeasureRequest) -> dict[str, Any]:
+    content: list[dict[str, Any]] = []
+    for number, ((data, media), label) in enumerate(req.pictures, start=1):
+        content += [{"type": "text", "text": f"Picture {number} ({label}):"}, _image(data, media)]
+    content += [{"type": "text", "text": _sheet_text(req.sheet)},
+                {"type": "text", "text": f"Product: {req.model}. Measure its parts on the pictures."}]
+    request = _with_content(s, MEASURE_PROMPT.format(language=_language(req.language)), content, MEASURE_SCHEMA)
+    request["max_tokens"] = MEASURE_MAX_TOKENS
+    if "effort" in request["output_config"]:
+        request["output_config"]["effort"] = CAD_EFFORT
+    return request
+
+
+def build_same_product_request(s: Settings, req: SameProductRequest) -> dict[str, Any]:
+    names = "\n".join(f"{number}. {name}" for number, name in enumerate(req.candidates, start=1))
+    content = [{"type": "text", "text": f"New name: {req.model}\nCandidates:\n{names}"}]
+    return _with_content(s, SAME_PRODUCT_PROMPT, content, SAME_PRODUCT_SCHEMA)
+
+
+def parse_same_product(text: str, candidates: list[str]) -> str | None:
+    """The candidate Claude names, or None: a name that is not one of the candidates counts as no match."""
+    match = _json_object(text).get("match")
+    return match if match in candidates else None
+
+
 # --- who makes the calls ----------------------------------------------------------------------------------------
 
 class ModelCalls(Protocol):
@@ -337,6 +425,10 @@ class ModelCalls(Protocol):
     async def build_cad(self, req: CadRequest) -> CadResult: ...
 
     async def check_cad(self, req: CheckRequest) -> CheckResult: ...
+
+    async def measure(self, req: MeasureRequest) -> MeasureResult: ...
+
+    async def same_product(self, req: SameProductRequest) -> SameProductResult: ...
 
 
 def _text(response: Any) -> str:
@@ -381,18 +473,39 @@ class ClaudeModelCalls:
                            model=self._s.model)
 
 
+    async def measure(self, req: MeasureRequest) -> MeasureResult:
+        response, latency = await self._streamed(build_measure_request(self._s, req))
+        views, notes = parse_measure(_text(response), len(req.pictures))
+        usage = response.usage
+        return MeasureResult(views=views, notes=notes, input_tokens=usage.input_tokens,
+                             output_tokens=usage.output_tokens, cost_usd=self._cost(usage), latency_s=latency,
+                             model=self._s.model)
+
+    async def same_product(self, req: SameProductRequest) -> SameProductResult:
+        response, latency = await self._identifier.create(build_same_product_request(self._s, req))  # small: no stream
+        usage = response.usage
+        return SameProductResult(match=parse_same_product(_text(response), req.candidates),
+                                 input_tokens=usage.input_tokens, output_tokens=usage.output_tokens,
+                                 cost_usd=self._cost(usage), latency_s=latency, model=self._s.model)
+
+
 class FakeModelCalls:
-    """Costs nothing: scripted answers for the tests. `costs` = (research, CAD, check) in dollars per call; a used-up
-    check script answers "good"."""
+    """Costs nothing: scripted answers for the tests. `costs` = (research, measure, CAD, check) in dollars per call;
+    a used-up check script answers "good", and without a script nothing is measured and no name matches."""
 
     def __init__(self, research: MeasureSheet | IdentifyError | None = None,
                  cad: CadProgram | IdentifyError | None = None, checks: list[CheckAnswer | IdentifyError] | None = None,
-                 costs: tuple[float, float, float] = (0.0, 0.0, 0.0)) -> None:
+                 costs: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0),
+                 measure: list[ViewBoxes] | IdentifyError | None = None,
+                 same: str | IdentifyError | None = None) -> None:
         self.research_sheet, self.cad, self.costs = research, cad, costs
+        self.measure_views, self.same_answer = measure, same
         self.checks = list(checks or [])
         self.research_requests: list[ResearchRequest] = []
         self.cad_requests: list[CadRequest] = []
         self.check_requests: list[CheckRequest] = []
+        self.measure_requests: list[MeasureRequest] = []
+        self.same_requests: list[SameProductRequest] = []
 
     async def research(self, req: ResearchRequest) -> ResearchResult:
         self.research_requests.append(req)
@@ -409,7 +522,7 @@ class FakeModelCalls:
             raise self.cad
         program = self.cad or CadProgram(shared="", parts=[CadPart("Gehäuse", "#9fc4e8", "cube(10, center=true);")],
                                          notes="")
-        return CadResult(program=program, input_tokens=0, output_tokens=0, cost_usd=self.costs[1], latency_s=0.0,
+        return CadResult(program=program, input_tokens=0, output_tokens=0, cost_usd=self.costs[2], latency_s=0.0,
                          model="fake")
 
     async def check_cad(self, req: CheckRequest) -> CheckResult:
@@ -417,5 +530,19 @@ class FakeModelCalls:
         answer = self.checks.pop(0) if self.checks else CheckAnswer("good", [], None, [], [])
         if isinstance(answer, IdentifyError):
             raise answer
-        return CheckResult(answer=answer, input_tokens=0, output_tokens=0, cost_usd=self.costs[2], latency_s=0.0,
+        return CheckResult(answer=answer, input_tokens=0, output_tokens=0, cost_usd=self.costs[3], latency_s=0.0,
                            model="fake")
+
+    async def measure(self, req: MeasureRequest) -> MeasureResult:
+        self.measure_requests.append(req)
+        if isinstance(self.measure_views, IdentifyError):
+            raise self.measure_views
+        return MeasureResult(views=list(self.measure_views or []), notes="", input_tokens=0, output_tokens=0,
+                             cost_usd=self.costs[1], latency_s=0.0, model="fake")
+
+    async def same_product(self, req: SameProductRequest) -> SameProductResult:
+        self.same_requests.append(req)
+        if isinstance(self.same_answer, IdentifyError):
+            raise self.same_answer
+        return SameProductResult(match=self.same_answer, input_tokens=0, output_tokens=0, cost_usd=0.0,
+                                 latency_s=0.0, model="fake")

@@ -285,7 +285,7 @@ async def test_a_model_call_that_runs_past_its_deadline_is_a_timeout():
 
 
 async def test_fake_model_calls_follow_the_script():
-    fake = FakeModelCalls(research=SHEET_OBJ, cad=PROGRAM, costs=(0.3, 0.3, 0.2),
+    fake = FakeModelCalls(research=SHEET_OBJ, cad=PROGRAM, costs=(0.3, 0.0, 0.3, 0.2),
                           checks=[CheckAnswer("fix", ["Linse"], None, [], []), IdentifyError("api")])
     researched = await fake.research(RESEARCH_REQ)
     assert researched.sheet == SHEET_OBJ and researched.cost_usd == 0.3
@@ -301,3 +301,92 @@ async def test_fake_model_calls_follow_the_script():
     assert (await plain.build_cad(cad_request())).program.parts
     with pytest.raises(IdentifyError):
         await FakeModelCalls(cad=IdentifyError("timeout")).build_cad(cad_request())
+
+
+# --- sub-project 7: measuring, product names, photos, part map and deviations ------------------------------------
+
+def measure_request(**kw):
+    from oi.modelcalls import MeasureRequest
+    base = dict(model="Sony DualShock 3", sheet=SHEET_OBJ, language="de",
+                pictures=[((PNG, "image/png"), "technical drawing page 1"), ((PNG, "image/png"), "photo, front")])
+    return MeasureRequest(**{**base, **kw})
+
+
+def texts(request: dict) -> list[str]:
+    return [b["text"] for b in request["messages"][0]["content"] if b["type"] == "text"]
+
+
+def test_measure_request_numbers_the_pictures():
+    from oi.modelcalls import build_measure_request
+    from oi.modelprompts import MEASURE_SCHEMA
+    request = build_measure_request(OPUS, measure_request())
+    assert "Picture 1 (technical drawing page 1):" in texts(request) and "Picture 2 (photo, front):" in texts(request)
+    assert sum(b["type"] == "image" for b in request["messages"][0]["content"]) == 2
+    assert request["output_config"]["format"]["schema"] == MEASURE_SCHEMA
+    assert (request["max_tokens"], request["output_config"]["effort"]) == (16000, "high")
+    assert "German" in request["system"] and "fractions" in request["system"]
+
+
+async def test_measure_call_parses_views_and_costs():
+    from oi.identify import ClaudeIdentifier
+    from tests.test_identify import response
+    views = {"views": [{"picture": 2, "view": "front", "object": [0.1, 0.0, 0.9, 0.97],
+                        "parts": [{"name": "Dreieck-Taste", "box": [0.7, 0.2, 0.75, 0.3]}]}], "notes": "ok"}
+    settings = Settings(model="claude-sonnet-5-5", cad_model="claude-opus-5-5")
+    client = StreamClient(response(json.dumps(views)))
+    result = await ClaudeModelCalls(ClaudeIdentifier(settings, client), settings).measure(measure_request())
+    assert result.views[0].parts[0][0] == "Dreieck-Taste" and result.notes == "ok"
+    assert client.calls[0]["model"] == result.model == "claude-opus-5-5"
+    assert result.cost_usd == pytest.approx(2000 * 4 / 1e6 + 500 * 20 / 1e6)
+
+
+async def test_same_product_matches_only_a_candidate():
+    from oi.identify import ClaudeIdentifier
+    from oi.modelcalls import SameProductRequest, build_same_product_request, parse_same_product
+    from oi.modelprompts import SAME_PRODUCT_SCHEMA
+    from tests.test_identify import FakeClient, response
+    candidates = ["Sony DualShock 3", "Apple iPhone 14"]
+    assert parse_same_product('{"match": "Sony DualShock 3"}', candidates) == "Sony DualShock 3"
+    assert parse_same_product('{"match": "Sony DualShock 4"}', candidates) is None
+    assert parse_same_product('{"match": null}', candidates) is None
+    with pytest.raises(IdentifyError):
+        parse_same_product("vielleicht", candidates)
+    req = SameProductRequest("Sony PlayStation 3 DualShock 3", candidates, "de")
+    request = build_same_product_request(OPUS, req)
+    assert "Sony PlayStation 3 DualShock 3" in texts(request)[0] and "1. Sony DualShock 3" in texts(request)[0]
+    assert request["output_config"]["format"]["schema"] == SAME_PRODUCT_SCHEMA
+    settings = Settings(model="claude-sonnet-5-5", cad_model="claude-opus-5-5")
+    client = FakeClient(reply=response('{"match": "Sony DualShock 3"}'))
+    result = await ClaudeModelCalls(ClaudeIdentifier(settings, client), settings).same_product(req)
+    assert result.match == "Sony DualShock 3" and client.calls[0]["model"] == result.model == "claude-opus-5-5"
+
+
+def test_cad_and_check_requests_carry_photos_map_and_deviations():
+    photos = [((PNG, "image/png"), "front")]
+    mapped = "Measured parts …\nDreieck-Taste: x 44.0…50.0 mm (1 view)"
+    cad = build_cad_request(OPUS, cad_request(photos=photos, part_map=mapped))
+    assert "Reference photo (front):" in texts(cad) and mapped in texts(cad)
+    assert sum(b["type"] == "image" for b in cad["messages"][0]["content"]) == 4  # 2 drawing pages, crop, photo
+    off = "Dreieck-Taste: x model 48.0…54.0, measured 44.0…50.0 mm (off by 4.0 mm)"
+    check = build_check_request(OPUS, check_request(photos=photos, part_map=mapped, deviations=[off]))
+    assert "Reference photo (front):" in texts(check) and mapped in texts(check)
+    assert f"Measured deviations (fix them):\n{off}" in texts(check)
+    plain = texts(build_check_request(OPUS, check_request())) + texts(build_cad_request(OPUS, cad_request()))
+    assert not any("Measured" in t or "Reference photo" in t for t in plain)
+
+
+async def test_fake_measure_and_same_product_follow_the_script():
+    from oi.measure import ViewBoxes
+    from oi.modelcalls import SameProductRequest
+    front = ViewBoxes(1, "front", (0.1, 0.0, 0.9, 0.97), [])
+    fake = FakeModelCalls(measure=[front], same="Sony DualShock 3", costs=(0.0, 0.07, 0.0, 0.0))
+    measured = await fake.measure(measure_request())
+    assert measured.views == [front] and measured.cost_usd == 0.07
+    assert (await fake.same_product(SameProductRequest("x", ["Sony DualShock 3"], "de"))).match == "Sony DualShock 3"
+    assert (len(fake.measure_requests), len(fake.same_requests)) == (1, 1)
+    assert (await FakeModelCalls().measure(measure_request())).views == []
+    failing = FakeModelCalls(measure=IdentifyError("api"), same=IdentifyError("api"))
+    with pytest.raises(IdentifyError):
+        await failing.measure(measure_request())
+    with pytest.raises(IdentifyError):
+        await failing.same_product(SameProductRequest("x", ["y"], "de"))

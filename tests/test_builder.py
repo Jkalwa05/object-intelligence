@@ -131,7 +131,7 @@ async def test_research_error_means_estimated_measures():
 
 async def test_research_over_the_cap_stops_before_cad():
     budget = SessionBudget()
-    calls = FakeModelCalls(costs=(1.7, 0.0, 0.0))
+    calls = FakeModelCalls(costs=(1.7, 0.0, 0.0, 0.0))
     built, events = builder(calls, budget=budget)
     await build(built)
     assert statuses(events)[-1] == "failed" and calls.cad_requests == []
@@ -140,7 +140,7 @@ async def test_research_over_the_cap_stops_before_cad():
 
 async def test_budget_ends_checks_early():
     fix = CheckAnswer("fix", ["zu dick"], None, [CadPart("Gehäuse", "#9fc4e8", "cube(9, center=true);")], [])
-    calls = FakeModelCalls(costs=(0.5, 0.5, 0.4), checks=[fix, fix])
+    calls = FakeModelCalls(costs=(0.5, 0.0, 0.5, 0.4), checks=[fix, fix])
     built, events = builder(calls)
     await build(built)
     manifest = events[-1][3]
@@ -186,7 +186,7 @@ async def test_rebuild_only_after_failure():
 async def test_calls_count_in_the_session_budget_and_the_log():
     log, budget = Log(), SessionBudget()
     fix = CheckAnswer("fix", [], None, [], [])
-    built, _ = builder(FakeModelCalls(checks=[fix], costs=(0.1, 0.2, 0.05)), log=log, budget=budget)
+    built, _ = builder(FakeModelCalls(checks=[fix], costs=(0.1, 0.0, 0.2, 0.05)), log=log, budget=budget)
     await build(built)
     texts = [r.request_text for r in log.records]
     assert texts == [f"model research: {MODEL}", f"model cad: {MODEL}", f"model check 1: {MODEL}",
