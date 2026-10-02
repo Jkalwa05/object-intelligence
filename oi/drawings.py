@@ -36,7 +36,9 @@ FIGURE = re.compile(r"\d+[.,]\d+")  # dimension figures such as 71.50 or 146,7
 
 def find_pages(pdf: bytes, find: str, limit: int = 2) -> list[int]:
     """0-based indices of the pages with the most of `find`'s words (at least half of them). Among equally good pages
-    the ones with the most dimension figures come first: a drawing is full of them, a table of contents is not."""
+    the ones with the most dimension figures come first (a drawing is full of them, a table of contents is not), then
+    those with the least text: Apple draws its figures as vector paths, so its drawings carry almost no text at all,
+    unlike a page of terms."""
     wanted = _words(find)
     if not wanted:
         return []
@@ -45,14 +47,14 @@ def find_pages(pdf: bytes, find: str, limit: int = 2) -> list[int]:
         pages = []
         for index in range(len(document)):
             text = document[index].get_textpage().get_text_range()
-            pages.append((len(wanted & _words(text)), len(FIGURE.findall(text)), index))
+            pages.append((len(wanted & _words(text)), len(FIGURE.findall(text)), len(text), index))
     finally:
         document.close()
-    best = max((matches for matches, _, _ in pages), default=0)
+    best = max((matches for matches, _, _, _ in pages), default=0)
     if best < max(1, math.ceil(len(wanted) / 2)):
         return []
-    chosen = sorted((p for p in pages if p[0] == best), key=lambda p: (-p[1], p[2]))
-    return [index for _, _, index in chosen][:limit]
+    chosen = sorted((p for p in pages if p[0] == best), key=lambda p: (-p[1], p[2], p[3]))
+    return [index for _, _, _, index in chosen][:limit]
 
 
 def _scaled_png(image: Image.Image, long_edge: int) -> bytes:

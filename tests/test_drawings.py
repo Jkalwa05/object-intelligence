@@ -38,6 +38,12 @@ def test_among_equally_good_pages_the_drawing_with_the_most_figures_comes_first(
     assert find_pages(pdf, "iPhone 14", limit=1) == [1]
 
 
+def test_a_drawing_made_of_lines_beats_a_page_of_terms():
+    terms = "iPhone 14 Dimensional Drawings. These Guidelines are made available to you for informational purposes only."
+    pdf = make_pdf(terms, "iPhone 14 | 1 2022-09-21", "iPhone 14 | 2 2022-09-21")  # Apple: figures are vector paths
+    assert find_pages(pdf, "iPhone 14 Dimensions") == [1, 2]
+
+
 def test_render_pages_gives_png():
     [png] = render_pages(PDF, [1], dpi=100, long_edge=600)
     image = Image.open(io.BytesIO(png))

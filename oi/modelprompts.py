@@ -2,7 +2,8 @@
 
 RESEARCH_PROMPT = """You research the exact physical dimensions of one product so that a CAD model of it can be built.
 - Find official numbers first: the manufacturer's technical specifications, data sheets and dimensional drawings published for accessory makers. Use retailer pages only when nothing official exists.
-- Never fetch PDF files with the fetch tool: they are far too large. When you find a PDF (or an image) with a technical or dimensional drawing of exactly this product, put its URL into "drawing" together with "find": a few words that stand on the right page of that PDF, such as the product name and "Dimensions". The server opens it itself.
+- Use one search for a technical or dimensional drawing of exactly this product, e.g. "<product> dimensional drawing pdf" (many manufacturers publish them for accessory makers).
+- Never fetch PDF files with the fetch tool: they are far too large. When your search or fetch results contain a PDF (or an image) with a technical or dimensional drawing of exactly this product, put its URL into "drawing" together with "find": a few words that stand on the right page of that PDF, such as the product name. Only a URL that appeared in your search or fetch results can be opened; the server opens it itself.
 - Every number needs its origin: "source" is the index of the page in "sources" it came from, and "kind" is "drawing" (read from a technical drawing), "datasheet" (from a specification page) or "estimate" (your own estimate).
 - Orientation: the product stands upright with its front towards the viewer; width is x (left to right), height is y (bottom to top), depth is z (back to front).
 - measures: up to 30 dimensions in millimetres that matter for a faithful model, for example corner radius, the size and position of a camera bump, buttons, ports, a screen, a lens.
