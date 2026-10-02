@@ -6,9 +6,9 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.figure import Figure
 from PIL import Image
 
-from oi.contracts import DrawingRef
+from oi.contracts import DrawingRef, PhotoRef
 from oi.download import DownloadError
-from oi.drawings import drawing_pictures, find_pages, render_pages
+from oi.drawings import drawing_pictures, find_pages, photo_pictures, picture_size, render_pages
 
 
 def make_pdf(*pages: str) -> bytes:
@@ -88,3 +88,39 @@ async def test_drawing_pictures_from_pdf_image_or_error():
 @pytest.mark.parametrize("find", ["", "a b"])
 def test_find_pages_without_usable_words_finds_nothing(find):
     assert find_pages(PDF, find) == []
+
+
+SVG = (b'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="100">'
+       b'<rect x="10" y="10" width="280" height="80" fill="none" stroke="#00bcd4" stroke-width="4"/>'
+       b'<text x="150" y="60" font-size="20" text-anchor="middle" fill="#00bcd4">160 mm</text></svg>')
+
+
+async def test_svg_drawing_becomes_a_png():
+    async def fetch(url, allowed):
+        return SVG, "image/svg+xml"
+    pictures, pages = await drawing_pictures(DrawingRef(url="https://cdn.example/d.svg", find=""), set(), fetch=fetch)
+    assert pages == [] and len(pictures) == 1 and pictures[0][1] == "image/png"
+    width, height = picture_size(pictures[0])
+    assert width == 2000 and abs(height - 667) <= 1  # the long edge, like a rendered PDF page
+
+
+async def test_broken_svg_means_no_drawing():
+    async def fetch(url, allowed):
+        return b"<svg", "image/svg+xml"
+    assert await drawing_pictures(DrawingRef(url="https://cdn.example/d.svg", find=""), set(), fetch=fetch) == ([], [])
+
+
+async def test_photo_pictures_skip_failures():
+    asked = []
+
+    async def fetch(url, allowed):
+        asked.append(url)
+        if url.endswith("2.png"):
+            raise DownloadError("weg")
+        return png(400, 300), "image/png"
+    views = ["front", "back", "top", "side-front-left", "side-front-right"]
+    photos = [PhotoRef(url=f"https://cdn.example/{i}.png", view=view) for i, view in enumerate(views, start=1)]
+    pictures = await photo_pictures(photos, set(), fetch=fetch)
+    assert [view for _, view in pictures] == ["front", "top", "side-front-left"]
+    assert picture_size(pictures[0][0]) == (400, 300)
+    assert asked == [f"https://cdn.example/{i}.png" for i in range(1, 5)]  # at most 4 photos are tried

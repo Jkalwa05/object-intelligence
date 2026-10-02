@@ -1,8 +1,9 @@
 """Safe downloads of technical drawings for the precision model (sub-project 6, spec §4.4).
 
-The server only loads what the research call found itself (the URL appeared in its search or fetch results, or it
-lies on the same host as such a page: a PDF linked from a fetched overview page), only over https, only from public addresses (checked again after every redirect), only PDFs and PNG/JPEG images, and only
-up to a size limit. What it loads is never executed: it goes to Claude as an image.
+The server only loads what the research call found itself: the URL appeared in its search or fetch results or on a
+fetched page (a drawing on a CDN), or it lies on the same host as such a page. It loads only over https, only from
+public addresses (checked again after every redirect), only PDFs and PNG/JPEG/WebP/SVG images, and only up to a
+size limit. What it loads is never executed: it goes to Claude as an image; an SVG is rendered to PNG first.
 
 Known limit: the address is checked before httpx connects, and httpx resolves the name once more. A server that
 answers the second lookup with a private address (DNS rebinding) could slip through; the body would still only be
@@ -21,7 +22,8 @@ import httpx
 
 PDF_LIMIT = 60_000_000
 IMAGE_LIMIT = 8_000_000
-LIMITS = {"application/pdf": PDF_LIMIT, "image/png": IMAGE_LIMIT, "image/jpeg": IMAGE_LIMIT}
+LIMITS = {"application/pdf": PDF_LIMIT, "image/png": IMAGE_LIMIT, "image/jpeg": IMAGE_LIMIT,
+          "image/webp": IMAGE_LIMIT, "image/svg+xml": IMAGE_LIMIT}  # SVG only to be rendered on the server
 MAX_REDIRECTS = 3
 
 

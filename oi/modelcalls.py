@@ -16,7 +16,7 @@ from typing import Any, Literal, Protocol
 
 from oi.config import Lang, Settings
 from oi.contracts import DrawingRef, Measure, MeasureSheet, PhotoRef, Source
-from oi.drawings import Picture
+from oi.drawings import MAX_PHOTOS, Picture
 from oi.identify import (GERMANY, SEARCH_PRICE_USD, ClaudeIdentifier, IdentifyError, _clip, _image, _language,
                          _with_content, cost_usd)
 from oi.modelprompts import BOSL2_GUIDE, CAD_PROMPT, CAD_SCHEMA, CHECK_PROMPT, CHECK_SCHEMA, RESEARCH_PROMPT
@@ -83,7 +83,6 @@ def _get(item: Any, key: str) -> Any:
 
 LINK = re.compile(r"https://[^\s\"'<>()\[\]]+")  # a link in the text of a fetched page
 PHOTO_VIEWS = ("front", "back", "side-front-left", "side-front-right", "top")
-MAX_PHOTOS = 4
 
 
 def _found_urls(blocks: list[Any]) -> set[str]:

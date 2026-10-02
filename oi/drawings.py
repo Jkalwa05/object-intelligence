@@ -15,16 +15,18 @@ import re
 from collections.abc import Awaitable, Callable
 
 import pypdfium2 as pdfium
+import resvg_py
 from PIL import Image
 
 from oi import download
-from oi.contracts import DrawingRef
+from oi.contracts import DrawingRef, PhotoRef, PhotoView
 
 log = logging.getLogger(__name__)
 
 Picture = tuple[bytes, str]  # (data, media type) of an image for Claude
 Fetch = Callable[[str, set[str]], Awaitable[tuple[bytes, str]]]
 LONG_EDGE = 2000  # pixels: enough to read dimension figures, small enough for the API's image limits
+MAX_PHOTOS = 4  # product photos per model (sub-project 7)
 
 
 def _words(text: str) -> set[str]:
@@ -74,7 +76,27 @@ def render_pages(pdf: bytes, pages: list[int], dpi: int = 150, long_edge: int = 
         document.close()
 
 
+def _svg_png(data: bytes) -> bytes:
+    """An SVG drawing as PNG, its long edge LONG_EDGE. resvg runs no scripts and loads nothing from the web."""
+    svg = data.decode("utf-8", errors="replace")
+    try:
+        png = bytes(resvg_py.svg_to_bytes(svg_string=svg, width=LONG_EDGE))
+        width, height = Image.open(io.BytesIO(png)).size
+        if height > width:
+            png = bytes(resvg_py.svg_to_bytes(svg_string=svg, height=LONG_EDGE))
+    except Exception as error:  # resvg reports a broken SVG in its own ways
+        raise ValueError(f"SVG: {error}") from error
+    return png
+
+
+def picture_size(picture: Picture) -> tuple[int, int]:
+    """Width and height of a picture in pixels."""
+    return Image.open(io.BytesIO(picture[0])).size
+
+
 def _scaled_image(data: bytes, media: str) -> Picture:
+    if media == "image/svg+xml":
+        return _svg_png(data), "image/png"
     image = Image.open(io.BytesIO(data))
     if max(image.size) <= LONG_EDGE:
         return data, media
@@ -101,3 +123,16 @@ async def drawing_pictures(ref: DrawingRef | None, allowed: set[str], fetch: Fet
     except (download.DownloadError, pdfium.PdfiumError, OSError, ValueError) as error:
         log.info("no drawing from %s: %s", ref.url, error)
         return [], []
+
+
+async def photo_pictures(photos: list[PhotoRef], allowed: set[str], fetch: Fetch = download.fetch
+                         ) -> list[tuple[Picture, PhotoView]]:
+    """The product photos as images for Claude, in order; one that cannot be loaded is skipped (sub-project 7)."""
+    pictures: list[tuple[Picture, PhotoView]] = []
+    for photo in photos[:MAX_PHOTOS]:
+        try:
+            data, media = await fetch(photo.url, allowed)
+            pictures.append((await asyncio.to_thread(_scaled_image, data, media), photo.view))
+        except (download.DownloadError, OSError, ValueError) as error:
+            log.info("no photo from %s: %s", photo.url, error)
+    return pictures

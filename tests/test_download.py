@@ -24,6 +24,16 @@ async def test_downloads_an_allowed_pdf():
     assert await fetch(url, {url}, transport=transport(routes), resolve=resolve) == (PDF, "application/pdf")
 
 
+@pytest.mark.parametrize("media", ["image/svg+xml", "image/webp"])
+async def test_svg_and_webp_are_accepted(media):
+    url = "https://cdn.example/drawing"
+    routes = {url: httpx.Response(200, headers={"content-type": media}, content=b"<svg/>")}
+    assert await fetch(url, {url}, transport=transport(routes), resolve=resolve) == (b"<svg/>", media)
+    routes = {url: httpx.Response(200, headers={"content-type": "image/gif"}, content=b"GIF89a")}
+    with pytest.raises(DownloadError):
+        await fetch(url, {url}, transport=transport(routes), resolve=resolve)
+
+
 async def test_refuses_urls_not_found_by_the_research():
     url = "https://developer.apple.com/accessories/guidelines.pdf"
     routes = {url: httpx.Response(200, headers={"content-type": "application/pdf"}, content=PDF)}
