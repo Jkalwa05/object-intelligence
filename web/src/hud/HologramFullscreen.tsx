@@ -6,7 +6,7 @@ import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
+import { type CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import { t, type I18nKey } from "../i18n";
 import type { IdentityMsg, Lang, ModelMsg, ProfileMsg } from "../protocol";
 import { addLabels, loadModel, type Pin } from "./hologramScene";
@@ -32,6 +32,7 @@ export default function HologramFullscreen({ model, lang, identity, profile, onC
   const stage = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const pins = useRef<Pin[]>([]);
+  const measures = useRef<CSS2DObject[]>([]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -69,7 +70,7 @@ export default function HologramFullscreen({ model, lang, identity, profile, onC
       };
       resize();
       window.addEventListener("resize", resize);
-      pins.current = addLabels(loaded, manifest, lang);
+      ({ pins: pins.current, measures: measures.current } = addLabels(loaded, manifest, lang));
       scene.add(loaded.group);
       const controls = new OrbitControls(camera, labels.domElement);
       controls.enableDamping = true;
@@ -84,7 +85,12 @@ export default function HologramFullscreen({ model, lang, identity, profile, onC
         const dots = at.map(([x, y]) => ({ x: x - DOT / 2, y: y - DOT / 2, w: DOT, h: DOT }));
         const tags = at.map(([x, y], i) => ({ x: x + TAG_LEFT, y: y - DOT / 2, w: pins.current[i].tag.offsetWidth,
           h: DOT }));
-        spread(tags, TAG_GAP, dots).forEach((down, i) => pins.current[i].move(down));
+        const labels = measures.current.map((label) => { // the measure capsules, centred on their point
+          anchor.setFromMatrixPosition(label.matrixWorld).project(camera);
+          const w = label.element.offsetWidth, h = label.element.offsetHeight;
+          return { x: ((anchor.x + 1) / 2) * width - w / 2, y: ((1 - anchor.y) / 2) * height - h / 2, w, h };
+        });
+        spread(tags, TAG_GAP, [...dots, ...labels]).forEach((down, i) => pins.current[i].move(down));
       };
       let raf = 0;
       const loop = () => {

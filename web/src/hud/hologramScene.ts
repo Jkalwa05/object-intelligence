@@ -89,8 +89,13 @@ function pin(index: number, name: string): Pin {
   };
 }
 
+export interface Labels {
+  pins: Pin[]; // a numbered name tag per part
+  measures: CSS2DObject[]; // the width, height and depth labels: name tags keep clear of them
+}
+
 // Measure lines for width, height and depth along the box, and a name tag on every part (full screen).
-export function addLabels(model: Model, manifest: ModelManifest, lang: Lang): Pin[] {
+export function addLabels(model: Model, manifest: ModelManifest, lang: Lang): Labels {
   const { min, max } = model.bounds;
   const extent = model.bounds.getSize(new THREE.Vector3());
   const size = manifest.size_mm;
@@ -103,12 +108,14 @@ export function addLabels(model: Model, manifest: ModelManifest, lang: Lang): Pi
     [V(max.x + gap, min.y - gap, min.z), V(max.x + gap, min.y - gap, max.z), V(0, tick, 0), size[2]], // depth
   ];
   const points: THREE.Vector3[] = [];
+  const texts: CSS2DObject[] = [];
   for (const [from, to, across, value] of measures) {
     points.push(from, to, from.clone().sub(across), from.clone().add(across), to.clone().sub(across),
       to.clone().add(across));
     const text = label(`${millimetres(value, lang)} mm`, "measure");
     text.position.copy(from.clone().add(to).multiplyScalar(0.5));
     model.content.add(text);
+    texts.push(text);
   }
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
   const material = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 });
@@ -132,5 +139,5 @@ export function addLabels(model: Model, manifest: ModelManifest, lang: Lang): Pi
     geometry.dispose();
     material.dispose();
   };
-  return pins;
+  return { pins, measures: texts };
 }
