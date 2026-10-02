@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal, Protocol
 
 from oi.config import Lang, Settings
@@ -337,7 +337,7 @@ class ClaudeModelCalls:
 
     def __init__(self, identifier: ClaudeIdentifier, settings: Settings) -> None:
         self._identifier = identifier
-        self._s = settings
+        self._s = replace(settings, model=settings.cad_model)  # research, CAD and check: OI_CAD_MODEL
 
     async def _streamed(self, request: dict[str, Any]) -> tuple[Any, float]:
         return await self._identifier.create(request, self._s.model_timeout_s, stream=True)

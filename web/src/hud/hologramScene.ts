@@ -3,12 +3,39 @@
 
 import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import type { Lang, ModelManifest } from "../protocol";
 import { millimetres, partCenter, partSize, rimPoint } from "./shapeMath";
 
 export const EDGE = 0x30d158; // the green of the object in your hand
 const EDGE_ANGLE = 20; // degrees: CAD meshes are finely divided; only real edges get a line, roundings stay calm
+
+// The glow: a surface lights up green where it turns away from you. Round bodies have no edge sharper than 20°, so
+// without it a controller's body was only a dark shadow.
+const RIM_VERTEX = `
+varying vec3 vNormal;
+varying vec3 vView;
+void main() {
+  vec4 seen = modelViewMatrix * vec4(position, 1.0);
+  vNormal = normalize(normalMatrix * normal);
+  vView = normalize(-seen.xyz);
+  gl_Position = projectionMatrix * seen;
+}`;
+const RIM_FRAGMENT = `
+uniform vec3 color;
+varying vec3 vNormal;
+varying vec3 vView;
+void main() {
+  float turned = 1.0 - abs(dot(normalize(vNormal), normalize(vView)));
+  gl_FragColor = vec4(color, pow(turned, 4.0) * 0.4);
+}`;
+
+function rimMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({ uniforms: { color: { value: new THREE.Color(EDGE) } }, vertexShader: RIM_VERTEX,
+    fragmentShader: RIM_FRAGMENT, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide });
+}
 
 export interface Model {
   group: THREE.Group; // what goes into the scene: centred on the origin
@@ -30,17 +57,20 @@ export async function loadModel(manifest: ModelManifest): Promise<Model> {
   const geometries = await Promise.all(manifest.parts.map((part) =>
     loader.loadAsync(`/models/${manifest.slug}/${part.file}`)));
   const content = new THREE.Group();
-  const garbage: { dispose(): void }[] = [];
+  const rim = rimMaterial();
+  const garbage: { dispose(): void }[] = [rim];
   geometries.forEach((geometry, index) => {
     const edges = new THREE.EdgesGeometry(geometry, EDGE_ANGLE);
     const fill = new THREE.MeshBasicMaterial({ color: manifest.parts[index].color, transparent: true, opacity: 0.28,
       depthWrite: false });
     const line = new THREE.LineBasicMaterial({ color: EDGE, transparent: true, opacity: 0.85 });
+    const smooth = mergeVertices(geometry.clone().deleteAttribute("normal")); // the glow needs rounded normals
+    smooth.computeVertexNormals();
     const piece = new THREE.Group();
-    piece.add(new THREE.Mesh(geometry, fill), new THREE.LineSegments(edges, line));
+    piece.add(new THREE.Mesh(geometry, fill), new THREE.Mesh(smooth, rim), new THREE.LineSegments(edges, line));
     piece.userData.part = index;
     content.add(piece);
-    garbage.push(geometry, edges, fill, line);
+    garbage.push(geometry, smooth, edges, fill, line);
   });
   const bounds = boundsOf(manifest);
   content.position.copy(bounds.getCenter(new THREE.Vector3())).negate();

@@ -22,7 +22,7 @@ def test_env_without_overrides_gives_defaults():
     assert Settings.from_env({}) == Settings()
 
 
-@pytest.mark.parametrize("env", [{"OI_LANGUAGE": "fr"}, {"OI_MODEL": "gpt-5"}])
+@pytest.mark.parametrize("env", [{"OI_LANGUAGE": "fr"}, {"OI_MODEL": "gpt-5"}, {"OI_CAD_MODEL": "gpt-5"}])
 def test_invalid_values_rejected(env):
     with pytest.raises(ValueError):
         Settings.from_env(env)
@@ -35,7 +35,9 @@ def test_dhash_distance_can_be_calibrated():
 def test_settings_for_models():
     s = Settings()
     assert (s.max_model_cost_usd, s.max_models_session, s.model_check_rounds, s.model_timeout_s) == (1.60, 5, 2, 600.0)
+    assert s.cad_model == "claude-opus-5-5"  # Sonnet built the controller cruder and once upside down (2026-10-02)
     assert s.model_cache.parts[-2:] == ("cache", "models") and s.models_dir.name == "models"
     changed = Settings.from_env({"OI_MAX_MODELS_SESSION": "3", "OI_MAX_MODEL_COST_USD": "0.8",
-                                 "OI_MODEL_CHECK_ROUNDS": "1"})
+                                 "OI_MODEL_CHECK_ROUNDS": "1", "OI_CAD_MODEL": "claude-sonnet-5-5"})
     assert (changed.max_models_session, changed.max_model_cost_usd, changed.model_check_rounds) == (3, 0.8, 1)
+    assert changed.cad_model == "claude-sonnet-5-5"

@@ -232,6 +232,20 @@ async def test_claude_model_calls_stream_without_retries_and_report_cost():
     assert checked.answer.verdict == "good" and client.options["max_retries"] == 0
 
 
+async def test_the_precision_model_has_its_own_claude_model():
+    from oi.identify import ClaudeIdentifier
+    from tests.test_identify import response
+    settings = Settings(model="claude-sonnet-5-5", cad_model="claude-opus-5-5")  # identify with Sonnet, build with Opus
+    client = StreamClient(response(json.dumps(CAD)))
+    cad = await ClaudeModelCalls(ClaudeIdentifier(settings, client), settings).build_cad(cad_request())
+    assert client.calls[0]["model"] == cad.model == "claude-opus-5-5"
+    assert cad.cost_usd == pytest.approx(2000 * 4 / 1e6 + 500 * 20 / 1e6)  # at Opus prices
+    client = StreamClient(response(json.dumps({"verdict": "good", "issues": [], "shared": None, "parts": [],
+                                               "remove": []})))
+    checked = await ClaudeModelCalls(ClaudeIdentifier(settings, client), settings).check_cad(check_request())
+    assert client.calls[0]["model"] == checked.model == "claude-opus-5-5"
+
+
 async def test_a_model_call_that_runs_past_its_deadline_is_a_timeout():
     import time
 

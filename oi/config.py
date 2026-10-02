@@ -70,6 +70,7 @@ class Settings:
     log_calls: bool = True
     runs_dir: Path = Path("runs")
     profile_cache: Path = Path(__file__).resolve().parent.parent / "cache" / "profiles.json"  # sub-project 2
+    cad_model: str = "claude-opus-5-5"  # the precision model's own Claude model: Sonnet built cruder models
     max_model_cost_usd: float = 1.60  # the precision model (sub-project 6): hard cap per product, about 1.50 €
     max_models_session: int = 5  # new precision models per server run
     model_check_rounds: int = 2
@@ -85,6 +86,7 @@ class Settings:
         env = os.environ if env is None else env
         parsers: dict[str, tuple[str, Callable[[str], Any]]] = {
             "OI_MODEL": ("model", str),
+            "OI_CAD_MODEL": ("cad_model", str),
             "OI_EFFORT": ("effort", str),
             "OI_LANGUAGE": ("language", str),
             "OI_MAX_CALLS_OBJECT": ("max_calls_object", int),
@@ -102,6 +104,7 @@ class Settings:
         settings = replace(cls(), **updates)
         if settings.language not in ("de", "en"):
             raise ValueError(f"OI_LANGUAGE must be de or en, got {settings.language!r}")
-        if settings.model not in settings.prices:
-            raise ValueError(f"OI_MODEL must be one of {sorted(settings.prices)}, got {settings.model!r}")
+        for key, model in (("OI_MODEL", settings.model), ("OI_CAD_MODEL", settings.cad_model)):
+            if model not in settings.prices:
+                raise ValueError(f"{key} must be one of {sorted(settings.prices)}, got {model!r}")
         return settings

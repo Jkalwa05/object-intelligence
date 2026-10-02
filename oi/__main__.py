@@ -92,8 +92,8 @@ def main(argv: list[str] | None = None) -> None:
                      hands=HandFinder(), profiles=profiles, transcriber=transcriber,
                      models=models, compiler=compiler, model_notice=model_notice)
     url = f"http://127.0.0.1:{port}"
-    print(f"Object Intelligence: {url}  (Detektor {detector.model_name}, Modell "
-          f"{'fake' if args.fake_claude else settings.model})")
+    claude = "fake" if args.fake_claude else f"{settings.model}, 3D-Modell {settings.cad_model}"
+    print(f"Object Intelligence: {url}  (Detektor {detector.model_name}, Modell {claude})")
     if not args.no_browser:
         threading.Thread(target=open_browser_when_ready, args=(url, port), daemon=True).start()
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")

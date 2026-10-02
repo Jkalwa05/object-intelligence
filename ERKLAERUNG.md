@@ -603,7 +603,9 @@ Kostenkontrolle, Robustheit.
 ### Anatomie eines Aufrufs
 
 Ein Aufruf ist ein Paket aus diesen Teilen:
-- `model`: `claude-sonnet-5-5` (seit 2026-10-02, vorher `claude-opus-5-5`), über `OI_MODEL` änderbar;
+- `model`: `claude-sonnet-5-5` (seit 2026-10-02, vorher `claude-opus-5-5`), über `OI_MODEL` änderbar. Das
+  Präzisionsmodell (Recherche, CAD, Prüfung) nimmt sein eigenes Modell `cad_model`, also `claude-opus-5-5`
+  (`OI_CAD_MODEL`), denn Sonnet baute den Controller gröber und einmal sogar auf dem Rücken liegend;
 - ein *System-Prompt*, also die feste Anleitung;
 - das Bild und ein kurzer Text;
 - `max_tokens`;
@@ -718,6 +720,8 @@ schwarze Ränder hat und gespiegelt sein kann.
 - **Die Teile:** Jedes CAD-Teil kommt als STL-Datei vom Server (`/models/<produkt>/part-01.stl`, geladen mit
   `STLLoader`) und wird ein *Mesh* (Form + Material). Die Kanten liefert `EdgesGeometry`, die nur Kanten mit mehr als
   20° Knick zeigt. So bleiben die fein unterteilten Rundungen ruhig, und nur echte Kanten leuchten.
+- **Leuchtrand:** Ein kleiner *Shader* (Programm für die Grafikkarte) färbt jede Fläche umso grüner, je mehr sie sich
+  von dir wegdreht (*Fresnel*-Effekt). Dadurch leuchten die Ränder runder Körper, die keine Kante über 20° haben.
 - **Namensschilder:** Jedes Teil hat einen nummerierten Punkt in seiner Mitte. Große Schalen (Rahmen, Display,
   Rückglas) setzen ihren Punkt verteilt auf den Rand (`rimPoint`), damit nicht alle Schilder an einer Stelle beginnen.
   Zu sehen ist ein Schild nur, wenn sein Teil in der Liste gewählt ist: Die Render-Schleife setzt dafür in jedem Bild
@@ -993,6 +997,12 @@ Format wie „Verstandene Fehler“ in deinem Lehrplan. Jeder dieser Fehler ist 
     - Ursache: Die Rundung ist größer als die Platte dick ist; die Hülle wird entartet.
     - Lösung: Im BOSL2-Spickzettel steht der robuste Weg (`linear_extrude` + `rect(rounding=)`), und solche Fehler gehen
       in der Prüfrunde zurück an Claude.
+23. **Der Controller war ein dunkler Schatten**
+    - Symptom: Vom Körper des PS3-Controllers waren im Hologramm nur Knöpfe zu sehen, die in der Luft schwebten.
+    - Ursache: Ein runder Körper hat keine Kante mit mehr als 20° Knick, und seine Füllfarbe ist fast schwarz. Dazu
+      baute Sonnet 5.5 das Modell gröber (14 statt 21 Teile, einmal auf dem Rücken liegend), und seine Prüfrunden
+      fanden das „gut“.
+    - Lösung: Leuchtrand für runde Flächen, und das Präzisionsmodell baut wieder Opus (`OI_CAD_MODEL`).
 
 ---
 
