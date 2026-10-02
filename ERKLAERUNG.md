@@ -855,7 +855,7 @@ Der Name sagt in Worten, was gilt: Die Sitzungsgrenze schlägt „Neu prüfen“
 ### Die Testbefehle
 
 ```bash
-uv run pytest               # 327 Tests: alle Logik, kein Modell, kein Netz (ein paar Sekunden)
+uv run pytest               # 328 Tests: alle Logik, kein Modell, kein Netz (ein paar Sekunden)
 uv run pytest -m model      # lädt die echten YOLOE-Gewichte
 uv run pytest -m claude     # ein echter Claude-Aufruf, etwa 2 Cent
 uv run pytest -m scad       # der echte OpenSCAD-Compiler, auch seine Abschottung
@@ -1219,7 +1219,7 @@ Datei: `oi/builder.py`, Methoden `_build` und `_affordable`
 |---|---|
 | Python-Code (`oi/`) | etwa 5.100 Zeilen in 32 Dateien |
 | Browser-Code (`web/src/`) | etwa 2.100 Zeilen TypeScript + 700 Zeilen CSS |
-| Python-Tests | 327 (+ 5 mit echtem Modell, + 2 mit echtem OpenSCAD, + Live-Tests mit Claude) |
+| Python-Tests | 328 (+ 5 mit echtem Modell, + 2 mit echtem OpenSCAD, + Live-Tests mit Claude) |
 | Browser-Tests | 55 |
 | Commits | über 80, alle auf `main` |
 | Bilder an den Server | höchstens 12 pro Sekunde, höchstens 1280 px breit |

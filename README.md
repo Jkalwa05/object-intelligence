@@ -185,7 +185,7 @@ environment or `.env`.
 ## Tests
 
 ```bash
-uv run pytest               # 327 tests: all logic, no model, no network
+uv run pytest               # 328 tests: all logic, no model, no network
 uv run pytest -m model      # loads the real YOLOE weights
 uv run pytest -m scad       # the real OpenSCAD compiler, including its sandbox
 uv run pytest -m claude     # real Claude calls (a research call costs about 20–40 cents)
