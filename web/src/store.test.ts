@@ -103,6 +103,25 @@ test("model messages are kept per entry, and the full screen needs a ready model
   expect(applyServerMessage(s, ready("Ding 2")).models["Ding 1"]).toEqual(ready("Ding 1"));
 });
 
+test("full screen: a click on a part labels it on the model, one or several, and the labels go away together",
+  async () => {
+    const { toggleLabel, useHud } = await import("./store");
+    expect(initialState.labelled).toEqual([]); // no labels at first
+    const s = toggleLabel(toggleLabel(toggleLabel(initialState, 3), 0), 7);
+    expect(s.labelled).toEqual([3, 0, 7]);
+    expect(toggleLabel(s, 0).labelled).toEqual([3, 7]); // a second click takes the label away
+    const hud = useHud.getState();
+    hud.setFullscreen("Ding 1");
+    hud.toggleLabel(2);
+    hud.toggleLabel(5);
+    expect(useHud.getState().labelled).toEqual([2, 5]);
+    hud.clearLabels();
+    expect(useHud.getState().labelled).toEqual([]); // the button takes all of them away
+    hud.toggleLabel(1);
+    hud.setFullscreen(null);
+    expect(useHud.getState().labelled).toEqual([]); // the next full screen starts without labels
+  });
+
 describe("the sidebar", () => {
   const named = (trackId: number, name: string, level: "likely" | "unsure" | "certain" | null = "likely") =>
     ({ ...identity(trackId, `Das ist ${name}.`), display_name: name, level });

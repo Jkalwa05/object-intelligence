@@ -48,6 +48,8 @@ const TEXTS = {
   "model.rebuild": { de: "Neu bauen", en: "Build again" },
   "hologram.full": { de: "Vollbild", en: "Full screen" },
   "hologram.parts": { de: "TEILE", en: "PARTS" },
+  "hologram.choose": { de: "Zum Beschriften anklicken", en: "Click to label" },
+  "hologram.clear": { de: "Alle abwählen", en: "Clear all" },
   close: { de: "Schließen", en: "Close" },
   "tel.fpsVideo": { de: "Video", en: "Video" },
   "tel.fpsProcessed": { de: "Verarbeitet", en: "Processed" },

@@ -1,6 +1,6 @@
 // The precision model in full screen (sub-projects 5 and 6): the large CAD model with measure lines for width,
-// height and depth and a numbered name tag on every part, next to its parts, the researched dimensions with their
-// sources, and the profile. Esc or ✕ closes it.
+// height and depth, next to its parts, the researched dimensions with their sources, and the profile. A click on a
+// part in the list puts its numbered name tag on the model; "Alle abwählen" takes all of them away. Esc or ✕ closes it.
 
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -9,6 +9,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { type CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import { t, type I18nKey } from "../i18n";
 import type { IdentityMsg, Lang, ModelMsg, ProfileMsg } from "../protocol";
+import { useHud } from "../store";
 import { addLabels, loadModel, type Pin } from "./hologramScene";
 import { domain, kindText, sourceTag } from "./modelText";
 import { fitDistance, formatSize, millimetres, partSize, spread, type Vec3 } from "./shapeMath";
@@ -33,6 +34,9 @@ export default function HologramFullscreen({ model, lang, identity, profile, onC
   const canvas = useRef<HTMLCanvasElement>(null);
   const pins = useRef<Pin[]>([]);
   const measures = useRef<CSS2DObject[]>([]);
+  const labelled = useHud((s) => s.labelled);
+  const toggleLabel = useHud((s) => s.toggleLabel);
+  const clearLabels = useHud((s) => s.clearLabels);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -77,25 +81,30 @@ export default function HologramFullscreen({ model, lang, identity, profile, onC
       controls.autoRotate = true;
       controls.autoRotateSpeed = 0.8;
       const anchor = new THREE.Vector3();
-      const place = () => { // name tags keep clear of each other and of every numbered dot
-        const at = pins.current.map(({ object }) => {
+      const show = () => { // only the parts chosen in the list carry their name tag
+        const chosen = useHud.getState().labelled;
+        pins.current.forEach((p, i) => { p.object.visible = chosen.includes(i); });
+      };
+      const place = () => { // the shown name tags keep clear of each other and of every shown numbered dot
+        const shown = pins.current.filter((p) => p.object.visible);
+        const at = shown.map(({ object }) => {
           anchor.setFromMatrixPosition(object.matrixWorld).project(camera);
           return [((anchor.x + 1) / 2) * width, ((1 - anchor.y) / 2) * height];
         });
         const dots = at.map(([x, y]) => ({ x: x - DOT / 2, y: y - DOT / 2, w: DOT, h: DOT }));
-        const tags = at.map(([x, y], i) => ({ x: x + TAG_LEFT, y: y - DOT / 2, w: pins.current[i].tag.offsetWidth,
-          h: DOT }));
+        const tags = at.map(([x, y], i) => ({ x: x + TAG_LEFT, y: y - DOT / 2, w: shown[i].tag.offsetWidth, h: DOT }));
         const labels = measures.current.map((label) => { // the measure capsules, centred on their point
           anchor.setFromMatrixPosition(label.matrixWorld).project(camera);
           const w = label.element.offsetWidth, h = label.element.offsetHeight;
           return { x: ((anchor.x + 1) / 2) * width - w / 2, y: ((1 - anchor.y) / 2) * height - h / 2, w, h };
         });
-        spread(tags, TAG_GAP, [...dots, ...labels]).forEach((down, i) => pins.current[i].move(down));
+        spread(tags, TAG_GAP, [...dots, ...labels]).forEach((down, i) => shown[i].move(down));
       };
       let raf = 0;
       const loop = () => {
         raf = requestAnimationFrame(loop);
         controls.update();
+        show();
         renderer.render(scene, camera);
         labels.render(scene, camera);
         place();
@@ -132,12 +141,20 @@ export default function HologramFullscreen({ model, lang, identity, profile, onC
         <h2 className="fullscreen-name">{identity.display_name}</h2>
         <p className="fullscreen-size">{formatSize(manifest.size_mm, lang)}</p>
         <span className="tag">{sourceTag(manifest, lang)}</span>
-        <div className="card-level section">{t("hologram.parts", lang)}</div>
+        <div className="card-level section parts-head">
+          {t("hologram.parts", lang)}
+          {labelled.length > 0
+            ? <button type="button" className="pill" onClick={clearLabels}>{t("hologram.clear", lang)}</button>
+            : <span>{t("hologram.choose", lang)}</span>}
+        </div>
         <ol className="parts">
           {manifest.parts.map((part, i) => (
-            <li key={`${i}-${part.name}`} onMouseEnter={() => highlight(i)} onMouseLeave={() => highlight(null)}>
-              <span className="part-dot">{i + 1}</span>
-              <span><b>{part.name}</b><small>{formatSize(partSize(part), lang)}</small></span>
+            <li key={`${i}-${part.name}`}>
+              <button type="button" aria-pressed={labelled.includes(i)} onClick={() => toggleLabel(i)}
+                onMouseEnter={() => highlight(i)} onMouseLeave={() => highlight(null)}>
+                <span className="part-dot">{i + 1}</span>
+                <span><b>{part.name}</b><small>{formatSize(partSize(part), lang)}</small></span>
+              </button>
             </li>
           ))}
         </ol>

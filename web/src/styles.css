@@ -643,19 +643,49 @@ body {
   font-size: 12px;
 }
 
-.parts li {
+.parts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 22px;
+}
+
+.parts-head span {
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.parts-head .pill {
+  padding: 3px 10px;
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+.parts button {
   display: grid;
   grid-template-columns: 18px 1fr;
   gap: 10px;
   align-items: start;
+  width: calc(100% + 16px);
   margin: 0 -8px;
   padding: 5px 8px;
+  border: 0;
   border-radius: 10px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
   transition: background 150ms var(--ease);
 }
 
-.parts li:hover {
+.parts button:hover {
   background: var(--fill);
+}
+
+.parts button[aria-pressed="true"] {
+  background: rgba(48, 209, 88, 0.16);
 }
 
 .parts b {

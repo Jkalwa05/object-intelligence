@@ -98,7 +98,8 @@ Genau das unterscheidet ein durchdachtes AI-Produkt von einem einzelnen API-Aufr
 7. **Ab „wahrscheinlich“** erscheint der Steckbrief.
 8. **Ab „sicher“** entsteht das Präzisionsmodell (Teilprojekt 6). Der Eintrag zeigt, was gerade passiert („Recherchiere
    Maße …“, „Baue CAD-Modell …“). Danach dreht sich das CAD-Modell im Eintrag. „⤢“ öffnet es im Vollbild: mit
-   Maßlinien, einem nummerierten Schild an jedem Teil und den recherchierten Maßen samt Quelle.
+   Maßlinien und den recherchierten Maßen samt Quelle. Klickst du rechts ein Teil an, bekommt es sein nummeriertes
+   Schild im Modell.
 9. **Fragen.** Du hältst die Leertaste, fragst („Wie schwer ist das?“) und lässt los. Die Antwort steht im Eintrag und
    wird vorgelesen.
 
@@ -514,8 +515,12 @@ dem deine Entscheidungen stehen.
 - **Apple-Glas:** Dunkle, halbdurchsichtige Flächen mit Weichzeichner dahinter (`backdrop-filter: blur(30px)`) und
   haarfeinen Kanten. Die Farben sind Apples Systemfarben: Grün #30D158 für dein Objekt, Cyan #64D2FF für Hände,
   Violett #BF5AF2 für den Hintergrund. Alles steht in `web/src/styles.css`.
-- **Vollbild:** Maßlinien für Breite, Höhe und Tiefe in mm und ein nummeriertes Namensschild an jedem Teil. Rechts
-  stehen die Teileliste mit Form und Maßen, der Steckbrief und das Wissenswerte.
+- **Vollbild:** Maßlinien für Breite, Höhe und Tiefe in mm. Rechts stehen die Teileliste mit Form und Maßen, der
+  Steckbrief und das Wissenswerte.
+  - Ein Teil bekommt sein nummeriertes Namensschild im Modell erst, wenn du es in der Liste anklickst. Eins oder
+    mehrere, ein zweiter Klick nimmt das Schild wieder weg, und „Alle abwählen“ nimmt alle weg. Vorher hatte das
+    iPhone alle 25 Schilder gleichzeitig, und vom Modell war kaum noch etwas zu sehen.
+  - Die Auswahl liegt im Store (`labelled`). Jedes neue Vollbild startet ohne Schilder.
   - Schilder, die sich verdecken würden, rutschen nach unten, und eine dünne Linie führt zurück zum Teil (Funktion
     `spread` in `shapeMath.ts`, Übung 9).
   - Das Vollbild bleibt offen, auch wenn du den Gegenstand weglegst, denn sein Zustand liegt im Store, nicht im
@@ -696,8 +701,8 @@ Passt zu Phase 3 deines Lehrplans.
 - **Was:** Alles, was der Browser weiß, liegt an einer Stelle (`useHud` in `store.ts`): Tracks, Erkennungen,
   Steckbriefe, Formen, Einträge, Fragen und Einstellungen.
 - **Wie:** Neue Server-Nachrichten verarbeitet die *reine Funktion* `applyServerMessage(state, message)`: alter
-  Zustand plus Nachricht ergibt neuen Zustand. Genauso funktionieren `sidebarEntries`, `askTarget`, `fullscreenView`
-  und `pickable`.
+  Zustand plus Nachricht ergibt neuen Zustand. Genauso funktionieren `sidebarEntries`, `askTarget`, `fullscreenView`,
+  `toggleLabel` und `pickable`.
 - **Warum:** Reine Funktionen lassen sich ohne Browser testen: Eingabe rein, Ergebnis prüfen. Die meisten
   Browser-Tests (`store.test.ts`) machen genau das.
 
@@ -713,8 +718,10 @@ schwarze Ränder hat und gespiegelt sein kann.
 - **Die Teile:** Jedes CAD-Teil kommt als STL-Datei vom Server (`/models/<produkt>/part-01.stl`, geladen mit
   `STLLoader`) und wird ein *Mesh* (Form + Material). Die Kanten liefert `EdgesGeometry`, die nur Kanten mit mehr als
   20° Knick zeigt. So bleiben die fein unterteilten Rundungen ruhig, und nur echte Kanten leuchten.
-- **Namensschilder:** Jedes Teil bekommt einen nummerierten Punkt in seiner Mitte. Große Schalen (Rahmen, Display,
+- **Namensschilder:** Jedes Teil hat einen nummerierten Punkt in seiner Mitte. Große Schalen (Rahmen, Display,
   Rückglas) setzen ihren Punkt verteilt auf den Rand (`rimPoint`), damit nicht alle Schilder an einer Stelle beginnen.
+  Zu sehen ist ein Schild nur, wenn sein Teil in der Liste gewählt ist: Die Render-Schleife setzt dafür in jedem Bild
+  `visible` am Schild (Funktion `show` in `HologramFullscreen.tsx`).
 - **Steuerung:** `OrbitControls` erlaubt Drehen mit der Maus und dreht sonst langsam von selbst. Im Vollbild kommt Zoom
   dazu.
 - **Beschriftungen:** `CSS2DRenderer` setzt normale HTML-Elemente (die Maß-Kapseln und Namensschilder) an 3D-Punkte.
@@ -959,6 +966,8 @@ Format wie „Verstandene Fehler“ in deinem Lehrplan. Jeder dieser Fehler ist 
 17. **Überlappende Teilenamen**
     - Symptom: An der Kamerainsel lagen vier Namen übereinander.
     - Lösung: nummerierte Punkte, und die Schilder weichen nach unten aus (`spread`).
+    - Später zeigte das iPhone alle 25 Schilder auf einmal, und die Skizze war zu voll. Jetzt stehen nur die Schilder
+      der Teile im Modell, die du in der Liste anklickst.
 18. **Das Vollbild verschwand**
     - Symptom: Beim Weglegen des Gegenstands klappte der Eintrag zu und nahm das Vollbild mit.
     - Lösung: Der Vollbild-Zustand liegt im Store, nicht im Eintrag.

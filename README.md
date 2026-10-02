@@ -5,8 +5,8 @@ sure it is what it is, researches its exact dimensions and builds a CAD model of
 out loud.
 
 ![The precision model of an Apple iPhone 14 in full screen: a CAD model built from Apple's dimensional drawing, with
-measure lines for width, height and depth and a numbered tag on every part, next to the parts list with their
-sizes](docs/media/hologram-fullscreen.png)
+measure lines for width, height and depth and numbered tags on four parts chosen in the parts list beside
+it](docs/media/hologram-fullscreen.png)
 
 <img src="docs/media/sidebar.png" width="360" align="right" alt="The sidebar entry of the iPhone 14: certain, the
 evidence, the precision model with the source of its dimensions, and the profile">
@@ -50,8 +50,9 @@ The project was built in six sub-projects, each with its own design document:
      such as a price, and then names its sources.
    - The answer is read aloud.
 5. **Polish.** The interface is dark Apple glass.
-   - "⤢" on the model opens it in full screen, with measure lines for width, height and depth and a numbered tag on
-     every part. The parts list, the dimensions with their sources, the profile and the trivia sit beside it.
+   - "⤢" on the model opens it in full screen, with measure lines for width, height and depth. The parts list, the
+     dimensions with their sources, the profile and the trivia sit beside it. Click a part in the list to put its
+     numbered tag on the model, one part or several; one button clears them all.
    - You can start the whole program with a double-click.
 6. **Precision model.** Once an object is *certain*, the model is built from sources instead of from memory.
    - **Research:** Claude searches the manufacturer's data sheets and technical drawings. Every dimension keeps its

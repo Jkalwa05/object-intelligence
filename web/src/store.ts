@@ -15,6 +15,7 @@ export interface HudState {
   recent: string[]; // card names in the sidebar, newest first
   open: string[]; // sidebar entries opened by hand
   fullscreen: string | null; // the entry whose hologram fills the screen
+  labelled: number[]; // the parts chosen in the full-screen list: only they carry their name tag on the model
   questions: Record<string, QuestionMsg[]>; // spoken questions by entry name, oldest first
   listening: boolean; // the space bar is held: the microphone is open
   micError: string | null;
@@ -38,6 +39,7 @@ export const initialState: HudState = {
   recent: [],
   open: [],
   fullscreen: null,
+  labelled: [],
   questions: {},
   listening: false,
   micError: null,
@@ -132,6 +134,11 @@ export function toggleEntry<S extends Pick<HudState, "open">>(s: S, name: string
   return { ...s, open: s.open.includes(name) ? s.open.filter((n) => n !== name) : [...s.open, name] };
 }
 
+// The full-screen parts list: a click labels a part on the model or takes its label away again, any number at once.
+export function toggleLabel<S extends Pick<HudState, "labelled">>(s: S, part: number): S {
+  return { ...s, labelled: s.labelled.includes(part) ? s.labelled.filter((p) => p !== part) : [...s.labelled, part] };
+}
+
 const NO_QUESTIONS: QuestionMsg[] = [];
 
 // What the full-screen hologram shows: it does not depend on its entry being expanded (you put the object down to
@@ -181,6 +188,8 @@ interface HudActions {
   toggleTelemetry(): void;
   toggleEntry(name: string): void;
   setFullscreen(name: string | null): void;
+  toggleLabel(part: number): void;
+  clearLabels(): void;
   setListening(listening: boolean): void;
   setMicError(error: string | null): void;
   setFlash(text: string | null): void;
@@ -195,7 +204,9 @@ export const useHud = create<HudState & HudActions>()((set) => ({
   toggleMute: () => set((s) => ({ muted: !s.muted })),
   toggleTelemetry: () => set((s) => ({ showTelemetry: !s.showTelemetry })),
   toggleEntry: (name) => set((s) => toggleEntry(s, name)),
-  setFullscreen: (fullscreen) => set({ fullscreen }),
+  setFullscreen: (fullscreen) => set({ fullscreen, labelled: [] }), // every full screen starts without labels
+  toggleLabel: (part) => set((s) => toggleLabel(s, part)),
+  clearLabels: () => set({ labelled: [] }),
   setListening: (listening) => set({ listening }),
   setMicError: (micError) => set({ micError }),
   setFlash: (flash) => set({ flash }),
