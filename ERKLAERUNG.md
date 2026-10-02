@@ -5,7 +5,7 @@ ist aufgebaut wie dein `Road to Software Engineer`, nur für dieses eine Projekt
 lesen, darin nachschlagen und mit ihr lernen. Fachbegriffe bleiben Englisch: Beim ersten Auftauchen werden sie erklärt,
 und alle stehen noch einmal im Glossar (Abschnitt 14).
 
-Stand: 2026-10-01 · alle fünf Teilprojekte fertig · Code: https://github.com/Jkalwa05/object-intelligence
+Stand: 2026-10-02 · alle sechs Teilprojekte fertig · Code: https://github.com/Jkalwa05/object-intelligence
 
 ## Inhalt
 
@@ -15,7 +15,7 @@ Stand: 2026-10-01 · alle fünf Teilprojekte fertig · Code: https://github.com/
 3. Das große Bild: zwei Programme, ein Ziel
 4. Die Reise eines Kamerabilds, Schritt für Schritt
 5. Das Beweisbuch: wie aus Antworten eine ehrliche Stufe wird
-6. Die fünf Teilprojekte
+6. Die sechs Teilprojekte
 7. Claude richtig einsetzen (AI Engineering)
 8. Der Browser-Teil (TypeScript und React)
 9. Datenschutz: was den Mac verlässt und was nie
@@ -51,8 +51,8 @@ Stand: 2026-10-01 · alle fünf Teilprojekte fertig · Code: https://github.com/
 ## 1. Das Projekt in einem Satz
 
 Du hältst einen Gegenstand in die Kamera deines Macs. Das Programm findet ihn in deiner Hand und sagt ehrlich, wie
-sicher es weiß, was das ist. Es baut ein maßstabsgetreues 3D-Modell (das Hologramm) und beantwortet Fragen, die du laut
-stellst.
+sicher es weiß, was das ist. Es recherchiert seine genauen Maße, baut daraus ein CAD-Modell (das Hologramm) und
+beantwortet Fragen, die du laut stellst.
 
 ### Die Analogie: ein Detektivbüro
 
@@ -95,9 +95,11 @@ Genau das unterscheidet ein durchdachtes AI-Produkt von einem einzelnen API-Aufr
    Eine dünne grüne Linie verbindet die Box mit dem Eintrag.
 6. **Bei „unsicher“.** Das Programm bittet um die Ansicht, die entscheidet („Zeig mir bitte die Unterseite“). Oder du
    tippst den richtigen Kandidaten an. Dann ist er *sicher* und trägt die Plakette „von dir bestätigt“.
-7. **Ab „wahrscheinlich“.** Steckbrief und Hologramm erscheinen. „⤢“ öffnet das Hologramm im Vollbild: mit Maßlinien
-   und einem nummerierten Schild an jedem Teil.
-8. **Fragen.** Du hältst die Leertaste, fragst („Wie schwer ist das?“) und lässt los. Die Antwort steht im Eintrag und
+7. **Ab „wahrscheinlich“** erscheint der Steckbrief.
+8. **Ab „sicher“** entsteht das Präzisionsmodell (Teilprojekt 6). Der Eintrag zeigt, was gerade passiert („Recherchiere
+   Maße …“, „Baue CAD-Modell …“). Danach dreht sich das CAD-Modell im Eintrag. „⤢“ öffnet es im Vollbild: mit
+   Maßlinien, einem nummerierten Schild an jedem Teil und den recherchierten Maßen samt Quelle.
+9. **Fragen.** Du hältst die Leertaste, fragst („Wie schwer ist das?“) und lässt los. Die Antwort steht im Eintrag und
    wird vorgelesen.
 
 | Taste | Wirkung |
@@ -149,11 +151,12 @@ WebSocket ist eine stehende Leitung in beide Richtungen, wie ein Telefonat statt
 | `oi/` | der Python-Server: Pipeline, Logik, Claude, Whisper |
 | `web/src/` | der Browser-Teil: React, Overlay, Hologramm, Stimme |
 | `tests/` | Python-Tests (pytest); die Browser-Tests liegen als `*.test.ts` neben dem Code |
-| `docs/superpowers/specs/` | die Design-Dokumente der fünf Teilprojekte (Entscheidungen und Gründe) |
-| `docs/superpowers/plans/` | Bauanleitungen für die Teilprojekte 1–3 |
-| `cache/` | gespeicherte Steckbriefe und Hologramme (nicht in Git) |
+| `docs/superpowers/specs/` | die Design-Dokumente der sechs Teilprojekte (Entscheidungen und Gründe) |
+| `docs/superpowers/plans/` | Bauanleitungen für die Teilprojekte 1–3 und 6 |
+| `cache/` | gespeicherte Steckbriefe und Präzisionsmodelle (`cache/models/<produkt>/`), nicht in Git |
+| `web/scad/compile.mjs` | der CAD-Compiler: OpenSCAD als WebAssembly, von Node ausgeführt |
 | `runs/` | Protokoll jedes Claude-Aufrufs mit Bild, Antwort, Tokens, Kosten, Dauer (nicht in Git) |
-| `models/` | das Gesichtsmodell YuNet (wird beim ersten Start geladen) |
+| `models/` | das Gesichtsmodell YuNet und die CAD-Bibliothek BOSL2 (beim ersten Start geladen) |
 | `.env` | dein API-Schlüssel (nie in Git, siehe `.gitignore`) |
 | `Object Intelligence.command` | der Doppelklick-Starter |
 
@@ -403,9 +406,9 @@ von außen *nicht* unterscheidbar, hilft auch Einigkeit über mehrere Ansichten 
 
 ---
 
-## 6. Die fünf Teilprojekte
+## 6. Die sechs Teilprojekte
 
-Das Projekt wurde in fünf Teilprojekten gebaut. Jedes hat ein eigenes Design-Dokument in `docs/superpowers/specs/`, in
+Das Projekt wurde in sechs Teilprojekten gebaut. Jedes hat ein eigenes Design-Dokument in `docs/superpowers/specs/`, in
 dem deine Entscheidungen stehen.
 
 ### Teilprojekt 1: Sehen & Identifizieren
@@ -447,6 +450,8 @@ dem deine Entscheidungen stehen.
 ### Teilprojekt 3: Hologramm & Seitenleiste
 
 - **Ziel:** Ein 3D-Modell des Produkts und eine Leiste, die sich jedes Objekt merkt.
+- **Heute:** Das Grundformen-Hologramm wurde durch das Präzisionsmodell aus Teilprojekt 6 ersetzt. Die Seitenleiste
+  ist geblieben. Der Abschnitt zeigt, wie es vorher war, weil der Vergleich lehrreich ist.
 - **Hologramm vs. echter Scan:** Das Hologramm ist ein „LEGO-Nachbau aus dem Gedächtnis“. Ein Scan wäre ein „3D-Foto
   rundherum“ (Apple Object Capture). Der Scan wurde geparkt, weil das Hologramm reicht.
 - **Wie das Hologramm entsteht:**
@@ -525,6 +530,51 @@ dem deine Entscheidungen stehen.
 - **Gebaut und wieder entfernt:** das Foto des Gegenstands als Oberfläche auf dem Hologramm. Deine Entscheidung: Das
   Hologramm bleibt das reine Modell aus Grundformen. Der Abschnitt steht noch im Spec, als Protokoll.
 
+### Teilprojekt 6: Präzisionsmodell
+
+- **Ziel:** Ein 3D-Modell, auf das du technisch stolz sein kannst. Deine Idee: Sobald ein Artikel *sicher* ist,
+  recherchiert Claude seine technischen Maße und die technische Zeichnung und baut daraus das Modell.
+- **Deine Entscheidungen:**
+  - Recherche + CAD-Modell;
+  - nur Hologramm-Look;
+  - bis ca. 1,50 € pro Produkt;
+  - kein schnelles Platzhalter-Modell, nur Fortschritt;
+  - höchstens 5 neue Modelle pro Sitzung.
+- **Die Analogie:** Das alte Hologramm war ein LEGO-Nachbau aus dem Gedächtnis. Jetzt arbeitet ein Konstrukteur: Er
+  schlägt das Datenblatt nach, legt die Zeichnung des Herstellers neben sich, schreibt ein CAD-Programm und vergleicht
+  das Ergebnis mit Zeichnung und Foto.
+- **Der Ablauf** (`oi/builder.py`, ein Auftrag nach dem anderen):
+  1. **Recherche** (`oi/modelcalls.py`, mit Websuche und Web-Fetch): Heraus kommt ein *Maßblatt* (`MeasureSheet`).
+     Jede Zahl hat eine Quelle und eine Art: Zeichnung, Datenblatt oder geschätzt.
+  2. **Zeichnung** (`oi/drawings.py`, `oi/download.py`): Der Server lädt das PDF, sucht die Zeichnungsseite und
+     rendert sie als Bild. Warum macht er das selbst?
+     - Der Web-Fetch würde Claude das ganze PDF geben; laut Doku kostet schon ein PDF von 500 kB etwa 125.000
+       Tokens.
+     - Bei Apple sind die Maßzahlen Vektorgrafik: Als Text stünde auf der Seite nur „iPhone 14“. Als Bild sieht
+       Claude jede Zahl.
+  3. **CAD** (`oi/modelprompts.py`): Claude schreibt ein OpenSCAD-Programm mit der Bibliothek BOSL2, ein Block pro
+     Teil, mit Rundungen, Aussparungen und Drehkörpern.
+  4. **Geometrie** (`oi/scad.py`, `web/scad/compile.mjs`): OpenSCAD läuft als WebAssembly in Node und rechnet jedes
+     Teil in ein STL-Netz, etwa 1 s pro Teil, 4 gleichzeitig.
+  5. **Prüfung** (`oi/render.py`): Der Server rendert vier Ansichten (matplotlib). Claude vergleicht sie mit Zeichnung
+     und Foto und korrigiert, in bis zu 2 Runden.
+  6. **Speicher** (`oi/modelstore.py`): `cache/models/<produkt>/` mit den Teilen, dem Manifest und dem OpenSCAD-Code.
+- **Warum OpenSCAD und nicht Python-CAD (CadQuery) oder three.js-Code?** Claude liest bei der Recherche fremde
+  Webseiten. Eine manipulierte Seite könnte versuchen, Claude schädlichen Code schreiben zu lassen.
+  - Python- oder JavaScript-Code würde auf deinem Mac laufen.
+  - OpenSCAD ist eine reine CAD-Sprache und läuft abgeschottet in seinem eigenen Speicher. Getestet: Es kann keine
+    Datei vom Mac lesen.
+- **Sichere Downloads:** Der Server lädt nur, was die Recherche wirklich gesehen hat (oder was auf derselben Website
+  liegt). Erlaubt sind nur https, nur öffentliche Adressen, nur PDF/PNG/JPEG und nur bis zu einer Größengrenze.
+- **Gemessen am 2026-10-02 (iPhone 14):**
+  - ohne Zeichnung: 156 s und 0,40 $ (1 Prüfrunde) bzw. 175 s und 0,66 $ (2 Prüfrunden);
+  - mit Apples Maßzeichnung (2 Seiten): Recherche 52 s und 0,36 $, CAD 140 s und 0,32 $, 2 Prüfrunden 58 s und
+    0,22 $. Zusammen etwa 4,5 Minuten und 0,90 $ (≈ 0,83 €), unter der Grenze von 1,60 $.
+  - Das Modell hat 25 Teile: Rahmen, Displayglas, Notch, Kamerainsel mit Objektiven, Blitz, Apple-Logo, alle Tasten,
+    SIM-Schacht, Lightning, Schrauben, Antennenstreifen.
+- **Bausteine von GitHub:** openscad-wasm-prebuilt (OpenSCAD als WebAssembly), BOSL2, pypdfium2. Die Ideen stammen
+  von CADAM (Claude + OpenSCAD) und img2threejs (Prüfrunden mit Renders).
+
 ---
 
 ## 7. Claude richtig einsetzen (AI Engineering)
@@ -539,7 +589,9 @@ Kostenkontrolle, Robustheit.
 | Identifizieren | Ausschnitt (nur Objekt) | Kategorie, Kandidaten, Indizien, nächste Ansicht | neue Ansicht des gehaltenen Dings | 1,3–1,7 ct |
 | Szene benennen | ganzes Bild, Personen grau | Namen und Orte der Hintergrund-Dinge | einmal nach der Kalibrierung | – |
 | Steckbrief | nur Text (Produktname) | Zusammenfassung, Fakten, Erscheinung, Preis, Wissenswertes | ab „wahrscheinlich“, einmal pro Modell | ≈ 1,2 ct |
-| Hologramm | Ausschnitt + Name | Grundformen in mm | ab „wahrscheinlich“, einmal pro Modell | ≈ 1,8 ct |
+| Recherche (Präzisionsmodell) | nur der Modellname | Maßblatt mit Quellen, Zeichnungs-Kandidat | ab „sicher“, einmal pro Modell | 0,18–0,36 $ |
+| CAD (Präzisionsmodell) | Maßblatt, Zeichnungsseiten, Ausschnitt | OpenSCAD-Programm, ein Block pro Teil | danach | 0,17–0,32 $ |
+| Prüfung (Präzisionsmodell) | vier Renders, Zeichnung, Ausschnitt, Code, Fehler | Abweichungen, korrigierte Teile | bis zu 2-mal | 0,05–0,15 $ je Runde |
 | Gleiches Ding? | kleine Ausschnitte | ja/nein, welches | einmal pro neuem Objekt | 0,4–0,5 ct |
 | Frage beantworten | Text der Frage, Ausschnitt, Steckbrief, Verlauf | 1–3 Sätze, Quellen | Leertaste | ≈ 3 ct, mit Suche ≈ 10 ct |
 
@@ -625,7 +677,7 @@ Passt zu Phase 3 deines Lehrplans.
 | `hud/Overlay.tsx` | das Canvas über dem Video: Hände, Box, Namensschild, Hintergrund |
 | `hud/geometry.ts`, `hud/smoothing.ts` | Koordinaten umrechnen, Boxen gleiten lassen |
 | `hud/Sidebar.tsx`, `IdentityView.tsx`, `ProfileView.tsx`, `QuestionsView.tsx` | die Seitenleiste und ihre Teile |
-| `hud/Hologram.tsx`, `HologramFullscreen.tsx`, `hologramScene.ts`, `shapeMath.ts` | das 3D-Hologramm |
+| `hud/Hologram.tsx`, `HologramFullscreen.tsx`, `hologramScene.ts`, `shapeMath.ts`, `modelText.ts` | das Präzisionsmodell: Fortschritt, CAD-Teile, Maße, Quellen |
 | `hud/Banner.tsx`, `hud/Telemetry.tsx` | Hinweise oben, Zahlen links oben |
 | `voice/recorder.ts`, `voice/speech.ts` | Mikrofon aufnehmen; wann die Stimme spricht |
 | `i18n.ts` | alle festen Texte auf Deutsch und Englisch |
@@ -656,9 +708,11 @@ schwarze Ränder hat und gespiegelt sein kann.
 ### Das Hologramm mit three.js
 
 - **Die Bühne:** Eine *Szene* enthält das Modell, eine *Kamera* schaut darauf, ein *Renderer* malt es auf ein Canvas.
-- **Die Teile:** Jede Grundform wird ein *Mesh* (Form + Material). Die Kanten liefert `EdgesGeometry`, die nur Kanten
-  mit mehr als 10° Knick zeigt. Kugeln und Kapseln haben keine harten Kanten, deshalb bekommen sie gezeichnete Ringe
-  und Umrisse (`outlinePoints`).
+- **Die Teile:** Jedes CAD-Teil kommt als STL-Datei vom Server (`/models/<produkt>/part-01.stl`, geladen mit
+  `STLLoader`) und wird ein *Mesh* (Form + Material). Die Kanten liefert `EdgesGeometry`, die nur Kanten mit mehr als
+  20° Knick zeigt. So bleiben die fein unterteilten Rundungen ruhig, und nur echte Kanten leuchten.
+- **Namensschilder:** Jedes Teil bekommt einen nummerierten Punkt in seiner Mitte. Große Schalen (Rahmen, Display,
+  Rückglas) setzen ihren Punkt verteilt auf den Rand (`rimPoint`), damit nicht alle Schilder an einer Stelle beginnen.
 - **Steuerung:** `OrbitControls` erlaubt Drehen mit der Maus und dreht sonst langsam von selbst. Im Vollbild kommt Zoom
   dazu.
 - **Beschriftungen:** `CSS2DRenderer` setzt normale HTML-Elemente (die Maß-Kapseln und Namensschilder) an 3D-Punkte.
@@ -688,6 +742,7 @@ schwarze Ränder hat und gespiegelt sein kann.
 | dein Gesicht | **nie** | YuNet findet es lokal; ein Ausschnitt, der auf einem Gesicht liegt, wird nie geschickt |
 | dein Körper, T-Shirt, Haare, Kette | **nie** | Personen-Labels, Kopfzone, Körperzone, Regel „getragen“ |
 | Ausschnitt des Gegenstands | ja, zu Claude | nur die Pixel des Gegenstands, alles andere grau |
+| Name des Produkts (Recherche) | ja, zu Claude | für das Präzisionsmodell geht nur der Name in die Websuche |
 | ganzes Bild | einmal pro Kalibrierung | jede Person wird vorher grau übermalt |
 | deine Stimme | **nie** | Whisper läuft lokal |
 | Text deiner Frage | ja, zu Claude | nur der Text |
@@ -744,7 +799,7 @@ strukturierte Antworten auch billiger.
 |---|---|---|
 | Identifizieren | 1,3–1,7 ct | 6–10 s (einzeln auch 4,8 s) |
 | Steckbrief | ≈ 1,2 ct | 6 s |
-| Hologramm | ≈ 1,8 ct | 10 s |
+| Präzisionsmodell (einmal pro Produkt) | 0,40–0,90 $ | 2,5–4,5 min |
 | Gleiches Ding? | 0,4–0,5 ct | 3–5 s |
 | Frage | ≈ 3 ct | 4 s |
 | Frage mit Websuche | ≈ 10 ct | 14–35 s |
@@ -755,7 +810,9 @@ strukturierte Antworten auch billiger.
 - **Pro Sitzung:** höchstens 150 Aufrufe, Fragen eingeschlossen. Danach meldet sich der Hinweis „Kostenbremse
   erreicht, Identifikation pausiert.“
 - **Gleichzeitig:** höchstens 2 Aufrufe.
-- **Caches:** Steckbrief und Hologramm kosten pro Modell nur einmal, für immer.
+- **Caches:** Steckbrief und Präzisionsmodell kosten pro Modell nur einmal, für immer.
+- **Präzisionsmodell:** höchstens 1,60 $ (≈ 1,50 €) pro Produkt, höchstens 5 neue pro Sitzung. Vor jedem Schritt prüft
+  der Builder, ob das Budget noch für ihn reicht (`_affordable` in `oi/builder.py`).
 - **Neue Ansicht:** Ein Bild geht nur raus, wenn es eine neue Ansicht zeigt.
 - **Gezählt wird bei der Entscheidung,** nicht erst bei der Antwort (siehe Fehler 9).
 
@@ -798,10 +855,11 @@ Der Name sagt in Worten, was gilt: Die Sitzungsgrenze schlägt „Neu prüfen“
 ### Die Testbefehle
 
 ```bash
-uv run pytest               # 265 Tests: alle Logik, kein Modell, kein Netz (ein paar Sekunden)
+uv run pytest               # 327 Tests: alle Logik, kein Modell, kein Netz (ein paar Sekunden)
 uv run pytest -m model      # lädt die echten YOLOE-Gewichte
 uv run pytest -m claude     # ein echter Claude-Aufruf, etwa 2 Cent
-npm --prefix web test       # 51 Browser-Tests (Vitest)
+uv run pytest -m scad       # der echte OpenSCAD-Compiler, auch seine Abschottung
+npm --prefix web test       # 55 Browser-Tests (Vitest)
 ```
 
 ### Test-Driven Development (TDD)
@@ -902,6 +960,28 @@ Format wie „Verstandene Fehler“ in deinem Lehrplan. Jeder dieser Fehler ist 
 18. **Das Vollbild verschwand**
     - Symptom: Beim Weglegen des Gegenstands klappte der Eintrag zu und nahm das Vollbild mit.
     - Lösung: Der Vollbild-Zustand liegt im Store, nicht im Eintrag.
+19. **Die Zeichnung stand nicht, wo Claude sie vermutete**
+    - Symptom: Die Recherche nannte Apples großes Zubehör-Handbuch (33 MB, 404 Seiten) als Zeichnung.
+    - Ursache: Das Handbuch enthält die Geräte-Zeichnungen gar nicht mehr. Apple veröffentlicht sie getrennt, eine PDF
+      pro Gerät.
+    - Lösung: Die Recherche sucht ausdrücklich nach „<Produkt> dimensional drawing“.
+    - Lektion: Wissen aus dem Training kann veraltet sein; eine Suche findet den heutigen Stand.
+20. **Der Server lehnte die richtige Zeichnung ab**
+    - Symptom: Die Recherche fand Apples PDF, aber der Server lud sie nicht.
+    - Ursache: Der Link stand auf einer abgerufenen Übersichtsseite. Erlaubt waren nur die Adressen der Such- und
+      Abrufergebnisse selbst.
+    - Lösung: Auch Adressen auf derselben Website wie eine gesehene Seite sind erlaubt; alle anderen Regeln bleiben.
+    - Lektion: Sicherheitsregeln müssen echte Fälle durchspielen, sonst sperren sie das Richtige aus.
+21. **Die Seitensuche nahm die Vertragsseite**
+    - Symptom: Statt der Zeichnung wurde die Titel- und Vertragsseite gerendert.
+    - Ursache: In Apples PDF stehen die Maßzahlen als Vektorgrafik, als Text nur „iPhone 14“ auf jeder Seite. Die
+      Vertragsseite enthielt dieselben Wörter.
+    - Lösung: Unter gleich guten Seiten gewinnt die mit dem wenigsten Text, denn eine Zeichnung ist ein Bild.
+22. **Eine dünne, runde Platte brach OpenSCAD**
+    - Symptom: `cuboid([30, 30, 1.2], rounding=7)` endete mit „CGAL error in applyHull“.
+    - Ursache: Die Rundung ist größer als die Platte dick ist; die Hülle wird entartet.
+    - Lösung: Im BOSL2-Spickzettel steht der robuste Weg (`linear_extrude` + `rect(rounding=)`), und solche Fehler gehen
+      in der Prüfrunde zurück an Claude.
 
 ---
 
@@ -958,6 +1038,8 @@ halten fest, was gelten soll. So kann man den Code später sicher ändern, und g
 | **BoT-SORT** | Tracker: gibt jedem erkannten Ding eine Nummer, die über Bilder hinweg gleich bleibt |
 | **Bounding Box** | das Rechteck um ein Ding: x1, y1, x2, y2 |
 | **Branch / Merge / Push** | Git: Abzweigung zum Arbeiten / zusammenführen / zu GitHub hochladen |
+| **BOSL2** | Bibliothek für OpenSCAD: Rundungen, Fasen, Übergänge zwischen Querschnitten |
+| **CAD** | Computer-Aided Design: Konstruktion am Computer, hier als Programm in OpenSCAD |
 | **Cache** | Zwischenspeicher: einmal gefragt, für immer gemerkt |
 | **Canvas** | eine Zeichenfläche im Browser, auf die Code Pixel malt |
 | **Commit** | ein gespeicherter Schritt in Git, mit Nachricht |
@@ -977,10 +1059,12 @@ halten fest, was gelten soll. So kann man den Code später sicher ändern, und g
 | **Laplace-Varianz** | Maß für Schärfe: viele harte Übergänge = scharf |
 | **Latenz** | Wartezeit zwischen Anfrage und Antwort |
 | **Lazy Loading** | Code erst laden, wenn er gebraucht wird |
+| **Manifold** | schneller, robuster Geometrie-Kern in OpenSCAD (statt des alten CGAL) |
 | **MLX** | Apples Framework für Machine Learning auf Apple-Chips (hier für Whisper) |
 | **Mesh** | ein 3D-Körper in three.js: Form (Geometry) + Material |
 | **mps** | Metal Performance Shaders: die Apple-GPU für PyTorch |
 | **Normalisiert** | als Anteil 0..1 statt in Pixeln |
+| **OpenSCAD** | eine Programmiersprache für 3D-Modelle: Formen per Code, ohne Datei- oder Netzzugriff |
 | **Observability** | im Nachhinein sehen können, was ein System warum getan hat (hier: `runs/`, Telemetrie) |
 | **Open Vocabulary** | ein Detektor, der nicht auf feste Klassen beschränkt ist |
 | **PCM** | rohe Audio-Samples als Zahlen; hier 16.000 pro Sekunde, je 16 Bit |
@@ -990,6 +1074,9 @@ halten fest, was gelten soll. So kann man den Code später sicher ändern, und g
 | **pydantic** | Python-Bibliothek, die Daten gegen eine Beschreibung prüft (`oi/contracts.py`) |
 | **React / Komponente / Props** | Bibliothek für Oberflächen / ein Baustein davon / seine Eingaben |
 | **Regression** | etwas, das schon funktionierte, ist durch eine Änderung kaputtgegangen |
+| **Sandbox / abgeschottet** | ein Programm läuft in einem eigenen, geschlossenen Bereich und kommt nicht an deine Dateien |
+| **SSRF** | „Server-Side Request Forgery“: jemand bringt einen Server dazu, Adressen zu laden, die er nicht laden soll |
+| **STL** | Dateiformat für 3D-Netze: eine Liste von Dreiecken |
 | **Reine Funktion** | gleiche Eingabe → gleiche Ausgabe, keine Nebenwirkungen; leicht zu testen |
 | **Store (zustand)** | der gemeinsame Zustand des Browser-Teils |
 | **Strukturierte Ausgabe** | Claude antwortet garantiert im vorgegebenen JSON-Format |
@@ -999,6 +1086,7 @@ halten fest, was gelten soll. So kann man den Code später sicher ändern, und g
 | **Tracker / Track-ID** | verfolgt Dinge über Bilder / ihre feste Nummer |
 | **TDD** | Test-Driven Development: erst der Test (rot), dann der Code (grün) |
 | **Telemetrie** | Live-Messwerte (Taste `D`) |
+| **WebAssembly (WASM)** | ein Programmformat, das abgeschottet im Browser oder in Node läuft; hier OpenSCAD |
 | **WebSocket** | stehende Verbindung in beide Richtungen zwischen Browser und Server |
 | **Whisper** | Spracherkennungsmodell von OpenAI, hier lokal über MLX |
 | **YOLOE** | „You Only Look Once“, Variante mit offenem Vokabular; findet Dinge in einem einzigen Durchgang |
@@ -1104,17 +1192,36 @@ Datei: `oi/identify.py`: `SYSTEM_PROMPT`, `OBSERVATION_SCHEMA`, `_request`, `Cla
 4. Öffne eine JSON-Datei in `runs/` und finde: Tokens, Kosten, Dauer, Stufe danach. Rechne die Kosten nach
    (Abschnitt 10).
 
+### Übung 11: Sicherheit beim Download (Phase 2 und 5)
+
+Datei: `oi/download.py`, Funktionen `fetch` und `_check`
+
+1. Welche vier Dinge prüft der Server, bevor er etwas lädt?
+2. Warum wird nach jeder Weiterleitung noch einmal geprüft?
+3. Was bedeutet `is_global`, und welche Adressen fallen durch?
+4. Der Kommentar oben nennt eine bekannte Lücke (DNS-Rebinding). Erkläre sie in eigenen Worten und warum sie hier
+   wenig Schaden anrichten kann.
+
+### Übung 12: Der Builder und sein Budget (Phase 5)
+
+Datei: `oi/builder.py`, Methoden `_build` und `_affordable`
+
+1. In welcher Reihenfolge laufen die Schritte, und welcher Status wird jeweils gemeldet?
+2. Was passiert, wenn die Recherche scheitert? Und wenn der CAD-Aufruf scheitert?
+3. Rechne nach: Recherche kostet 0,50 $, CAD 0,50 $. Wie viele Prüfrunden passen noch unter 1,60 $?
+4. Warum werden nach einer Prüfrunde nur geänderte Teile neu kompiliert?
+
 ---
 
 ## 16. Zahlen zum Projekt
 
 | Was | Wie viel |
 |---|---|
-| Python-Code (`oi/`) | etwa 3.800 Zeilen in 23 Dateien |
-| Browser-Code (`web/src/`) | etwa 2.000 Zeilen TypeScript + 700 Zeilen CSS |
-| Python-Tests | 265 (+ 5 mit echtem Modell, + Live-Tests mit Claude), etwa 3.100 Zeilen |
-| Browser-Tests | 51 |
-| Commits | knapp 70, alle auf `main` |
+| Python-Code (`oi/`) | etwa 5.100 Zeilen in 32 Dateien |
+| Browser-Code (`web/src/`) | etwa 2.100 Zeilen TypeScript + 700 Zeilen CSS |
+| Python-Tests | 327 (+ 5 mit echtem Modell, + 2 mit echtem OpenSCAD, + Live-Tests mit Claude) |
+| Browser-Tests | 55 |
+| Commits | über 80, alle auf `main` |
 | Bilder an den Server | höchstens 12 pro Sekunde, höchstens 1280 px breit |
 | Whisper | 0,4 s für 3,7 s Sprache |
 | Identifizieren | 1,3–1,7 ct, 6–10 s |
@@ -1130,7 +1237,9 @@ Datei: `oi/identify.py`: `SYSTEM_PROMPT`, `OBSERVATION_SCHEMA`, `_request`, `Cla
   - Ein Schreibfehler im Aufruf-Log lässt den Eintrag auf „analysiere“ stehen.
   - Merkwürdige Namen bei widersprüchlichen Antworten.
   - Pfade, die vom Arbeitsordner abhängen.
-- **Der echte 3D-Scan** (Apple Object Capture) ist geparkt. Er kommt nur, wenn dir das Hologramm nicht reicht.
+- **Dein Live-Test des Präzisionsmodells** mit dem Controller und anderen Dingen: Gerade organische Formen (Griffe)
+  sind der härtere Fall als ein Handy.
+- **Der echte 3D-Scan** (Apple Object Capture) ist geparkt. Er kommt nur, wenn dir das Präzisionsmodell nicht reicht.
 
 ---
 

@@ -58,8 +58,8 @@ sicher erkannt ──▶ Recherche ──▶ Zeichnung ──▶ CAD ──▶ G
 | `failed` | Modell gerade nicht möglich. (+ Knopf „Neu bauen“) |
 | `limit` | Höchstens 5 neue Modelle pro Sitzung. |
 
-- **Dauer.** Erwartet 2–4 Minuten pro Produkt. Das ist eine Schätzung; gemessen wird sie mit den ersten echten
-  Läufen und dann hier eingetragen.
+- **Dauer.** Gemessen am 2026-10-02 (iPhone 14): 2,6–2,9 Minuten ohne Zeichnung, etwa 4,5 Minuten mit Apples
+  Maßzeichnung (Recherche 52 s, CAD 140 s, zwei Prüfrunden 58 s).
 
 ## 4. Recherche
 
@@ -234,7 +234,8 @@ Der Server lädt nur, was diese Regeln erfüllt:
   - je Prüfrunde ca. 0,22 $;
   - zusammen ca. 1 $.
 
-  Das ist geschätzt; die echten Werte kommen aus `runs/` und werden hier nachgetragen.
+  Gemessen am 2026-10-02 (iPhone 14): 0,40 $ und 0,66 $ ohne Zeichnung (1 bzw. 2 Prüfrunden), 0,90 $ mit Zeichnung
+  (Recherche 0,36 $, CAD 0,32 $, zwei Prüfrunden 0,22 $).
 - **Harte Grenze pro Produkt:** 1,60 $ (`max_model_cost_usd`, ≈ 1,50 €).
   - Vor jedem Schritt wird geprüft, ob noch Platz für ihn ist. Geschätzter Bedarf: Recherche 0,45 $, CAD 0,45 $,
     Prüfrunde 0,35 $.
@@ -318,3 +319,25 @@ Alle sind mit AGPL-3.0 vereinbar. Ideen ohne Code-Übernahme stammen aus:
   - Fortschrittstexte;
   - Plakette mit Domain oder „geschätzt“;
   - Bounding-Box-Mathematik für Schilder und Maßlinien.
+
+## 15. Nachtrag 2026-10-02: was die echten Läufe zeigten
+
+Drei echte Bauten für das iPhone 14 haben sechs Dinge aufgedeckt. Alle sind behoben und getestet.
+
+1. **Die Zeichnung steht nicht im Handbuch.** Apples Accessory Design Guidelines (33 MB) enthalten keine
+   Geräte-Zeichnungen mehr. Apple veröffentlicht eine PDF pro Gerät
+   (`developer.apple.com/download/files/accessories/dimensional-drawings/<gerät>.pdf`). Die Recherche sucht deshalb
+   ausdrücklich nach der Maßzeichnung und meldet nur Links aus ihren Ergebnissen.
+2. **Links auf gesehenen Seiten.** Die PDF stand als Link auf einer abgerufenen Übersichtsseite. Erlaubt sind jetzt
+   auch Adressen auf demselben Host wie eine gesehene Seite (4.4); alle anderen Regeln bleiben.
+3. **Zeichnungen sind Bilder.** In Apples PDF sind die Maßzahlen Vektorgrafik; als Text steht nur „iPhone 14“ auf
+   jeder Seite. Unter gleich guten Seiten gewinnt deshalb die mit dem wenigsten Text, nicht die Vertragsseite (4.3).
+4. **Lange Antworten brauchen einen Stream.** Ohne Stream blieb der CAD-Aufruf mit Zeichnung 26 Minuten hängen: Das
+   SDK wiederholt Zeitüberschreitungen automatisch zweimal, und eine stille Verbindung von über zwei Minuten kam nicht
+   zurück. Recherche, CAD und Prüfung laufen jetzt als Stream, ohne automatische Wiederholung, mit `model_timeout_s`
+   als Frist für den ganzen Aufruf. Gemessen danach: 140 s für den CAD-Aufruf mit Zeichnung.
+5. **CGAL und dünne Platten.** Ein abgerundeter Quader, der dünner ist als seine Rundung, bricht OpenSCADs Hülle. Der
+   BOSL2-Spickzettel nennt den robusten Weg (`linear_extrude` + `rect(rounding=)`).
+6. **Lesbarkeit im Vollbild.** Große Schalen setzen ihre Punkte verteilt auf den Rand. Namensschilder weichen auch den
+   Maß-Kapseln aus. Die Plakette nennt die Website ohne Subdomain („apple.com“), und dünne Teile zeigen Hundertstel.
+
