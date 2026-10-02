@@ -73,7 +73,7 @@ class Settings:
     max_model_cost_usd: float = 1.60  # the precision model (sub-project 6): hard cap per product, about 1.50 €
     max_models_session: int = 5  # new precision models per server run
     model_check_rounds: int = 2
-    model_timeout_s: float = 360.0  # research, CAD and check calls take minutes
+    model_timeout_s: float = 600.0  # deadline of a whole streamed model call (CAD with a drawing took 140 s)
     model_cache: Path = Path(__file__).resolve().parent.parent / "cache" / "models"
     models_dir: Path = Path(__file__).resolve().parent.parent / "models"  # YuNet and BOSL2 live here
     port: int = 8766
