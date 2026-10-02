@@ -143,6 +143,7 @@ WEB_SEARCH = {"type": "web_search_20260209", "name": "web_search", "max_uses": 1
 GERMANY = {"type": "approximate", "country": "DE", "timezone": "Europe/Berlin"}  # euro prices, German marketplaces
 MAX_SOURCES = 3
 SEARCH_PRICE_USD = 0.01  # 10 dollars per 1000 searches
+STREAM_IDLE_S = 120.0  # a stream that sends nothing for 2 minutes is dead (the API pings while Claude thinks)
 ASK_EFFORT = "medium"
 
 
@@ -504,17 +505,31 @@ class ClaudeIdentifier:
         text = next((block.text for block in response.content if getattr(block, "type", None) == "text"), "")
         return text, response.usage, latency
 
-    async def create(self, request: dict[str, Any], timeout_s: float | None = None) -> tuple[Any, float]:
-        """(response, latency); every failure becomes an IdentifyError. `timeout_s` overrides the usual 20 s (the
-        precision model's calls take minutes)."""
-        client = self._client.with_options(timeout=timeout_s or self._s.claude_timeout_s)
+    async def create(self, request: dict[str, Any], timeout_s: float | None = None,
+                     stream: bool = False) -> tuple[Any, float]:
+        """(response, latency); every failure becomes an IdentifyError.
+
+        `stream`: the precision model's long calls run as a stream, so a long but progressing answer never looks idle,
+        and without the SDK's automatic retries, which count a timeout as a connection error: a retried CAD call would
+        be generated, and paid, more than once. `timeout_s` is then the deadline for the whole call."""
         started = time.monotonic()
         try:
-            if "betas" in request:
-                response = await client.beta.messages.create(**request)
+            if stream:
+                client = self._client.with_options(timeout=STREAM_IDLE_S, max_retries=0)
+                messages = client.beta.messages if "betas" in request else client.messages
+
+                async def final() -> Any:
+                    async with messages.stream(**request) as running:
+                        return await running.get_final_message()
+
+                response = await asyncio.wait_for(final(), timeout_s or self._s.model_timeout_s)
             else:
-                response = await client.messages.create(**request)
-        except anthropic.APITimeoutError as error:  # subclass of APIConnectionError, so it comes first
+                client = self._client.with_options(timeout=timeout_s or self._s.claude_timeout_s)
+                if "betas" in request:
+                    response = await client.beta.messages.create(**request)
+                else:
+                    response = await client.messages.create(**request)
+        except (TimeoutError, anthropic.APITimeoutError) as error:  # APITimeoutError is an APIConnectionError
             raise IdentifyError("timeout") from error
         except anthropic.APIConnectionError as error:
             raise IdentifyError("connection") from error

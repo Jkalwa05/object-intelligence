@@ -339,11 +339,14 @@ class ClaudeModelCalls:
         self._identifier = identifier
         self._s = settings
 
+    async def _streamed(self, request: dict[str, Any]) -> tuple[Any, float]:
+        return await self._identifier.create(request, self._s.model_timeout_s, stream=True)
+
     def _cost(self, usage: Any) -> float:
         return cost_usd(self._s.model, usage.input_tokens, usage.output_tokens, self._s.prices)
 
     async def research(self, req: ResearchRequest) -> ResearchResult:
-        response, latency = await self._identifier.create(build_research_request(self._s, req), self._s.model_timeout_s)
+        response, latency = await self._streamed(build_research_request(self._s, req))
         sheet, allowed = parse_research(response.content)
         usage = response.usage
         searches = int(getattr(getattr(usage, "server_tool_use", None), "web_search_requests", 0) or 0)
@@ -353,14 +356,14 @@ class ClaudeModelCalls:
                               model=self._s.model)
 
     async def build_cad(self, req: CadRequest) -> CadResult:
-        response, latency = await self._identifier.create(build_cad_request(self._s, req), self._s.model_timeout_s)
+        response, latency = await self._streamed(build_cad_request(self._s, req))
         usage = response.usage
         return CadResult(program=parse_cad(_text(response)), input_tokens=usage.input_tokens,
                          output_tokens=usage.output_tokens, cost_usd=self._cost(usage), latency_s=latency,
                          model=self._s.model)
 
     async def check_cad(self, req: CheckRequest) -> CheckResult:
-        response, latency = await self._identifier.create(build_check_request(self._s, req), self._s.model_timeout_s)
+        response, latency = await self._streamed(build_check_request(self._s, req))
         usage = response.usage
         return CheckResult(answer=parse_check(_text(response)), input_tokens=usage.input_tokens,
                            output_tokens=usage.output_tokens, cost_usd=self._cost(usage), latency_s=latency,

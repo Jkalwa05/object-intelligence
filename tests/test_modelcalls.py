@@ -177,27 +177,69 @@ def test_scad_source_has_header_shared_and_every_part():
     assert source.index("// --- Gehäuse") < source.index("cube(w);") < source.index("// --- Linse")
 
 
-async def test_claude_model_calls_report_cost_and_use_the_model_timeout():
+class StreamClient:
+    """Stands in for the Anthropic client's streaming calls: answers `final` after `delay` seconds."""
+
+    def __init__(self, final, delay: float = 0.0) -> None:
+        from types import SimpleNamespace
+        self.final, self.delay, self.options, self.calls = final, delay, {}, []
+        self.messages = SimpleNamespace(stream=self._stream)
+        self.beta = SimpleNamespace(messages=SimpleNamespace(stream=self._stream))
+
+    def with_options(self, **options):
+        self.options = options
+        return self
+
+    def _stream(self, **kwargs):
+        self.calls.append(kwargs)
+        return self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def get_final_message(self):
+        import asyncio
+        await asyncio.sleep(self.delay)
+        return self.final
+
+
+async def test_claude_model_calls_stream_without_retries_and_report_cost():
     from types import SimpleNamespace
 
     from oi.identify import ClaudeIdentifier
-    from tests.test_identify import FakeClient, response
+    from tests.test_identify import response
     usage = SimpleNamespace(input_tokens=30000, output_tokens=2000,
                             server_tool_use=SimpleNamespace(web_search_requests=2, web_fetch_requests=1))
-    researched = SimpleNamespace(stop_reason="end_turn", usage=usage, content=answer(SHEET))
-    client = FakeClient(reply=researched)
+    client = StreamClient(SimpleNamespace(stop_reason="end_turn", usage=usage, content=answer(SHEET)))
     calls = ClaudeModelCalls(ClaudeIdentifier(Settings(), client), Settings())
     result = await calls.research(RESEARCH_REQ)
     assert result.sheet.size_mm == (71.5, 146.7, 7.8) and result.searches == 2
     assert result.cost_usd == pytest.approx(30000 * 4 / 1e6 + 2000 * 20 / 1e6 + 2 * 0.01)
-    assert client.options["timeout"] == 360.0
-    client = FakeClient(reply=response(json.dumps(CAD)))
+    assert client.options["max_retries"] == 0  # a retried CAD call would be paid twice
+    assert client.calls[0]["tools"][0]["type"] == "web_search_20260209"
+    client = StreamClient(response(json.dumps(CAD)))
     cad = await ClaudeModelCalls(ClaudeIdentifier(Settings(), client), Settings()).build_cad(cad_request())
     assert cad.program.parts[0].name == "Gehäuse" and cad.cost_usd == pytest.approx(2000 * 4 / 1e6 + 500 * 20 / 1e6)
-    client = FakeClient(reply=response(json.dumps({"verdict": "good", "issues": [], "shared": None, "parts": [],
-                                                   "remove": []})))
+    client = StreamClient(response(json.dumps({"verdict": "good", "issues": [], "shared": None, "parts": [],
+                                               "remove": []})))
     checked = await ClaudeModelCalls(ClaudeIdentifier(Settings(), client), Settings()).check_cad(check_request())
-    assert checked.answer.verdict == "good"
+    assert checked.answer.verdict == "good" and client.options["max_retries"] == 0
+
+
+async def test_a_model_call_that_runs_past_its_deadline_is_a_timeout():
+    import time
+
+    from oi.identify import ClaudeIdentifier
+    from tests.test_identify import response
+    settings = Settings(model_timeout_s=0.2)
+    client = StreamClient(response(json.dumps(CAD)), delay=5.0)
+    started = time.perf_counter()
+    with pytest.raises(IdentifyError) as error:
+        await ClaudeModelCalls(ClaudeIdentifier(settings, client), settings).build_cad(cad_request())
+    assert error.value.reason == "timeout" and time.perf_counter() - started < 2
 
 
 async def test_fake_model_calls_follow_the_script():
