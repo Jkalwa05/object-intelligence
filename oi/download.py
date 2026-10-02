@@ -1,7 +1,7 @@
 """Safe downloads of technical drawings for the precision model (sub-project 6, spec §4.4).
 
-The server only loads what the research call found itself (the URL appeared in its search or fetch results), only
-over https, only from public addresses (checked again after every redirect), only PDFs and PNG/JPEG images, and only
+The server only loads what the research call found itself (the URL appeared in its search or fetch results, or it
+lies on the same host as such a page: a PDF linked from a fetched overview page), only over https, only from public addresses (checked again after every redirect), only PDFs and PNG/JPEG images, and only
 up to a size limit. What it loads is never executed: it goes to Claude as an image.
 
 Known limit: the address is checked before httpx connects, and httpx resolves the name once more. A server that
@@ -57,7 +57,7 @@ def _is_ip(host: str) -> bool:
 async def fetch(url: str, allowed: set[str], *, transport: httpx.AsyncBaseTransport | None = None,
                 resolve: Callable[[str], list[str]] | None = None, timeout_s: float = 30.0) -> tuple[bytes, str]:
     """(body, media type) of an allowed PDF or image; every refusal or failure raises DownloadError."""
-    if url not in allowed:
+    if url not in allowed and urlsplit(url).hostname not in {urlsplit(a).hostname for a in allowed}:
         raise DownloadError("Die Recherche hat diese Adresse nicht gefunden.")
     resolve = resolve or _resolve
     try:

@@ -68,3 +68,13 @@ async def test_refuses_wrong_types_and_oversized_bodies():
             await fetch(url, {url}, transport=transport({url: response}), resolve=resolve)
     png = httpx.Response(200, headers={"content-type": "image/png; charset=binary"}, content=b"\x89PNG")
     assert await fetch(url, {url}, transport=transport({url: png}), resolve=resolve) == (b"\x89PNG", "image/png")
+
+
+async def test_a_link_on_a_page_the_research_saw_is_allowed_but_not_other_hosts():
+    seen = {"https://developer.apple.com/accessories/dimensional-drawings/"}  # the research fetched this page
+    pdf = "https://developer.apple.com/download/files/accessories/dimensional-drawings/iphone-14.pdf"
+    routes = {pdf: httpx.Response(200, headers={"content-type": "application/pdf"}, content=PDF)}
+    assert await fetch(pdf, seen, transport=transport(routes), resolve=resolve) == (PDF, "application/pdf")
+    other = "https://cdn.example/iphone-14.pdf"
+    with pytest.raises(DownloadError):
+        await fetch(other, seen, transport=transport({other: routes[pdf]}), resolve=resolve)
