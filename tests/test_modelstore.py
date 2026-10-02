@@ -55,3 +55,17 @@ def test_memory_store():
     assert store.get("Apple iPhone 14") == manifest()
     assert store.file("apple-iphone-14", "part-01.stl") == b"a"
     assert ModelStore(None).get("Apple iPhone 14") is None  # memory only: nothing shared between stores
+
+
+def test_keep_is_stored_and_listed(tmp_path):
+    store = ModelStore(tmp_path)
+    store.put(manifest(), [b"a", b"b"], "code")
+    store.put(manifest("Sony DualShock 3"), [b"c", b"d"], "code")
+    assert store.kept() == []
+    kept = store.set_kept("Apple iPhone 14", True)
+    assert kept is not None and kept.kept and store.get("Apple iPhone 14").kept
+    again = ModelStore(tmp_path)  # a restart reads it from disk
+    assert [m.model for m in again.kept()] == ["Apple iPhone 14"] and not again.get("Sony DualShock 3").kept
+    assert again.file("apple-iphone-14", "part-01.stl") == b"a"  # the parts stay
+    assert again.set_kept("Apple iPhone 14", False).kept is False and again.kept() == []
+    assert store.set_kept("Apple iPhone 15", True) is None

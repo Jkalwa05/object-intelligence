@@ -27,7 +27,7 @@ from oi.identify import IdentifyError
 from oi.measure import deviations, map_text, part_map
 from oi.mesh import bounds, read_stl, size_hint, union
 from oi.modelcalls import (CadProgram, CadRequest, CheckRequest, MeasureRequest, ModelCalls, ResearchRequest,
-                           apply_check, scad_source)
+                           SameProductRequest, apply_check, scad_source)
 from oi.modelstore import ModelStore, slug
 from oi.render import render_views
 from oi.scad import MAX_MODEL_TRIANGLES, CompiledPart, Compiler
@@ -65,6 +65,7 @@ class ModelBuilder:
         self._listeners: list[Listener] = []
         self._states: dict[str, tuple[ModelStatus, int]] = {}
         self._requests: dict[str, _Job] = {}  # the last request per model, for "Neu bauen"
+        self._aliases: dict[str, str | None] = {}  # a name -> the kept model of the same product, for this run
         self._queue: deque[_Job] = deque()
         self._worker: asyncio.Task[None] | None = None
         self._started = 0  # new models of this server run
@@ -77,16 +78,49 @@ class ModelBuilder:
         return lambda: self._listeners.remove(listener) if listener in self._listeners else None
 
     def state(self, model: str) -> tuple[ModelStatus, int, ModelManifest | None] | None:
-        """The model's status, round and (when ready) manifest; None if it was never asked for and is not stored."""
-        if (current := self._states.get(normalize(model))) is not None and current[0] != "ready":
+        """The model's status, round and (when ready) manifest. None if it was not asked for in this run and is not
+        stored as kept: a model Jonas did not keep is built anew once per run (sub-project 7)."""
+        current = self._states.get(normalize(model))
+        if current is not None and current[0] != "ready":
             return current[0], current[1], None
         manifest = self._store.get(model)
-        return ("ready", manifest.rounds, manifest) if manifest is not None else None
+        if manifest is None or (current is None and not manifest.kept):
+            return None
+        return "ready", manifest.rounds, manifest
+
+    async def kept(self, model: str) -> ModelManifest | None:
+        """The kept model of this product: under its own name, or under another name that one small call recognises
+        as the same product. That call is made once per name and run, and only when other models are kept."""
+        stored = self._store.get(model)
+        if stored is not None and stored.kept:
+            return stored
+        key = normalize(model)
+        if key not in self._aliases:
+            others = [m.model for m in self._store.kept() if normalize(m.model) != key]
+            match = None
+            if others:
+                try:
+                    match = (await self._call("same product", _Job(model, "", None), lambda: self._calls.same_product(
+                        SameProductRequest(model, others, self._s.language)), lambda r: {"match": r.match})).match
+                except IdentifyError:
+                    pass  # no answer: no match, the model is built
+            self._aliases[key] = match
+        alias = self._aliases[key]
+        found = self._store.get(alias) if alias is not None else None
+        return found if found is not None and found.kept else None
+
+    async def keep(self, model: str, kept: bool) -> None:
+        """„Behalten“ or taking it back: the store remembers it, and every connection gets the changed manifest."""
+        manifest = self._store.set_kept(model, kept)
+        if manifest is not None:
+            await self._set(manifest.model, "ready", manifest.rounds, manifest)
 
     async def request(self, model: str, category: str, jpeg: bytes | None) -> None:
-        """Build the model unless it is stored, being built, waiting, failed or over the session's limit."""
+        """Build the model unless it is kept, or was asked for in this run (being built, waiting, built, failed or
+        over the session's limit). A stored model that is not kept is built anew: the new one replaces it."""
         key = normalize(model)
-        if self._store.get(model) is not None or key in self._states:
+        stored = self._store.get(model)
+        if (stored is not None and stored.kept) or key in self._states:
             return
         self._requests[key] = _Job(model, category, jpeg)
         if self._started >= self._s.max_models_session:

@@ -941,3 +941,62 @@ async def test_rebuild_message_reaches_the_builder():
     await built.wait_idle()
     assert _model_statuses(rec)[-1] == "ready" and len(calls.cad_requests) == 2
     await pipeline.on_client_message(RebuildMsg(name="Unbekannt"))  # no such entry: nothing happens
+
+
+# --- sub-project 7: keep a model ------------------------------------------------------------------------------------
+
+async def test_an_unkept_model_is_built_anew_and_a_kept_one_shown():
+    first, store = _builder()
+    await first.request("Apple iPhone 14", "Smartphone", None)
+    await first.wait_idle()
+    built, _ = _builder(store=store)  # the next server run
+    pipeline, rec = _models(FakeIdentifier(script=[CERTAIN]), built, store)
+    await _identify_cup(pipeline)
+    await built.wait_idle()
+    assert _model_statuses(rec)[0] == "queued" and _model_statuses(rec)[-1] == "ready"
+    store.set_kept("Apple iPhone 14", True)
+    again, _ = _builder(store=store)
+    pipeline, rec = _models(FakeIdentifier(script=[CERTAIN]), again, store)
+    await _identify_cup(pipeline)
+    assert _model_statuses(rec) == ["ready"]
+
+
+async def test_a_kept_model_comes_under_another_name():
+    from oi.contracts import KeepMsg
+    from oi.modelcalls import FakeModelCalls
+    first, store = _builder()
+    await first.request("Apple iPhone 14 (2022)", "Smartphone", None)
+    await first.wait_idle()
+    store.set_kept("Apple iPhone 14 (2022)", True)
+    built, _ = _builder(FakeModelCalls(same="Apple iPhone 14 (2022)"), store)
+    pipeline, rec = _models(FakeIdentifier(script=[CERTAIN]), built, store)
+    await _identify_cup(pipeline)
+    [message] = rec.of("model")
+    assert (message.product, message.status, message.manifest.model) == ("Apple iPhone 14", "ready",
+                                                                          "Apple iPhone 14 (2022)")
+    await pipeline.on_client_message(KeepMsg(model="Apple iPhone 14 (2022)", kept=False))
+    assert rec.of("model")[-1].product == "Apple iPhone 14" and not rec.of("model")[-1].manifest.kept
+
+
+async def test_keep_message_reaches_every_connection():
+    from oi.contracts import KeepMsg
+    built, store = _builder()
+    pipeline, rec = _models(FakeIdentifier(script=[CERTAIN]), built, store)
+    await _identify_cup(pipeline)
+    await built.wait_idle()
+    second, second_rec = _models(FakeIdentifier(script=[CERTAIN]), built, store)  # another browser tab
+    await _identify_cup(second)
+    await pipeline.on_client_message(KeepMsg(model="Apple iPhone 14", kept=True))
+    assert rec.of("model")[-1].manifest.kept and second_rec.of("model")[-1].manifest.kept
+    assert store.get("Apple iPhone 14").kept
+
+
+async def test_keep_without_builder_updates_the_store():
+    from oi.contracts import KeepMsg
+    built, store = _builder()
+    await built.request("Apple iPhone 14", "Smartphone", None)
+    await built.wait_idle()
+    pipeline, rec = _models(FakeIdentifier(script=[CERTAIN]), None, store)
+    await _identify_cup(pipeline)
+    await pipeline.on_client_message(KeepMsg(model="Apple iPhone 14", kept=True))
+    assert store.get("Apple iPhone 14").kept and rec.of("model")[-1].manifest.kept

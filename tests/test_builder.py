@@ -77,15 +77,29 @@ async def test_a_good_first_check_ends_early_with_the_statuses_in_order():
     assert len(calls.check_requests[0].renders) == 4
 
 
-async def test_a_cached_model_is_not_built_again():
+async def test_unkept_model_is_rebuilt_once_per_run():
     store = ModelStore(None)
     first, _ = builder(store=store)
     await build(first)
     calls = FakeModelCalls()
+    again, events = builder(calls, store=store)  # the next server run
+    assert again.state(MODEL) is None  # stored, but not kept: not shown
+    await build(again)
+    await build(again)  # picked up again in the same run: no second build
+    assert len(calls.research_requests) == 1 and statuses(events)[-1] == "ready"
+    assert again.state(MODEL) == ("ready", 1, events[-1][3])
+
+
+async def test_kept_model_is_never_rebuilt():
+    store = ModelStore(None)
+    first, _ = builder(store=store)
+    await build(first)
+    store.set_kept(MODEL, True)
+    calls = FakeModelCalls()
     again, events = builder(calls, store=store)
     await build(again)
     assert calls.research_requests == [] and events == []
-    assert again.state(MODEL)[0] == "ready"
+    assert again.state(MODEL)[0] == "ready" and again.state(MODEL)[2].kept
 
 
 async def test_drawing_step_only_with_a_candidate():
@@ -256,3 +270,31 @@ async def test_measure_respects_the_reserve():
     await build(built, PAD)
     assert calls.measure_requests == []  # 0.95 + 0.25 + 0.45 > 1.60: the CAD could not follow the map
     assert calls.cad_requests and statuses(events, PAD)[-1] == "ready"
+
+
+async def test_kept_matches_other_names_once():
+    store = ModelStore(None)
+    first, _ = builder(store=store)
+    await build(first, PAD)
+    store.set_kept(PAD, True)
+    calls = FakeModelCalls(same=PAD)
+    again, _ = builder(calls, store=store)
+    assert (await again.kept("Sony PlayStation 3 DualShock 3")).model == PAD
+    assert (await again.kept("Sony PlayStation 3 DualShock 3")).model == PAD  # asked once per name and run
+    assert len(calls.same_requests) == 1 and calls.same_requests[0].candidates == [PAD]
+    assert (await again.kept(PAD)).model == PAD and len(calls.same_requests) == 1  # its own name: no call
+    store.set_kept(PAD, False)
+    assert await again.kept("Sony PlayStation 3 DualShock 3") is None  # no longer kept
+    lonely = FakeModelCalls(same=PAD)
+    alone, _ = builder(lonely)  # nothing is kept
+    assert await alone.kept("Sony PlayStation 3 DualShock 3") is None and lonely.same_requests == []
+
+
+async def test_keep_reaches_every_listener():
+    store = ModelStore(None)
+    built, events = builder(store=store)
+    await build(built)
+    await built.keep(MODEL, True)
+    assert events[-1][1:3] == ("ready", 1) and events[-1][3].kept and store.get(MODEL).kept
+    await built.keep("Unbekannt", True)  # nothing stored under that name: nothing happens
+    assert events[-1][3].model == MODEL

@@ -19,7 +19,8 @@ import numpy as np
 from oi import appearance, lines
 from oi.belief import Belief, Product
 from oi.config import Settings
-from oi.contracts import (AnyClientMsg, AskMsg, BeliefState, ConfirmMsg, FocusMsg, IdentityMsg, Level, ModelManifest,
+from oi.contracts import (AnyClientMsg, AskMsg, BeliefState, ConfirmMsg, FocusMsg, IdentityMsg, KeepMsg, Level,
+                          ModelManifest,
                           ModelMsg, ModelStatus, NoticeMsg, ProductProfile, ProfileMsg, QuestionMsg, RebuildMsg,
                           RecalibrateMsg, SceneItemWire, SceneMsg, ServerMsg, Status, Track, TracksMsg, WireTrack)
 from oi.faces import FaceFinder
@@ -212,6 +213,8 @@ class Pipeline:
         elif isinstance(message, RebuildMsg):
             if self._builder is not None and (model := self._model_of.get(message.name)) is not None:
                 await self._builder.rebuild(model)
+        elif isinstance(message, KeepMsg):
+            await self._keep(message)
         elif isinstance(message, AskMsg):
             self._questions += 1
             task = asyncio.create_task(self._ask(self._questions, message))
@@ -533,24 +536,36 @@ class Pipeline:
     # --- the precision model (sub-project 6) -----------------------------------------------------------------------
 
     async def _want_model(self, product: Product, jpeg: bytes | None) -> None:
-        """A certain product: its precision model comes from the store at once, or the builder reports where it
-        stands, or it is asked to build it. Every sidebar name of the model hears all later progress."""
+        """A certain product: a kept precision model comes at once (also one kept under another name of the same
+        product), or the builder reports where it stands, or it is asked to build it (sub-project 7, spec §7).
+        Without a builder, a stored model is shown as it is. Every sidebar name of the model hears all later
+        progress."""
         names = self._model_names.setdefault(normalize(product.model), set())
         if product.name in names:
             return
         names.add(product.name)
         self._model_of[product.name] = product.model
-        stored = self._models.get(product.model) if self._models is not None else None
-        if stored is not None:
-            await self._emit(ModelMsg(product=product.name, status="ready", round=stored.rounds, manifest=stored))
-            return
         if self._builder is None:
+            stored = self._models.get(product.model) if self._models is not None else None
+            if stored is not None:
+                await self._emit(ModelMsg(product=product.name, status="ready", round=stored.rounds, manifest=stored))
+            return
+        if (kept := await self._builder.kept(product.model)) is not None:
+            self._model_names.setdefault(normalize(kept.model), set()).add(product.name)  # keep messages reach it
+            await self._emit(ModelMsg(product=product.name, status="ready", round=kept.rounds, manifest=kept))
             return
         if (state := self._builder.state(product.model)) is not None:
             status, round_, manifest = state
             await self._emit(ModelMsg(product=product.name, status=status, round=round_, manifest=manifest))
             return
         await self._builder.request(product.model, product.category, jpeg)
+
+    async def _keep(self, message: KeepMsg) -> None:
+        """„Behalten“: through the builder every connection hears it; without one, only this connection."""
+        if self._builder is not None:
+            await self._builder.keep(message.model, message.kept)
+        elif self._models is not None and (manifest := self._models.set_kept(message.model, message.kept)):
+            await self._on_model(manifest.model, "ready", manifest.rounds, manifest)
 
     async def _on_model(self, model: str, status: ModelStatus, round_: int, manifest: ModelManifest | None) -> None:
         for name in sorted(self._model_names.get(normalize(model), set())):

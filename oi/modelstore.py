@@ -57,6 +57,29 @@ class ModelStore:
         except OSError:
             log.warning("could not write the model %s, keeping it in memory", folder)
 
+    def set_kept(self, model: str, kept: bool) -> ModelManifest | None:
+        """„Behalten“ (sub-project 7): the stored model's manifest with `kept` set and written back; None if the
+        model is not stored."""
+        manifest = self.get(model)
+        if manifest is None:
+            return None
+        changed = manifest.model_copy(update={"kept": kept})
+        self._memory[changed.slug] = (changed, self._memory[changed.slug][1])
+        if self._root is not None:
+            try:
+                _write(self._root / changed.slug / MANIFEST, changed.model_dump_json(indent=2).encode())
+            except OSError:
+                log.warning("could not write the kept flag of %s, keeping it in memory", changed.slug)
+        return changed
+
+    def kept(self) -> list[ModelManifest]:
+        """Every kept model, in memory and on disk."""
+        if self._root is not None and self._root.is_dir():
+            for folder in sorted(self._root.iterdir()):
+                if folder.is_dir() and SLUG.fullmatch(folder.name):
+                    self._load(folder.name)
+        return [manifest for manifest, _ in self._memory.values() if manifest.kept]
+
     def file(self, slug_: str, name: str) -> bytes | None:
         """A file of a stored model, only if its manifest lists it (or it is the OpenSCAD source)."""
         if not SLUG.fullmatch(slug_):
