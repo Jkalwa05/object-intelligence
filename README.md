@@ -77,7 +77,8 @@ The project was built in six sub-projects, each with its own design document:
 - **Costs are bounded and visible.** At most 4 calls per object and 150 per session, answers included. A precision
   model may cost at most 1.60 $ (about 1.50 €), and at most 5 new ones are built per session. Every call is logged in
   `runs/` with its crop, answer, tokens, cost and latency. Profiles and precision models are cached per model in
-  `cache/`, so each is paid once, ever. Measured with Claude Opus 5.5:
+  `cache/`, so each is paid once, ever. The default model is Claude Sonnet 5.5 with effort *high*: one
+  identification took 6 s and 0.77 ct. The table was measured with Claude Opus 5.5:
 
   | Call | Cost | Time |
   |---|---|---|
@@ -179,7 +180,7 @@ runs in local mode with boxes, IDs and coarse labels only.
 | `R` | calibrate the background again |
 | `Esc` | close the full-screen model |
 
-Settings such as `OI_MODEL=claude-sonnet-5-5` (faster), `OI_LANGUAGE=en` or `OI_MAX_CALLS_SESSION` are read from the
+Settings such as `OI_MODEL=claude-opus-5-5`, `OI_EFFORT=low`, `OI_LANGUAGE=en` or `OI_MAX_CALLS_SESSION` are read from the
 environment or `.env`.
 
 ## Tests

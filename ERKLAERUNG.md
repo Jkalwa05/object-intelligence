@@ -598,7 +598,7 @@ Kostenkontrolle, Robustheit.
 ### Anatomie eines Aufrufs
 
 Ein Aufruf ist ein Paket aus diesen Teilen:
-- `model`: `claude-opus-5-5`, über `OI_MODEL` änderbar;
+- `model`: `claude-sonnet-5-5` (seit 2026-10-02, vorher `claude-opus-5-5`), über `OI_MODEL` änderbar;
 - ein *System-Prompt*, also die feste Anleitung;
 - das Bild und ein kurzer Text;
 - `max_tokens`;
@@ -630,7 +630,9 @@ Auszüge aus dem System-Prompt (`SYSTEM_PROMPT` in `oi/identify.py`):
 
 ### Effort: wie gründlich Claude nachdenkt
 
-- **`low`** für das Identifizieren: schnell und günstig. Genauer wird es durch mehrere Ansichten, nicht durch längeres
+- **`high`** für das Identifizieren, seit 2026-10-02 (`OI_EFFORT`, vorher `low`). Mit Sonnet 5.5 dauerte ein Aufruf
+  6 s und kostete 0,77 ct, so schnell wie vorher Opus mit `low` und etwa halb so teuer.
+- Vorher galt **`low`**: schnell und günstig. Genauer wird es durch mehrere Ansichten, nicht durch längeres
   Nachdenken.
 - **`medium`** für Fragen: Bei `low` hat Claude nötige Websuchen ausgelassen (siehe Fehler 13).
 

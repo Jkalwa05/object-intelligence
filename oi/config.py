@@ -29,8 +29,8 @@ def _parse_bool(value: str) -> bool:
 
 @dataclass(frozen=True)
 class Settings:
-    model: str = "claude-opus-5-5"
-    effort: str = "low"
+    model: str = "claude-sonnet-5-5"
+    effort: str = "high"
     language: Lang = "de"
     max_calls_object: int = 4
     max_calls_session: int = 150

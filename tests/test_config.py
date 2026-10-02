@@ -5,7 +5,7 @@ from oi.config import Settings
 
 def test_defaults_match_spec():
     s = Settings()
-    assert (s.model, s.effort, s.language) == ("claude-opus-5-5", "low", "de")
+    assert (s.model, s.effort, s.language) == ("claude-sonnet-5-5", "high", "de")  # since 2026-10-02
     assert (s.max_calls_object, s.max_calls_session, s.max_concurrent_calls) == (4, 150, 2)
     assert (s.min_sharpness, s.dhash_min_distance, s.crop_long_edge, s.port) == (60.0, 14, 1024, 8766)
     assert s.focus_weights == (0.30, 0.20, 0.25, 0.15, 0.10)

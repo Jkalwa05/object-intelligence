@@ -10,6 +10,9 @@ from oi.identify import (OBSERVATION_SCHEMA, ClaudeIdentifier, FakeIdentifier, I
                          build_request, choose_identifier, format_history)
 from tests.helpers import cand, obs
 
+# The cost and request tests use fixed Opus prices and effort: independent of the default model.
+OPUS = Settings(model="claude-opus-5-5", effort="low")
+
 REQ = IdentifyRequest(jpeg=b"\xff\xd8crop", coarse_label="cup", history="none", pending_view=None, language="de")
 OBS = {"category": "Smartphone", "readable_text": [], "distinguishable": True, "next_view": None,
        "self_assessment": "medium", "generic_description": None,
@@ -85,7 +88,7 @@ def test_pending_view_is_mentioned():
 
 
 def test_opus_request_has_effort_schema_and_default_fallback():
-    r = build_request(Settings(), REQ)
+    r = build_request(OPUS, REQ)
     assert r["model"] == "claude-opus-5-5" and "German" in r["system"]
     assert r["output_config"]["effort"] == "low" and r["output_config"]["format"]["schema"] is OBSERVATION_SCHEMA
     assert r["betas"] == ["server-side-fallback-2026-07-01"] and r["fallbacks"] == "default"
@@ -99,7 +102,7 @@ def test_haiku_request_has_no_effort_or_fallback():
 
 async def test_parses_valid_response_and_computes_cost():
     client = FakeClient(reply=response(json.dumps(OBS)))
-    result = await ClaudeIdentifier(Settings(), client).identify(REQ)
+    result = await ClaudeIdentifier(OPUS, client).identify(REQ)
     assert result.observation.candidates[0].model_name == "iPhone 14"
     assert result.cost_usd == pytest.approx(0.018)
     assert (result.input_tokens, result.output_tokens, result.model) == (2000, 500, "claude-opus-5-5")
@@ -138,15 +141,15 @@ async def test_fake_identifier_script_and_canned_phone():
 
 
 async def test_choose_identifier_modes():
-    identifier, notice, mode = await choose_identifier(Settings(), fake=True)
+    identifier, notice, mode = await choose_identifier(OPUS, fake=True)
     assert isinstance(identifier, FakeIdentifier) and (notice, mode) == (None, "hybrid")
-    identifier, notice, mode = await choose_identifier(Settings(), False, lambda: FakeClient(retrieve_error=_NoKey()))
+    identifier, notice, mode = await choose_identifier(OPUS, False, lambda: FakeClient(retrieve_error=_NoKey()))
     assert (identifier, notice, mode) == (None, "Kein API-Key: nur lokale Erkennung.", "lokal")
-    identifier, notice, mode = await choose_identifier(Settings(), False, lambda: FakeClient(retrieve_error=_Missing()))
+    identifier, notice, mode = await choose_identifier(OPUS, False, lambda: FakeClient(retrieve_error=_Missing()))
     assert (identifier, mode) == (None, "lokal") and "claude-opus-5-5" in notice
-    identifier, notice, mode = await choose_identifier(Settings(), False, lambda: FakeClient(retrieve_error=_Offline()))
+    identifier, notice, mode = await choose_identifier(OPUS, False, lambda: FakeClient(retrieve_error=_Offline()))
     assert isinstance(identifier, ClaudeIdentifier) and (notice, mode) == ("Claude gerade nicht erreichbar.", "hybrid")
-    identifier, notice, mode = await choose_identifier(Settings(), False, lambda: FakeClient())
+    identifier, notice, mode = await choose_identifier(OPUS, False, lambda: FakeClient())
     assert isinstance(identifier, ClaudeIdentifier) and (notice, mode) == (None, "hybrid")
 
 
@@ -206,7 +209,7 @@ def test_scene_answer_that_is_no_json_is_a_schema_error():
 
 async def test_scene_call_reports_cost_like_an_identification():
     client = FakeClient(reply=response(json.dumps({"items": [{"name": "Pendelleuchte", "box": [367, 38, 475, 338]}]})))
-    result = await ClaudeIdentifier(Settings(), client).describe_scene(SCENE_REQ)
+    result = await ClaudeIdentifier(OPUS, client).describe_scene(SCENE_REQ)
     assert [i.label for i in result.items] == ["Pendelleuchte"]
     assert result.cost_usd == pytest.approx(0.018) and result.model == "claude-opus-5-5"
 
@@ -263,7 +266,7 @@ def test_unknown_product_gives_an_empty_profile():
 
 async def test_profile_call_reports_cost():
     client = FakeClient(reply=response(json.dumps(PROFILE)))
-    result = await ClaudeIdentifier(Settings(), client).describe_product(PRODUCT_REQ)
+    result = await ClaudeIdentifier(OPUS, client).describe_product(PRODUCT_REQ)
     assert result.profile.facts[0].value == "A15 Bionic" and result.cost_usd == pytest.approx(0.018)
 
 
@@ -346,7 +349,7 @@ async def test_a_search_adds_its_price():
                             usage=SimpleNamespace(input_tokens=2000, output_tokens=500,
                                                   server_tool_use=SimpleNamespace(web_search_requests=2)),
                             content=[SimpleNamespace(type="text", text="Etwa 350 Euro.", citations=None)])
-    result = await ClaudeIdentifier(Settings(), FakeClient(reply=reply)).answer(ASK_REQ)
+    result = await ClaudeIdentifier(OPUS, FakeClient(reply=reply)).answer(ASK_REQ)
     assert result.answer == "Etwa 350 Euro." and result.searches == 2
     assert result.cost_usd == pytest.approx(0.018 + 0.02)
 

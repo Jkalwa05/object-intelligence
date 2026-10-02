@@ -7,6 +7,9 @@ from oi.config import Settings
 from oi.identify import IdentifyError
 from oi.modelcalls import ResearchRequest, build_research_request, parse_research
 
+# The cost and request tests use fixed Opus prices and effort: independent of the default model.
+OPUS = Settings(model="claude-opus-5-5", effort="low")
+
 RESEARCH_REQ = ResearchRequest(model="Apple iPhone 14", category="Smartphone", language="de")
 SHEET = {
     "size_mm": [71.5, 146.7, 7.8], "size_source": 0,
@@ -214,18 +217,18 @@ async def test_claude_model_calls_stream_without_retries_and_report_cost():
     usage = SimpleNamespace(input_tokens=30000, output_tokens=2000,
                             server_tool_use=SimpleNamespace(web_search_requests=2, web_fetch_requests=1))
     client = StreamClient(SimpleNamespace(stop_reason="end_turn", usage=usage, content=answer(SHEET)))
-    calls = ClaudeModelCalls(ClaudeIdentifier(Settings(), client), Settings())
+    calls = ClaudeModelCalls(ClaudeIdentifier(OPUS, client), OPUS)
     result = await calls.research(RESEARCH_REQ)
     assert result.sheet.size_mm == (71.5, 146.7, 7.8) and result.searches == 2
     assert result.cost_usd == pytest.approx(30000 * 4 / 1e6 + 2000 * 20 / 1e6 + 2 * 0.01)
     assert client.options["max_retries"] == 0  # a retried CAD call would be paid twice
     assert client.calls[0]["tools"][0]["type"] == "web_search_20260209"
     client = StreamClient(response(json.dumps(CAD)))
-    cad = await ClaudeModelCalls(ClaudeIdentifier(Settings(), client), Settings()).build_cad(cad_request())
+    cad = await ClaudeModelCalls(ClaudeIdentifier(OPUS, client), OPUS).build_cad(cad_request())
     assert cad.program.parts[0].name == "Gehäuse" and cad.cost_usd == pytest.approx(2000 * 4 / 1e6 + 500 * 20 / 1e6)
     client = StreamClient(response(json.dumps({"verdict": "good", "issues": [], "shared": None, "parts": [],
                                                "remove": []})))
-    checked = await ClaudeModelCalls(ClaudeIdentifier(Settings(), client), Settings()).check_cad(check_request())
+    checked = await ClaudeModelCalls(ClaudeIdentifier(OPUS, client), OPUS).check_cad(check_request())
     assert checked.answer.verdict == "good" and client.options["max_retries"] == 0
 
 
