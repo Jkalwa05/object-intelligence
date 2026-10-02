@@ -212,7 +212,8 @@
             "url": "https://developer.apple.com/accessories/guidelines.pdf"
           }
         ],
-        "drawing": null
+        "drawing": null,
+        "photos": []
       },
       "drawing_pages": [
         212
@@ -221,7 +222,9 @@
       "verdict": "good",
       "rounds": 1,
       "cost_usd": 0.92,
-      "created": "2026-10-01T22:00:00"
+      "created": "2026-10-01T22:00:00",
+      "kept": false,
+      "part_map": []
     }
   },
   {

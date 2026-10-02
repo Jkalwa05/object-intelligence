@@ -263,6 +263,14 @@ class DrawingRef(_Model):
     find: str  # words that stand on the right PDF page, e.g. "iPhone 14 Dimensional Drawing"
 
 
+PhotoView = Literal["front", "back", "side-front-left", "side-front-right", "top"]
+
+
+class PhotoRef(_Model):
+    url: str  # a product photo the research found (sub-project 7)
+    view: PhotoView  # "side-front-left": seen from the side, the front faces left; "top": the front edge at the bottom
+
+
 class MeasureSheet(_Model):
     """What the research found out about a product's dimensions, every number with its source (spec §4.2)."""
 
@@ -272,11 +280,25 @@ class MeasureSheet(_Model):
     features: list[str]
     sources: list[Source]
     drawing: DrawingRef | None
+    photos: list[PhotoRef] = []  # reference photos (sub-project 7); sheets from before have none
 
     @classmethod
     def estimated(cls) -> MeasureSheet:
         """Nothing researched: every dimension of the model is Claude's estimate."""
         return cls(size_mm=None, size_source=None, measures=[], features=[], sources=[], drawing=None)
+
+
+Range = tuple[float, float]
+
+
+class MeasuredPart(_Model):
+    """One part as measured on the reference images, in mm from the centre of the product (sub-project 7)."""
+
+    name: str
+    x: Range | None  # left to right
+    y: Range | None  # bottom to top
+    z: Range | None  # back to front
+    views: int  # how many views measured it
 
 
 class ModelPart(_Model):
@@ -302,10 +324,12 @@ class ModelManifest(_Model):
     rounds: int
     cost_usd: float
     created: str
+    kept: bool = False  # Jonas keeps it: shown again instead of being built anew (sub-project 7)
+    part_map: list[MeasuredPart] = []  # the parts measured on the reference images
 
 
-ModelStatus = Literal["queued", "researching", "drawing", "modeling", "building", "checking", "ready", "failed",
-                      "limit"]
+ModelStatus = Literal["queued", "researching", "drawing", "measuring", "modeling", "building", "checking",
+                      "ready", "failed", "limit"]
 
 
 class ModelMsg(_ServerMsg):
@@ -374,7 +398,15 @@ class RebuildMsg(_Model):
     name: str
 
 
-AnyClientMsg = FocusMsg | RecheckMsg | RecalibrateMsg | ConfirmMsg | AskMsg | RebuildMsg
+class KeepMsg(_Model):
+    """„Behalten“: the shown precision model is kept and comes again; False takes that back (sub-project 7)."""
+
+    type: Literal["keep"] = "keep"
+    model: str  # manifest.model of the shown model
+    kept: bool
+
+
+AnyClientMsg = FocusMsg | RecheckMsg | RecalibrateMsg | ConfirmMsg | AskMsg | RebuildMsg | KeepMsg
 ClientMsg = Annotated[AnyClientMsg, Field(discriminator="type")]
 _client_messages: TypeAdapter[AnyClientMsg] = TypeAdapter(ClientMsg)
 

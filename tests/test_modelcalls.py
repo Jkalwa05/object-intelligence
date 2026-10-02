@@ -56,6 +56,31 @@ def test_parse_research_reads_the_json_and_the_allowed_urls():
     assert parse_research(two)[0].size_mm == (71.5, 146.7, 7.8)
 
 
+def test_research_reads_photos():
+    photos = [{"url": "https://a/1.png", "view": "front"}, {"url": "http://a/2.png", "view": "back"},
+              {"url": "https://a/3.png", "view": "bottom"}, {"view": "top"},
+              {"url": "https://a/4.webp", "view": "side-front-left"}, {"url": "https://a/5.png", "view": "top"},
+              {"url": "https://a/6.png", "view": "back"}, {"url": "https://a/7.png", "view": "front"}]
+    sheet, _ = parse_research(answer({**SHEET, "photos": photos}))
+    assert [(p.url, p.view) for p in sheet.photos] == [
+        ("https://a/1.png", "front"), ("https://a/4.webp", "side-front-left"), ("https://a/5.png", "top"),
+        ("https://a/6.png", "back")]
+    assert parse_research(answer(SHEET))[0].photos == []
+
+
+def test_links_in_fetched_pages_are_found():
+    blocks = answer(SHEET)
+    page = NS(type="document", source=NS(type="text", media_type="text/plain",
+              data="Drawing ![x](https://cdn.example.com/d.svg) and photo https://cdn.example.com/p.webp. "
+                   "Old http://old.example.com/a.png"))
+    fetched = NS(type="web_fetch_result", url="https://www.dimensions.com/e/ds3", content=page)
+    blocks.insert(2, NS(type="web_fetch_tool_result", content=fetched))
+    _, allowed = parse_research(blocks)
+    assert {"https://cdn.example.com/d.svg", "https://cdn.example.com/p.webp",
+            "https://www.dimensions.com/e/ds3"} <= allowed  # a drawing on a CDN, linked from the fetched page
+    assert not any(url.startswith("http://") for url in allowed)
+
+
 def test_parse_research_clips_and_repairs():
     messy = {
         **SHEET, "size_source": 7,

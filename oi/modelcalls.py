@@ -15,7 +15,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal, Protocol
 
 from oi.config import Lang, Settings
-from oi.contracts import DrawingRef, Measure, MeasureSheet, Source
+from oi.contracts import DrawingRef, Measure, MeasureSheet, PhotoRef, Source
 from oi.drawings import Picture
 from oi.identify import (GERMANY, SEARCH_PRICE_USD, ClaudeIdentifier, IdentifyError, _clip, _image, _language,
                          _with_content, cost_usd)
@@ -81,7 +81,13 @@ def _get(item: Any, key: str) -> Any:
     return item.get(key) if isinstance(item, dict) else getattr(item, key, None)
 
 
+LINK = re.compile(r"https://[^\s\"'<>()\[\]]+")  # a link in the text of a fetched page
+PHOTO_VIEWS = ("front", "back", "side-front-left", "side-front-right", "top")
+MAX_PHOTOS = 4
+
+
 def _found_urls(blocks: list[Any]) -> set[str]:
+    """Search results, fetched pages and the https links written on those pages (a drawing on a CDN)."""
     urls: set[str] = set()
     for block in blocks:
         kind, content = _get(block, "type"), _get(block, "content")
@@ -90,6 +96,9 @@ def _found_urls(blocks: list[Any]) -> set[str]:
         elif kind == "web_fetch_tool_result" and _get(content, "type") == "web_fetch_result":
             if isinstance(url := _get(content, "url"), str):
                 urls.add(url)
+            page = _get(_get(_get(content, "content"), "source"), "data")
+            if isinstance(page, str):
+                urls |= {link.rstrip(".,;:") for link in LINK.findall(page)}
     return urls
 
 
@@ -130,13 +139,16 @@ def parse_research(blocks: list[Any]) -> tuple[MeasureSheet, set[str]]:
     ref = (DrawingRef(url=drawing["url"], find=_clip(drawing.get("find") or "", 120))
            if isinstance(drawing, dict) and isinstance(drawing.get("url"), str) and drawing["url"].startswith("https://")
            else None)
+    photos = [PhotoRef(url=p["url"], view=p["view"]) for p in data.get("photos") or []
+              if isinstance(p, dict) and isinstance(p.get("url"), str) and p["url"].startswith("https://")
+              and p.get("view") in PHOTO_VIEWS][:MAX_PHOTOS]
     sheet = MeasureSheet(
         size_mm=tuple(numbers) if None not in numbers else None,  # type: ignore[arg-type]
         size_source=_index(data.get("size_source"), len(sources)),
         measures=measures[:MAX_MEASURES],
         features=[_clip(f, 200) for f in data.get("features") or [] if isinstance(f, str) and _clip(f, 200)
                   ][:MAX_FEATURES],
-        sources=sources, drawing=ref)
+        sources=sources, drawing=ref, photos=photos)
     return sheet, _found_urls(blocks)
 
 

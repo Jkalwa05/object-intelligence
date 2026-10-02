@@ -97,6 +97,23 @@ def test_model_message_travels():
                                                     sources=[], drawing=None)
 
 
+def test_old_manifest_still_loads():
+    from oi.contracts import ModelManifest
+    old = {"model": "Apple iPhone 14", "slug": "apple-iphone-14", "parts": [], "size_mm": [71.5, 146.7, 7.8],
+           "sheet": {"size_mm": None, "size_source": None, "measures": [], "features": [], "sources": [],
+                     "drawing": None},
+           "drawing_pages": [], "notes": "", "verdict": "good", "rounds": 1, "cost_usd": 0.9, "created": ""}
+    manifest = ModelManifest.model_validate(old)  # written before sub-project 7
+    assert (manifest.kept, manifest.part_map, manifest.sheet.photos) == (False, [], [])
+
+
+def test_keep_is_a_client_message():
+    from oi.contracts import KeepMsg
+    assert parse_client_message('{"type":"keep","model":"Sony DualShock 3","kept":true}') == \
+        KeepMsg(model="Sony DualShock 3", kept=True)
+    assert parse_client_message('{"type":"keep","model":"Sony DualShock 3"}') is None
+
+
 def test_rebuild_is_a_client_message():
     from oi.contracts import RebuildMsg
     assert parse_client_message('{"type":"rebuild","name":"Apple iPhone 14"}') == RebuildMsg(name="Apple iPhone 14")
