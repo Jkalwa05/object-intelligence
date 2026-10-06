@@ -55,15 +55,25 @@ The project was built in six sub-projects, each with its own design document:
      numbered tag on the model, one part or several; one button clears them all.
    - You can start the whole program with a double-click.
 6. **Precision model.** Once an object is *certain*, the model is built from sources instead of from memory.
-   - **Research:** Claude searches the manufacturer's data sheets and technical drawings. Every dimension keeps its
-     source and kind: from a drawing, from a data sheet, or estimated.
-   - **Drawing:** If there is a dimensional drawing (Apple publishes one per device), the server downloads the PDF,
-     finds the page and shows it to Claude as an image.
-   - **CAD:** Claude writes an OpenSCAD program with BOSL2: rounded edges, cut-outs, turned parts, one module per part.
+   - **Research:** Claude searches the manufacturer's data sheets, technical drawings and up to 4 product photos,
+     each from one side. Every dimension keeps its source and kind: from a drawing, from a data sheet, or estimated.
+   - **Drawing and photos:** The server downloads them itself: a PDF (it finds the right page), PNG, JPEG, WebP or
+     SVG (rendered to PNG with resvg). Claude sees them as images.
+   - **Measuring:** Claude puts a box around the whole product and around every part in each straight view of the
+     drawing and the photos. One orthographic view has one scale, so the known size turns every box into
+     millimetres: the *part map*.
+   - **CAD:** Claude writes an OpenSCAD program with BOSL2: rounded edges, cut-outs, turned parts, one module per part,
+     each placed in its measured box.
      OpenSCAD runs as WebAssembly in Node, sealed off from the Mac's files.
-   - **Check:** The server renders the model from four sides, and Claude compares it with the drawing and the photo and
-     corrects it, in up to two rounds.
-   - **Cache:** The result is kept per product, so the next time it appears at once and for free.
+   - **Check:** The server renders the model from four sides and measures every built part against the part map
+     ("triangle button: 2.8 mm too far right"). Claude compares renders, drawing and photos, fixes the deviations and
+     corrects the model, in up to two rounds.
+   - **Keep:** A model you keep ("Behalten") comes back at once and for free, even when Claude names the product
+     differently. One you do not keep is built anew the next time, until you find the one you like.
+
+![The measured precision model of a Sony DualShock 3: the D-pad arrows, the buttons with their symbols, the sticks
+in their recesses and the grips, each placed by the part map measured on the dimensioned drawing from
+dimensions.com](docs/media/dualshock-measured.png)
 
 ## Principles
 
@@ -86,7 +96,7 @@ The project was built in six sub-projects, each with its own design document:
   |---|---|---|
   | Identify the object in your hand | 1.3–1.7 ct | 6–10 s |
   | Profile | about 1.2 ct | 6 s |
-  | Precision model (research, CAD, checks; once per product) | 0.40–0.90 $ | 2.5–4.5 min |
+  | Precision model (research, measuring, CAD, checks; once per product) | 0.40–1.04 $ | 2.5–4.7 min |
   | "Is this the same object?" | 0.4–0.5 ct | 3–5 s |
   | Spoken question | about 3 ct | 4 s |
   | Spoken question with web search | about 10 ct | 14–35 s |
@@ -110,7 +120,7 @@ flowchart LR
     snapshot["Sharpest snapshot, object pixels only"]
     belief["Evidence book: honest level"]
     whisper["Whisper (MLX): speech to text"]
-    builder["Precision model: research, drawing, CAD, checks"]
+    builder["Precision model: research, drawing and photos, measuring, CAD, checks"]
     scad["OpenSCAD + BOSL2 (WebAssembly in Node)"]
     cache[("cache/: profiles and models")]
   end

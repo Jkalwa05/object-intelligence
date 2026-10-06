@@ -5,7 +5,7 @@ ist aufgebaut wie dein `Road to Software Engineer`, nur für dieses eine Projekt
 lesen, darin nachschlagen und mit ihr lernen. Fachbegriffe bleiben Englisch: Beim ersten Auftauchen werden sie erklärt,
 und alle stehen noch einmal im Glossar (Abschnitt 14).
 
-Stand: 2026-10-02 · alle sechs Teilprojekte fertig · Code: https://github.com/Jkalwa05/object-intelligence
+Stand: 2026-10-02 · alle sieben Teilprojekte fertig · Code: https://github.com/Jkalwa05/object-intelligence
 
 ## Inhalt
 
@@ -15,7 +15,7 @@ Stand: 2026-10-02 · alle sechs Teilprojekte fertig · Code: https://github.com/
 3. Das große Bild: zwei Programme, ein Ziel
 4. Die Reise eines Kamerabilds, Schritt für Schritt
 5. Das Beweisbuch: wie aus Antworten eine ehrliche Stufe wird
-6. Die sechs Teilprojekte
+6. Die sieben Teilprojekte
 7. Claude richtig einsetzen (AI Engineering)
 8. Der Browser-Teil (TypeScript und React)
 9. Datenschutz: was den Mac verlässt und was nie
@@ -152,7 +152,7 @@ WebSocket ist eine stehende Leitung in beide Richtungen, wie ein Telefonat statt
 | `oi/` | der Python-Server: Pipeline, Logik, Claude, Whisper |
 | `web/src/` | der Browser-Teil: React, Overlay, Hologramm, Stimme |
 | `tests/` | Python-Tests (pytest); die Browser-Tests liegen als `*.test.ts` neben dem Code |
-| `docs/superpowers/specs/` | die Design-Dokumente der sechs Teilprojekte (Entscheidungen und Gründe) |
+| `docs/superpowers/specs/` | die Design-Dokumente der sieben Teilprojekte (Entscheidungen und Gründe) |
 | `docs/superpowers/plans/` | Bauanleitungen für die Teilprojekte 1–3 und 6 |
 | `cache/` | gespeicherte Steckbriefe und Präzisionsmodelle (`cache/models/<produkt>/`), nicht in Git |
 | `web/scad/compile.mjs` | der CAD-Compiler: OpenSCAD als WebAssembly, von Node ausgeführt |
@@ -407,9 +407,9 @@ von außen *nicht* unterscheidbar, hilft auch Einigkeit über mehrere Ansichten 
 
 ---
 
-## 6. Die sechs Teilprojekte
+## 6. Die sieben Teilprojekte
 
-Das Projekt wurde in sechs Teilprojekten gebaut. Jedes hat ein eigenes Design-Dokument in `docs/superpowers/specs/`, in
+Das Projekt wurde in sieben Teilprojekten gebaut. Jedes hat ein eigenes Design-Dokument in `docs/superpowers/specs/`, in
 dem deine Entscheidungen stehen.
 
 ### Teilprojekt 1: Sehen & Identifizieren
@@ -570,7 +570,8 @@ dem deine Entscheidungen stehen.
   - OpenSCAD ist eine reine CAD-Sprache und läuft abgeschottet in seinem eigenen Speicher. Getestet: Es kann keine
     Datei vom Mac lesen.
 - **Sichere Downloads:** Der Server lädt nur, was die Recherche wirklich gesehen hat (oder was auf derselben Website
-  liegt). Erlaubt sind nur https, nur öffentliche Adressen, nur PDF/PNG/JPEG und nur bis zu einer Größengrenze.
+  liegt). Erlaubt sind nur https, nur öffentliche Adressen, nur PDF/PNG/JPEG (seit Teilprojekt 7 auch WebP und SVG)
+  und nur bis zu einer Größengrenze.
 - **Gemessen am 2026-10-02 (iPhone 14):**
   - ohne Zeichnung: 156 s und 0,40 $ (1 Prüfrunde) bzw. 175 s und 0,66 $ (2 Prüfrunden);
   - mit Apples Maßzeichnung (2 Seiten): Recherche 52 s und 0,36 $, CAD 140 s und 0,32 $, 2 Prüfrunden 58 s und
@@ -580,6 +581,58 @@ dem deine Entscheidungen stehen.
 - **Bausteine von GitHub:** openscad-wasm-prebuilt (OpenSCAD als WebAssembly), BOSL2, pypdfium2. Die Ideen stammen
   von CADAM (Claude + OpenSCAD) und img2threejs (Prüfrunden mit Renders).
 
+### Teilprojekt 7: Vermessenes Präzisionsmodell
+
+- **Ziel:** Das iPhone war genau, der PS3-Controller nicht. Deine Worte: „Wir müssen den Controller in ganz viele
+  einzelne Bounding Boxen einteilen, dazu die Maße ziehen, weiter validieren und Bilder aus dem Internet suchen.“
+- **Die Ursache:** Die Recherche hatte eine bemaßte Zeichnung gefunden (dimensions.com). Sie war aber ein SVG auf
+  einem anderen Server, und der Download nahm nur PDF, PNG und JPEG. Deshalb schätzte Claude alle Detailmaße.
+- **Deine Entscheidungen:**
+  - Boxen und Zahlenvergleich;
+  - weiter höchstens 1,60 $ und 2 Prüfrunden;
+  - ein Modell, das du behältst, kommt immer wieder; sonst wird jedes Mal neu gebaut;
+  - die iPhones und die Kreatin-Dose sind behalten.
+- **Die Analogie:** Ein Konstrukteur misst mit dem Lineal auf der Zeichnung nach. Er kennt die Gesamtbreite
+  (160 mm) und misst, wie breit die Zeichnung ist. Daraus weiß er, wie viele Millimeter ein Zentimeter auf dem Papier
+  sind, und kann jede Taste abmessen.
+- **Der Ablauf** (neu in `oi/builder.py`):
+  1. **Fotos:** Die Recherche liefert zusätzlich bis zu 4 Produktfotos, je eine Seite (vorn, hinten, Seite, oben).
+  2. **Laden** (`oi/drawings.py`):
+     - SVG wird mit resvg zu PNG.
+     - Erlaubt sind auch Links, die auf einer gefundenen Seite stehen, etwa ein Bild auf einem CDN.
+  3. **Vermessen** (`oi/measure.py`): Claude setzt in jeder geraden Ansicht eine Box um das ganze Produkt und eine um
+     jedes Teil, als Anteile des Bildes (0 bis 1). Der Server rechnet daraus Millimeter:
+     - **Maßstab:** Bekannte Breite geteilt durch die Breite der Box in Pixeln ergibt Millimeter pro Pixel. Eine gerade
+       (orthografische) Ansicht hat in beiden Richtungen denselben Maßstab.
+     - **Perspektive erkennen:** Weichen bei der Vorderansicht die Maßstäbe aus Breite und Höhe um mehr als 12 %
+       voneinander ab, ist das Bild schräg aufgenommen. Es zählt dann nicht.
+     - **Ergebnis:** Die *Teilekarte* hält jedes Teil mit seinem Bereich auf x, y und z in mm, gemessen von der Mitte
+       des Produkts. Dasselbe Teil aus mehreren Ansichten wird gemittelt.
+  4. **CAD:** Claude baut jedes Teil der Karte mit genau diesem Namen in seine gemessene Box.
+  5. **Prüfung mit Zahlen:**
+     - Der Server kennt die Box jedes gebauten Teils genau (aus dem STL) und vergleicht sie mit der Karte.
+     - Alles, was weiter als die Toleranz daneben liegt, geht als Liste an Claude, zum Beispiel
+       „Dreieck-Taste: 4 mm daneben“.
+     - Die Toleranz ist max(1,5 mm, 2 % der Größe).
+  6. **Behalten:** Der Knopf im Vollbild setzt `kept` im Manifest.
+     - Ein behaltenes Modell kommt sofort, auch wenn Claude das Produkt anders nennt. Ob es dasselbe Produkt ist,
+       entscheidet ein kleiner Aufruf.
+     - Ein nicht behaltenes wird pro Serverlauf einmal neu gebaut.
+- **Warum misst der Server und nicht Claude in Millimetern?** Claude ist gut darin zu sagen, *wo* etwas im Bild ist.
+  Die Rechnung in Millimeter ist Mathematik, und die macht der Code jedes Mal gleich und testbar
+  (`tests/test_measure.py`).
+- **Warum zählt bei Seitenansichten die Höhe?** Die Tiefe von 55 mm misst dimensions.com ohne die Sticks, die Box geht
+  aber um die Sticks herum. Der Maßstab kommt deshalb aus der Höhe, und die Tiefe darf bis 25 % abweichen.
+- **Gemessen am 2026-10-06 (DualShock 3, mit Opus):**
+  - Recherche: 54 s und 0,47 $. Sie fand die SVG-Zeichnung, aber keine Produktfotos.
+  - Vermessen: 46 s und 0,10 $.
+  - CAD: 105 s und 0,24 $.
+  - 2 Prüfrunden: 0,22 $.
+  - Zusammen: 4,7 Minuten und 1,04 $.
+  - Ergebnis: 30 Teile, davon 24 aus drei Ansichten der Zeichnung vermessen. Nach der zweiten Runde lag nur noch
+    1 Abweichung über der Toleranz.
+  - Vorher (geschätzt): 21 bzw. 24 Teile, mit einem Steuerkreuz aus vier Klötzen.
+
 ---
 
 ## 7. Claude richtig einsetzen (AI Engineering)
@@ -587,7 +640,7 @@ dem deine Entscheidungen stehen.
 Dieser Abschnitt passt zu Phase 5 deines Lehrplans: Modell- und API-Integration, Prompts und strukturierte Ausgaben,
 Kostenkontrolle, Robustheit.
 
-### Die sechs Arten von Aufrufen
+### Die Arten von Aufrufen
 
 | Aufruf | Bekommt | Liefert | Wann | Kosten |
 |---|---|---|---|---|
@@ -596,7 +649,9 @@ Kostenkontrolle, Robustheit.
 | Steckbrief | nur Text (Produktname) | Zusammenfassung, Fakten, Erscheinung, Preis, Wissenswertes | ab „wahrscheinlich“, einmal pro Modell | ≈ 1,2 ct |
 | Recherche (Präzisionsmodell) | nur der Modellname | Maßblatt mit Quellen, Zeichnungs-Kandidat | ab „sicher“, einmal pro Modell | 0,18–0,36 $ |
 | CAD (Präzisionsmodell) | Maßblatt, Zeichnungsseiten, Ausschnitt | OpenSCAD-Programm, ein Block pro Teil | danach | 0,17–0,32 $ |
-| Prüfung (Präzisionsmodell) | vier Renders, Zeichnung, Ausschnitt, Code, Fehler | Abweichungen, korrigierte Teile | bis zu 2-mal | 0,05–0,15 $ je Runde |
+| Vermessen (Präzisionsmodell) | Zeichnungsseiten und Produktfotos | Boxen um Produkt und Teile, je Ansicht | nach dem Laden, einmal | ≈ 0,10 $ |
+| Prüfung (Präzisionsmodell) | vier Renders, Zeichnung, Fotos, Ausschnitt, Code, Fehler, gemessene Abweichungen | Abweichungen, korrigierte Teile | bis zu 2-mal | 0,05–0,15 $ je Runde |
+| Gleiches Produkt? | Produktname und die Namen behaltener Modelle | der passende Name oder keiner | einmal pro Name und Serverlauf | < 1 ct |
 | Gleiches Ding? | kleine Ausschnitte | ja/nein, welches | einmal pro neuem Objekt | 0,4–0,5 ct |
 | Frage beantworten | Text der Frage, Ausschnitt, Steckbrief, Verlauf | 1–3 Sätze, Quellen | Leertaste | ≈ 3 ct, mit Suche ≈ 10 ct |
 
@@ -1003,6 +1058,16 @@ Format wie „Verstandene Fehler“ in deinem Lehrplan. Jeder dieser Fehler ist 
       baute Sonnet 5.5 das Modell gröber (14 statt 21 Teile, einmal auf dem Rücken liegend), und seine Prüfrunden
       fanden das „gut“.
     - Lösung: Leuchtrand für runde Flächen, und das Präzisionsmodell baut wieder Opus (`OI_CAD_MODEL`).
+24. **Die Zeichnung, die nie ankam**
+    - Symptom: Das Controller-Modell war ungenau, obwohl die Recherche eine bemaßte Zeichnung gefunden hatte.
+    - Ursache: Die Zeichnung war ein SVG auf einem CDN. Der Download nahm nur PDF, PNG und JPEG und nur Adressen aus
+      Suche und Abruf, nicht Links auf einer abgerufenen Seite.
+    - Lösung: SVG wird mit resvg zu PNG, und Links auf abgerufenen Seiten sind erlaubt (Teilprojekt 7).
+25. **Ein SVG hätte Bilder vom Mac einbetten können**
+    - Symptom: Im Test bettete resvg ein rotes Bild ein, dessen Pfad auf der Festplatte im SVG stand.
+    - Ursache: resvg lädt keine Webadressen, aber Dateien, die ein `href` nennt.
+    - Lösung: Vor dem Rendern ersetzt der Server jedes `href`, das nicht ins SVG selbst zeigt (`#…`) oder Daten
+      enthält (`data:`), durch `#` (`OUTSIDE_LINK` in `oi/drawings.py`).
 
 ---
 
@@ -1106,6 +1171,7 @@ halten fest, was gelten soll. So kann man den Code später sicher ändern, und g
 | **Token** | Wortstück, die Abrechnungseinheit von Sprachmodellen |
 | **Tracker / Track-ID** | verfolgt Dinge über Bilder / ihre feste Nummer |
 | **TDD** | Test-Driven Development: erst der Test (rot), dann der Code (grün) |
+| **Teilekarte** | jedes Teil mit seiner auf Zeichnung und Fotos gemessenen Position und Größe in mm (Teilprojekt 7) |
 | **Telemetrie** | Live-Messwerte (Taste `D`) |
 | **WebAssembly (WASM)** | ein Programmformat, das abgeschottet im Browser oder in Node läuft; hier OpenSCAD |
 | **WebSocket** | stehende Verbindung in beide Richtungen zwischen Browser und Server |
