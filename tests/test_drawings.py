@@ -124,3 +124,16 @@ async def test_photo_pictures_skip_failures():
     assert [view for _, view in pictures] == ["front", "top", "side-front-left"]
     assert picture_size(pictures[0][0]) == (400, 300)
     assert asked == [f"https://cdn.example/{i}.png" for i in range(1, 5)]  # at most 4 photos are tried
+
+
+async def test_svg_cannot_read_files_of_the_mac(tmp_path):
+    secret = tmp_path / "secret.png"  # a red picture on the Mac: if resvg loaded it, the drawing would turn red
+    Image.new("RGB", (50, 50), (255, 0, 0)).save(secret)
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="100" height="100">'
+           f'<image href="{secret}" width="100" height="100"/>'
+           f'<image xlink:href = \'{secret}\' width="100" height="100"/></svg>').encode()
+
+    async def fetch(url, allowed):
+        return svg, "image/svg+xml"
+    [(png, _)], _ = await drawing_pictures(DrawingRef(url="https://cdn.example/d.svg", find=""), set(), fetch=fetch)
+    assert Image.open(io.BytesIO(png)).convert("RGBA").getpixel((1000, 1000)) != (255, 0, 0, 255)

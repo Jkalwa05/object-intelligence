@@ -311,9 +311,7 @@ class ModelBuilder:
                                    max_mm=high, triangles=len(triangles)))
         if mapped and sheet.size_mm is not None:
             off = len(deviations({p.name: (p.min_mm, p.max_mm) for p in parts}, mapped, sheet.size_mm))
-            if off:
-                notes += (f" Noch {off} Abweichungen über der Toleranz." if self._s.language == "de"
-                          else f" Still {off} deviations above the tolerance.")
+            notes += f" {deviation_note(off, self._s.language)}"
         low, high = union([(p.min_mm, p.max_mm) for p in parts])
         measured = (high[0] - low[0], high[1] - low[1], high[2] - low[2])
         manifest = ModelManifest(
@@ -325,6 +323,15 @@ class ModelBuilder:
                            notes=program.notes)
         self._store.put(manifest, [result.stl for result, _ in kept], scad_source(final))  # type: ignore[misc]
         await self._set(job.model, "ready", rounds, manifest)
+
+
+def deviation_note(count: int, language: str) -> str:
+    """The finished model's note on the measured deviations still above the tolerance; empty when there are none."""
+    if not count:
+        return ""
+    if language == "de":
+        return f"Noch {count} Abweichung{'' if count == 1 else 'en'} über der Toleranz."
+    return f"Still {count} deviation{'' if count == 1 else 's'} above the tolerance."
 
 
 def _size(parts: list[CompiledPart]) -> tuple[float, float, float]:

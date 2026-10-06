@@ -298,3 +298,11 @@ async def test_keep_reaches_every_listener():
     assert events[-1][1:3] == ("ready", 1) and events[-1][3].kept and store.get(MODEL).kept
     await built.keep("Unbekannt", True)  # nothing stored under that name: nothing happens
     assert events[-1][3].model == MODEL
+
+
+def test_deviation_note_counts_in_words():
+    from oi.builder import deviation_note
+    assert deviation_note(1, "de") == "Noch 1 Abweichung über der Toleranz."
+    assert deviation_note(3, "de") == "Noch 3 Abweichungen über der Toleranz."
+    assert deviation_note(1, "en") == "Still 1 deviation above the tolerance."
+    assert deviation_note(0, "de") == ""

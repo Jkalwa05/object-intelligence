@@ -27,6 +27,8 @@ Picture = tuple[bytes, str]  # (data, media type) of an image for Claude
 Fetch = Callable[[str, set[str]], Awaitable[tuple[bytes, str]]]
 LONG_EDGE = 2000  # pixels: enough to read dimension figures, small enough for the API's image limits
 MAX_PHOTOS = 4  # product photos per model (sub-project 7)
+# A link in an SVG to anything but a part of itself or embedded data: resvg would load a file of the Mac from it.
+OUTSIDE_LINK = re.compile(r"""((?:xlink:)?href\s*=\s*)(["'])(?!data:|#)[^"']*\2""")
 
 
 def _words(text: str) -> set[str]:
@@ -77,8 +79,9 @@ def render_pages(pdf: bytes, pages: list[int], dpi: int = 150, long_edge: int = 
 
 
 def _svg_png(data: bytes) -> bytes:
-    """An SVG drawing as PNG, its long edge LONG_EDGE. resvg runs no scripts and loads nothing from the web."""
-    svg = data.decode("utf-8", errors="replace")
+    """An SVG drawing as PNG, its long edge LONG_EDGE. resvg runs no scripts and loads nothing from the web, but it
+    would embed a picture from the Mac's disk that a link names: such links are cut first."""
+    svg = OUTSIDE_LINK.sub(r"\1\2#\2", data.decode("utf-8", errors="replace"))
     try:
         png = bytes(resvg_py.svg_to_bytes(svg_string=svg, width=LONG_EDGE))
         width, height = Image.open(io.BytesIO(png)).size

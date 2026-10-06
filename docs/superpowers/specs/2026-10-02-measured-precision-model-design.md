@@ -85,6 +85,8 @@ Gibt es kein Referenzbild oder keine Gesamtgröße, entfällt das Vermessen. Der
 - `resvg-py` (MIT, Rust) rendert das SVG zu PNG, die lange Seite 2000 px. Schriften kommen vom System, damit die
   Maßzahlen lesbar sind.
 - resvg führt keine Skripte aus und lädt keine fremden Adressen.
+- Nachtrag: resvg bettet aber Dateien ein, die ein `href` mit Pfad nennt (im Test bestätigt). Vor dem Rendern wird
+  deshalb jedes `href`, das nicht mit `#` oder `data:` beginnt, durch `#` ersetzt.
 
 ## 5. Vermessen
 
