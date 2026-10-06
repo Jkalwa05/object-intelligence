@@ -4,7 +4,8 @@ import pytest
 
 from oi.contracts import MeasuredPart
 from oi.identify import IdentifyError
-from oi.measure import ViewBoxes, deviations, map_text, parse_measure, part_map
+from oi.measure import (SLICES, ViewBoxes, deviations, map_text, outline_deviations, parse_measure, part_map,
+                        profile, profile_text)
 
 SIZE = (160.0, 97.0, 55.0)  # DualShock 3: width, height, depth in mm
 PICTURE = [(2000, 1000)]  # one picture, 2000 × 1000 px
@@ -138,3 +139,88 @@ def test_deviations_tolerance_missing_and_order():
     crowd = [MeasuredPart(name=f"Teil {i}", x=(0.0, 1.0), y=None, z=None, views=1) for i in range(25)]
     assert len(deviations(built, crowd, SIZE)) == 20
     assert deviations(built, [], SIZE) == []
+
+
+# --- sub-project 8: the outline in 20 slices -----------------------------------------------------------------------
+
+def sliced(name: str, whole, edges: dict[int, tuple[float, float]], picture: int = 1) -> ViewBoxes:
+    return ViewBoxes(picture=picture, view=name, object=whole, parts=[],
+                     slices=[edges.get(i) for i in range(SLICES)])
+
+
+FRONT_BOX = (0.1, 0.0, 0.9, 0.97)  # 1600 × 970 px of 2000 × 1000: 0.1 mm per pixel
+
+
+def test_front_slices_in_millimetres():
+    [band] = profile([sliced("front", FRONT_BOX, {0: (0.4, 0.6)})], PICTURE, SIZE, ranks=[2])
+    assert close(band.y, (43.65, 48.5)) and close(band.x, (-20.0, 20.0)) and band.z is None and band.sources == 1
+
+
+def test_side_slices_give_depth():
+    whole = (0.3, 0.0, 0.62, 0.97)  # 0.1 mm per pixel from the height, 64 mm deep with the sticks
+    [right] = profile([sliced("side-front-right", whole, {3: (0.5, 0.6)})], PICTURE, SIZE, ranks=[3])
+    assert close(right.z, (8.0, 28.0)) and right.x is None
+    [left] = profile([sliced("side-front-left", whole, {3: (0.5, 0.6)})], PICTURE, SIZE, ranks=[3])
+    assert close(left.z, (-28.0, -8.0))
+
+
+def test_hidden_bands_are_skipped():
+    [band] = profile([sliced("front", FRONT_BOX, {5: (0.4, 0.6)})], PICTURE, SIZE, ranks=[2])
+    assert close(band.y, (19.4, 24.25))  # band 5 of 20, counted from the top
+
+
+def test_cross_validation_drops_the_outlier():
+    camera = sliced("front", FRONT_BOX, {0: (0.4, 0.6)}, picture=1)  # 40 mm
+    drawing = sliced("front", FRONT_BOX, {0: (0.39875, 0.60125)}, picture=2)  # 40.5 mm
+    crate = sliced("front", FRONT_BOX, {0: (0.325, 0.675)}, picture=3)  # 70 mm: a crate of bottles
+    [band] = profile([camera, drawing, crate], PICTURE * 3, SIZE, ranks=[2, 3, 1])
+    assert close(band.x, (-20.125, 20.125)) and band.sources == 2
+
+
+def test_two_sources_prefer_the_higher_rank():
+    photo = sliced("front", FRONT_BOX, {0: (0.325, 0.675)}, picture=1)
+    camera = sliced("front", FRONT_BOX, {0: (0.4, 0.6)}, picture=2)
+    [band] = profile([photo, camera], PICTURE * 2, SIZE, ranks=[1, 2])
+    assert close(band.x, (-20.0, 20.0)) and band.sources == 1
+    agreeing = sliced("front", FRONT_BOX, {0: (0.399, 0.601)}, picture=1)
+    [both] = profile([agreeing, camera], PICTURE * 2, SIZE, ranks=[1, 2])
+    assert both.sources == 2 and close(both.x, (-20.1, 20.1))  # 40.4 and 40 mm agree: their mean
+
+
+def test_parse_slices():
+    whole = [0.1, 0.0, 0.9, 0.97]
+    good = [[0.4, 0.6]] + [None] * 18 + [[0.6, 0.4]]
+    raw = [{"picture": 1, "view": "front", "object": whole, "parts": [], "slices": good},
+           {"picture": 1, "view": "back", "object": whole, "parts": [], "slices": [[0.4, 0.6]] * 19},
+           {"picture": 1, "view": "top", "object": whole, "parts": [], "slices": [[0.4, 0.6]] * 20},
+           {"picture": 1, "view": "front", "object": whole, "parts": [], "slices": [[0.0, 0.95]] + [None] * 19}]
+    front, back, top, outside = parse_measure(answer(raw), pictures=1)[0]
+    assert front.slices[0] == (0.4, 0.6) and front.slices[19] is None and len(front.slices) == 20
+    assert back.slices == [] and top.slices == []  # 19 entries; no slices from above
+    assert outside.slices[0] is None  # far outside the product's box
+    assert parse_measure(answer([{"picture": 1, "view": "front", "object": whole, "parts": []}]), 1)[0][0].slices == []
+
+
+def box_mesh(width: float, height: float, depth: float):
+    from oi.mesh import read_stl
+    from oi.scad import cube_stl
+    return read_stl(cube_stl(1.0, (0.0, 0.0, 0.0))) * [width, height, depth]
+
+
+def test_outline_deviations_measure_each_band():
+    bands = profile([sliced("front", FRONT_BOX, {0: (0.4, 0.6), 1: (0.1, 0.9)})], PICTURE, SIZE, ranks=[2])
+    assert outline_deviations(box_mesh(160.0, 97.0, 55.0), bands, SIZE) == [  # band 1 fits the box
+        "height 98 % (y 43.6…48.5 mm): x model -80.0…80.0, measured -20.0…20.0 mm (off by 60.0 mm)"]
+    many = profile([sliced("front", FRONT_BOX, {i: (0.4, 0.6) for i in range(SLICES)})], PICTURE, SIZE, ranks=[2])
+    assert len(outline_deviations(box_mesh(160.0, 97.0, 55.0), many, SIZE)) == 10
+    short = outline_deviations(box_mesh(160.0, 48.5, 55.0), bands, SIZE)  # the model is half as tall
+    assert short[0].startswith("height 98 % (y 43.6…48.5 mm): no model here")
+
+
+def test_profile_text():
+    bands = profile([sliced("front", FRONT_BOX, {0: (0.4, 0.6)}, picture=1),
+                     sliced("front", FRONT_BOX, {0: (0.4, 0.6)}, picture=2)], PICTURE * 2, SIZE, ranks=[2, 1])
+    lines = profile_text(bands, SIZE).splitlines()
+    assert "20 bands" in lines[0]
+    assert lines[1:] == ["height 98 % (y 43.6…48.5 mm): x -20.0…20.0 mm (2 pictures)"]
+    assert profile_text([], SIZE) == ""

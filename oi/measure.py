@@ -5,16 +5,24 @@ drawing or a photo. One orthographic view has the same scale in both directions,
 turns every box into millimetres: the part map. It holds every part with its range on x (left to right), y (bottom to
 top) and z (back to front), measured from the centre of the product's box. The built model is compared with it part
 by part.
+
+Sub-project 8 adds the outline: in each view from the front, back or side, Claude marks the left and right edge of
+the product in 20 bands of equal height. Every picture gives its own outline, the pictures check each other band
+by band (a crate of bottles on a shop photo loses against the camera and the drawing), and the built model is
+measured in the same bands.
 """
 
 from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass
+import statistics
+from dataclasses import dataclass, field
 from typing import Any, get_args
 
-from oi.contracts import MeasuredPart, PhotoView, Range, Vec3
+import numpy as np
+
+from oi.contracts import MeasuredPart, PhotoView, ProfileBand, Range, Vec3
 from oi.identify import IdentifyError
 
 ASPECT_TOLERANCE = 0.12  # front and back: the scales from width and height may differ this much (no perspective)
@@ -28,6 +36,14 @@ MAX_VIEW_PARTS = 40
 MAX_NAME = 60
 VIEWS: tuple[str, ...] = get_args(PhotoView)
 AXES = ("x", "y", "z")
+SLICES = 20  # bands of equal height, top to bottom (sub-project 8)
+AGREE = 0.08  # pictures agree on a band when their widths differ at most this much from the median …
+AGREE_MIN_MM = 1.5  # … or this many millimetres
+CENTRE_AGREE = 0.04  # and their middles at most this share of the product's size
+MAX_OUTLINE_DEVIATIONS = 10
+SLICED = {"front": (0, 1), "back": (0, -1), "side-front-right": (2, 1), "side-front-left": (2, -1)}  # axis, sign
+PROFILE_HEAD = ("Measured outline in 20 bands from top to bottom, in mm from the centre of the product's box; x is the "
+                "width (left to right), z the depth (back to front):")
 MAP_HEAD = ("Measured parts, in mm from the centre of the product's box (everything that sticks out included); "
             "x left to right, y bottom to top, z back to front:")
 
@@ -40,6 +56,7 @@ class ViewBoxes:
     view: PhotoView
     object: Box2  # everything of the product
     parts: list[tuple[str, Box2]]
+    slices: list[tuple[float, float] | None] = field(default_factory=list)  # left and right edge per band, or None
 
 
 def _number(value: Any) -> bool:
@@ -91,9 +108,23 @@ def parse_measure(text: str, pictures: int) -> tuple[list[ViewBoxes], str]:
             box = _box(part.get("box")) if label else None
             if box is not None and _inside(box, whole):
                 parts.append((label, box))
-        views.append(ViewBoxes(picture=picture, view=name, object=whole, parts=parts[:MAX_VIEW_PARTS]))
+        views.append(ViewBoxes(picture=picture, view=name, object=whole, parts=parts[:MAX_VIEW_PARTS],
+                               slices=_slices(raw.get("slices"), whole) if name in SLICED else []))
     notes = data.get("notes")
     return views[:MAX_VIEWS], notes.strip() if isinstance(notes, str) else ""
+
+
+def _slices(raw: Any, whole: Box2) -> list[tuple[float, float] | None]:
+    """20 bands of left and right edges; a band that is hidden or out of the product's box becomes None."""
+    if not isinstance(raw, list) or len(raw) != SLICES:
+        return []
+    margin = OUTSIDE * (whole[2] - whole[0])
+    edges: list[tuple[float, float] | None] = []
+    for entry in raw:
+        ok = (isinstance(entry, list) and len(entry) == 2 and all(_number(v) for v in entry)
+              and whole[0] - margin <= entry[0] < entry[1] <= whole[2] + margin)
+        edges.append((float(entry[0]), float(entry[1])) if ok else None)
+    return edges
 
 
 def _scales(view: str, box_w: float, box_h: float, size: Vec3) -> tuple[float, float] | None:
@@ -187,3 +218,125 @@ def deviations(built: dict[str, tuple[Vec3, Vec3]], parts: list[MeasuredPart], s
                                    f"{target[0]:.1f}…{target[1]:.1f} mm (off by {off:.1f} mm)"))
     found.sort(key=lambda item: -item[0])
     return [text for _, text in found[:MAX_DEVIATIONS]]
+
+
+# --- the outline in 20 bands (sub-project 8) ---------------------------------------------------------------------
+
+def _agree(spans: list[tuple[Range, int]], size: float) -> tuple[Range, int] | None:
+    """One band of one axis from all pictures: (range, how many agreed). From 3 pictures on, the median decides; of
+    2 that disagree, the higher rank wins (drawing 3, camera 2, photo 1); of equal rank, neither."""
+    if not spans:
+        return None
+
+    def fits(span: Range, width: float, middle: float) -> bool:
+        return (abs((span[1] - span[0]) - width) <= max(AGREE_MIN_MM, AGREE * width)
+                and abs((span[0] + span[1]) / 2 - middle) <= CENTRE_AGREE * size)
+
+    if len(spans) >= 3:
+        width = statistics.median(b - a for (a, b), _ in spans)
+        middle = statistics.median((a + b) / 2 for (a, b), _ in spans)
+        kept = [s for s in spans if fits(s[0], width, middle)] or [max(spans, key=lambda s: s[1])]
+    elif len(spans) == 2:
+        (first, rank1), (second, rank2) = spans
+        if fits(first, second[1] - second[0], (second[0] + second[1]) / 2):
+            kept = spans
+        elif rank1 == rank2:
+            return None
+        else:
+            kept = [spans[0] if rank1 > rank2 else spans[1]]
+    else:
+        kept = spans
+    low = sum(span[0] for span, _ in kept) / len(kept)
+    high = sum(span[1] for span, _ in kept) / len(kept)
+    return (low, high), len(kept)
+
+
+def profile(views: list[ViewBoxes], sizes_px: list[tuple[int, int]], size_mm: Vec3,
+            ranks: list[int]) -> list[ProfileBand]:
+    """The outline in 20 bands, from top to bottom, cross-checked over the pictures (spec 8 §3.3–3.5). `ranks` holds
+    the rank of every picture; bands no picture shows are left out."""
+    found: list[list[list[tuple[Range, int]]]] = [[[], [], []] for _ in range(SLICES)]
+    for view in views:
+        if view.view not in SLICED or len(view.slices) != SLICES:
+            continue
+        picture_w, picture_h = sizes_px[view.picture - 1]
+        left, top, right, bottom = view.object
+        scales = _scales(view.view, (right - left) * picture_w, (bottom - top) * picture_h, size_mm)
+        if scales is None:
+            continue
+        centre_x = (left + right) / 2 * picture_w
+        axis, sign = SLICED[view.view]
+        for band, edges in enumerate(view.slices):
+            if edges is None:
+                continue
+            start, end = ((e * picture_w - centre_x) * scales[0] for e in edges)
+            found[band][axis].append(((start, end) if sign > 0 else (-end, -start), ranks[view.picture - 1]))
+    height = size_mm[1]
+    bands = []
+    for band, axes in enumerate(found):
+        x, z = _agree(axes[0], size_mm[0]), _agree(axes[2], size_mm[2])
+        if x is None and z is None:
+            continue
+        top_y = height / 2 - band * height / SLICES
+        bands.append(ProfileBand(y=(top_y - height / SLICES, top_y), x=x[0] if x else None, z=z[0] if z else None,
+                                 sources=max(x[1] if x else 0, z[1] if z else 0)))
+    return bands
+
+
+def _height(band: ProfileBand, size_mm: Vec3) -> str:
+    share = ((band.y[0] + band.y[1]) / 2 + size_mm[1] / 2) / size_mm[1]
+    return f"height {share * 100:.0f} % (y {band.y[0]:.1f}…{band.y[1]:.1f} mm)"
+
+
+def _band_spans(band: ProfileBand) -> str:
+    return ", ".join(f"{axis} {span[0]:.1f}…{span[1]:.1f}" for axis, span in (("x", band.x), ("z", band.z))
+                     if span is not None)
+
+
+def profile_text(bands: list[ProfileBand], size_mm: Vec3) -> str:
+    """The outline for Claude, one line per band; the empty string when nothing was measured."""
+    if not bands:
+        return ""
+    lines = [f"{_height(b, size_mm)}: {_band_spans(b)} mm ({b.sources} picture{'' if b.sources == 1 else 's'})"
+             for b in bands]
+    return "\n".join([PROFILE_HEAD, *lines])
+
+
+def _slab(triangles: np.ndarray, low: float, high: float) -> tuple[np.ndarray, np.ndarray] | None:
+    """The smallest and largest x, y, z of the mesh between two heights: its corners in between and the points where
+    its edges cross either height. None when no part of the mesh lies there."""
+    corners = triangles.reshape(-1, 3)
+    points = [corners[(corners[:, 1] >= low) & (corners[:, 1] <= high)]]
+    starts, ends = corners, np.roll(triangles, -1, axis=1).reshape(-1, 3)
+    for level in (low, high):
+        above, below = starts[:, 1] - level, ends[:, 1] - level
+        crossing = above * below < 0
+        share = (above[crossing] / (above[crossing] - below[crossing]))[:, None]
+        points.append(starts[crossing] + share * (ends[crossing] - starts[crossing]))
+    found = np.concatenate(points)
+    return (found.min(axis=0), found.max(axis=0)) if len(found) else None
+
+
+def outline_deviations(triangles: np.ndarray, bands: list[ProfileBand], size_mm: Vec3) -> list[str]:
+    """Where the built model's outline leaves the measured one, the largest first, at most 10 lines. `triangles` is
+    the whole model; like the parts, it is measured from the centre of its own box."""
+    if not bands or not len(triangles):
+        return []
+    corners = triangles.reshape(-1, 3)
+    centred = triangles - (corners.min(axis=0) + corners.max(axis=0)) / 2
+    found: list[tuple[float, str]] = []
+    for band in bands:
+        extent = _slab(centred, band.y[0], band.y[1])
+        if extent is None:
+            found.append((math.inf, f"{_height(band, size_mm)}: no model here, measured {_band_spans(band)} mm"))
+            continue
+        for axis, span in ((0, band.x), (2, band.z)):
+            if span is None:
+                continue
+            start, end = float(extent[0][axis]), float(extent[1][axis])
+            off = max(abs(start - span[0]), abs(end - span[1]))
+            if off > max(MIN_TOLERANCE_MM, RELATIVE_TOLERANCE * size_mm[axis]):
+                found.append((off, f"{_height(band, size_mm)}: {AXES[axis]} model {start:.1f}…{end:.1f}, measured "
+                                   f"{span[0]:.1f}…{span[1]:.1f} mm (off by {off:.1f} mm)"))
+    found.sort(key=lambda item: -item[0])
+    return [text for _, text in found[:MAX_OUTLINE_DEVIATIONS]]
