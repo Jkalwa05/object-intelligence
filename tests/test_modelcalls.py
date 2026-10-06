@@ -409,5 +409,6 @@ def test_measure_schema_and_prompt_ask_for_slices():
     from oi.modelprompts import CAD_PROMPT, CHECK_PROMPT, MEASURE_PROMPT, MEASURE_SCHEMA
     view = MEASURE_SCHEMA["properties"]["views"]["items"]
     assert "slices" in view["properties"] and "slices" in view["required"]
+    assert "tilt" in view["properties"] and "tilt" in view["required"] and "grey background" in MEASURE_PROMPT
     assert "20" in MEASURE_PROMPT and "null" in MEASURE_PROMPT and "camera" in MEASURE_PROMPT
     assert "rotate_extrude" in CAD_PROMPT and "outline deviations" in CHECK_PROMPT.lower()

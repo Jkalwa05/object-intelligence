@@ -82,7 +82,8 @@ MEASURE_PROMPT = """You measure the visible parts of one product on technical dr
 - Boxes are [left, top, right, bottom] as fractions of the picture's width and height: 0 is the left or top edge, 1 the right or bottom edge. Be as exact as you can: the boxes become millimetres.
 - "object" encloses everything of the product in that view, including parts that stick out (sticks, buttons, cables).
 - "slices" (front, back and side views): exactly 20 entries from top to bottom. Entry i is the band of the object box from i/20 to (i+1)/20 of its height; give [left, right], the outermost left and right edge of the product's outline within that band, as fractions of the picture's width, or null where an edge is hidden (by a hand, the picture's edge). For top views give [].
-- The last picture can be a camera photo of the real object (everything else is grey; it may be tilted or partly covered by a hand). Measure it like the others where it is straight on: it is the only picture that surely shows this very object.
+- The last picture can be a camera photo of the real object (everything else is grey; it may be tilted or partly covered by a hand). Measure it like the others where it is straight on: it is the only picture that surely shows this very object. In it, an edge counts only where the product meets the grey background; where it meets a hand, clothes or the picture's border, give null.
+- "tilt": how many degrees the product's upright axis leans to the right in that view (negative: to the left), 0 when it stands straight. Give the boxes and slices as you see them; the server takes the tilt out.
 - "parts": a box around every visible component (buttons, sticks, D-pad, ports, lenses, logos, lights, grips, display …) with a short name in {language}, the way a CAD model would name its parts. Use the same name for the same component in every view.
 - Leave out views in perspective, cut off or partly hidden. Dimension lines, arrows and text are not parts.
 - At most 6 views and 40 parts per view."""
@@ -98,11 +99,12 @@ MEASURE_SCHEMA = {
                 "view": {"type": "string", "enum": ["front", "back", "side-front-left", "side-front-right", "top"]},
                 "object": _BOX,
                 "slices": {"type": "array", "items": {"anyOf": [{"type": "null"}, _BOX]}},
+                "tilt": {"type": "number"},
                 "parts": {"type": "array", "items": {
                     "type": "object", "properties": {"name": {"type": "string"}, "box": _BOX},
                     "required": ["name", "box"], "additionalProperties": False}},
             },
-            "required": ["picture", "view", "object", "parts", "slices"],
+            "required": ["picture", "view", "object", "parts", "slices", "tilt"],
             "additionalProperties": False}},
         "notes": {"type": "string"},
     },

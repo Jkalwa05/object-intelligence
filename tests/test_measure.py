@@ -224,3 +224,20 @@ def test_profile_text():
     assert "20 bands" in lines[0]
     assert lines[1:] == ["height 98 % (y 43.6…48.5 mm): x -20.0…20.0 mm (2 pictures)"]
     assert profile_text([], SIZE) == ""
+
+
+def test_tilt_is_taken_out():
+    # leaning 10° to the right: the higher a point, the further right it sits in the picture (tan 10° per pixel up)
+    shift_part = (485 - 48.5) * 0.17633 / 2000  # the part's middle is 436.5 px above the box's middle
+    shift_band = (485 - 24.25) * 0.17633 / 2000  # band 0's middle is 460.75 px above it
+    tilted = ViewBoxes(picture=1, view="front", object=FRONT_BOX, tilt=10.0,
+                       parts=[("Deckel", (0.45 + shift_part, 0.0, 0.55 + shift_part, 0.097))],
+                       slices=[(0.4 + shift_band, 0.6 + shift_band)] + [None] * (SLICES - 1))
+    part = only(part_map([tilted], PICTURE, SIZE))
+    assert close(part.x, (-10.0, 10.0))  # upright again: the cap sits in the middle
+    [band] = profile([tilted], PICTURE, SIZE, ranks=[2])
+    assert close(band.x, (-20.0, 20.0))
+    raw = [{"picture": 1, "view": "front", "object": list(FRONT_BOX), "parts": [], "slices": [], "tilt": 75},
+           {"picture": 1, "view": "front", "object": list(FRONT_BOX), "parts": [], "slices": [], "tilt": "schief"}]
+    steep, unclear = parse_measure(answer(raw), pictures=1)[0]
+    assert (steep.tilt, unclear.tilt) == (30.0, 0.0)  # at most 30°; no number means upright

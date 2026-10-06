@@ -34,6 +34,7 @@ MAX_DEVIATIONS = 20
 MAX_VIEWS = 6
 MAX_VIEW_PARTS = 40
 MAX_NAME = 60
+MAX_TILT = 30.0  # degrees: a picture leaning more than that is not taken as upright
 VIEWS: tuple[str, ...] = get_args(PhotoView)
 AXES = ("x", "y", "z")
 SLICES = 20  # bands of equal height, top to bottom (sub-project 8)
@@ -57,6 +58,7 @@ class ViewBoxes:
     object: Box2  # everything of the product
     parts: list[tuple[str, Box2]]
     slices: list[tuple[float, float] | None] = field(default_factory=list)  # left and right edge per band, or None
+    tilt: float = 0.0  # degrees the product leans to the right in the picture (a hand-held camera photo)
 
 
 def _number(value: Any) -> bool:
@@ -108,8 +110,10 @@ def parse_measure(text: str, pictures: int) -> tuple[list[ViewBoxes], str]:
             box = _box(part.get("box")) if label else None
             if box is not None and _inside(box, whole):
                 parts.append((label, box))
+        tilt = float(raw["tilt"]) if _number(raw.get("tilt")) else 0.0
         views.append(ViewBoxes(picture=picture, view=name, object=whole, parts=parts[:MAX_VIEW_PARTS],
-                               slices=_slices(raw.get("slices"), whole) if name in SLICED else []))
+                               slices=_slices(raw.get("slices"), whole) if name in SLICED else [],
+                               tilt=max(-MAX_TILT, min(MAX_TILT, tilt))))
     notes = data.get("notes")
     return views[:MAX_VIEWS], notes.strip() if isinstance(notes, str) else ""
 
@@ -159,8 +163,10 @@ def part_map(views: list[ViewBoxes], sizes_px: list[tuple[int, int]], size_mm: V
         if scales is None:
             continue
         centre_x, centre_y = (left + right) / 2 * picture_w, (top + bottom) / 2 * picture_h
+        lean = math.tan(math.radians(view.tilt)) if view.view != "top" else 0.0
         for name, (l, t, r, b) in view.parts:
-            across = ((l * picture_w - centre_x) * scales[0], (r * picture_w - centre_x) * scales[0])
+            shift = (centre_y - (t + b) / 2 * picture_h) * lean  # pixels the leaning pushed this part to the right
+            across = ((l * picture_w - shift - centre_x) * scales[0], (r * picture_w - shift - centre_x) * scales[0])
             down = ((t * picture_h - centre_y) * scales[1], (b * picture_h - centre_y) * scales[1])
             key = _key(name)
             names.setdefault(key, name)
@@ -264,12 +270,14 @@ def profile(views: list[ViewBoxes], sizes_px: list[tuple[int, int]], size_mm: Ve
         scales = _scales(view.view, (right - left) * picture_w, (bottom - top) * picture_h, size_mm)
         if scales is None:
             continue
-        centre_x = (left + right) / 2 * picture_w
+        centre_x, box_h = (left + right) / 2 * picture_w, (bottom - top) * picture_h
+        lean = math.tan(math.radians(view.tilt))
         axis, sign = SLICED[view.view]
         for band, edges in enumerate(view.slices):
             if edges is None:
                 continue
-            start, end = ((e * picture_w - centre_x) * scales[0] for e in edges)
+            shift = (box_h / 2 - (band + 0.5) / SLICES * box_h) * lean  # the band's middle above the box's middle
+            start, end = ((e * picture_w - shift - centre_x) * scales[0] for e in edges)
             found[band][axis].append(((start, end) if sign > 0 else (-end, -start), ranks[view.picture - 1]))
     height = size_mm[1]
     bands = []
