@@ -12,7 +12,7 @@ import { t, type I18nKey } from "../i18n";
 import type { IdentityMsg, Lang, ModelMsg, ProfileMsg } from "../protocol";
 import { useHud } from "../store";
 import { addLabels, loadModel, type Pin } from "./hologramScene";
-import { domain, geometryKey, kindText, sourceTag, viewText } from "./modelText";
+import { domain, geometryKey, kindText, photoText, sourceTag } from "./modelText";
 import { fitDistance, formatSize, millimetres, partSize, spread, type Vec3 } from "./shapeMath";
 
 const FOV = 35;
@@ -198,7 +198,7 @@ export default function HologramFullscreen({ model, lang, identity, profile, onC
               {manifest.sheet.photos.map((photo) => (
                 <li key={photo.url}>
                   <a href={photo.url} target="_blank" rel="noreferrer">
-                    {t("hologram.photo", lang)} ({viewText(photo.view, lang)}) · {domain(photo.url)}
+                    {photoText(photo, lang)} · {domain(photo.url)}
                   </a>
                 </li>
               ))}

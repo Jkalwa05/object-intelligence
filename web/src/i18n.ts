@@ -48,7 +48,6 @@ const TEXTS = {
   "model.rebuild": { de: "Neu bauen", en: "Build again" },
   "model.keep": { de: "Behalten", en: "Keep" },
   "model.kept": { de: "✓ Behalten", en: "✓ Kept" },
-  "hologram.photo": { de: "Foto", en: "Photo" },
   "hologram.full": { de: "Vollbild", en: "Full screen" },
   "hologram.parts": { de: "TEILE", en: "PARTS" },
   "hologram.choose": { de: "Zum Beschriften anklicken", en: "Click to label" },

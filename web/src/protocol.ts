@@ -149,7 +149,7 @@ export type PhotoView = "front" | "back" | "side-front-left" | "side-front-right
 // A product photo the research found (sub-project 7).
 export interface PhotoRef {
   url: string;
-  view: PhotoView;
+  view: PhotoView | null; // null: found on a page by the server (sub-project 8)
 }
 
 export interface MeasureSheet {
@@ -169,6 +169,14 @@ export interface MeasuredPart {
   y: [number, number] | null; // bottom to top
   z: [number, number] | null; // back to front
   views: number;
+}
+
+// One of the 20 height bands of the outline, cross-checked over the pictures (sub-project 8).
+export interface ProfileBand {
+  y: [number, number];
+  x: [number, number] | null;
+  z: [number, number] | null;
+  sources: number; // how many pictures agree on it
 }
 
 export interface ModelPart {
@@ -194,6 +202,7 @@ export interface ModelManifest {
   created: string;
   kept: boolean; // Jonas keeps it: shown again instead of being built anew (sub-project 7)
   part_map: MeasuredPart[];
+  profile: ProfileBand[]; // the outline in 20 bands (sub-project 8)
 }
 
 export type ModelStatus = "queued" | "researching" | "drawing" | "measuring" | "modeling" | "building" | "checking"

@@ -1,6 +1,6 @@
 // The precision model's words in the sidebar (sub-project 6): progress, the source badge, the kind of a measure.
 
-import type { Lang, MeasureKind, ModelManifest, ModelStatus, PhotoView } from "../protocol";
+import type { Lang, MeasureKind, ModelManifest, ModelStatus, PhotoRef, PhotoView } from "../protocol";
 
 const CHECK_ROUNDS = 2; // the server's default (OI_MODEL_CHECK_ROUNDS)
 
@@ -10,8 +10,7 @@ const PROGRESS: Record<ModelStatus | "waiting", Record<Lang, string>> = {
   queued: { de: "Wartet auf das vorherige Modell …", en: "Waiting for the previous model …" },
   researching: { de: "Recherchiere Maße …", en: "Researching dimensions …" },
   drawing: { de: "Lade Zeichnung und Fotos …", en: "Loading the drawing and photos …" },
-  measuring: { de: "Vermesse die Teile auf Zeichnung und Fotos …",
-    en: "Measuring the parts on drawing and photos …" },
+  measuring: { de: "Vermesse Teile und Umriss …", en: "Measuring the parts and the outline …" },
   modeling: { de: "Baue CAD-Modell …", en: "Building the CAD model …" },
   building: { de: "Berechne Geometrie …", en: "Computing the geometry …" },
   checking: { de: "Prüfe gegen Maße, Zeichnung und Fotos (Runde {round}/{rounds}) …",
@@ -58,9 +57,13 @@ export function sourceTag(m: ModelManifest, lang: Lang): string {
   const sizes = !source ? (lang === "de" ? "CAD · Maße geschätzt" : "CAD · dimensions estimated")
     : lang === "de" ? `CAD · Maße laut ${domain(source.url)}` : `CAD · dimensions per ${domain(source.url)}`;
   const count = m.part_map.length;
-  if (!count) return sizes;
-  return lang === "de" ? `${sizes} · ${count} Teile vermessen`
-    : `${sizes} · ${count} ${count === 1 ? "part" : "parts"} measured`;
+  const parts = !count ? "" : lang === "de" ? ` · ${count} Teile vermessen`
+    : ` · ${count} ${count === 1 ? "part" : "parts"} measured`;
+  const pictures = Math.max(0, ...m.profile.map((band) => band.sources));
+  const outline = !pictures ? ""
+    : lang === "de" ? ` · Umriss aus ${pictures} ${pictures === 1 ? "Bild" : "Bildern"}`
+    : ` · outline from ${pictures} ${pictures === 1 ? "picture" : "pictures"}`;
+  return sizes + parts + outline;
 }
 
 export function progressText(status: ModelStatus | "waiting", round: number, lang: Lang): string {
@@ -75,6 +78,12 @@ export function geometryKey(m: ModelManifest): string {
 
 export function viewText(view: PhotoView, lang: Lang): string {
   return VIEWS[view][lang];
+}
+
+// „Foto (vorn)“ for a photo the research found, „Foto“ for one the server found on a page (sub-project 8).
+export function photoText(photo: PhotoRef, lang: Lang): string {
+  const word = lang === "de" ? "Foto" : "Photo";
+  return photo.view ? `${word} (${viewText(photo.view, lang)})` : word;
 }
 
 export function kindText(kind: MeasureKind, lang: Lang): string {
