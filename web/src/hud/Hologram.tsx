@@ -2,14 +2,14 @@
 // then the CAD model as a slowly turning hologram you can drag around, its size and the source of its dimensions.
 // "⤢" opens the full-screen view with every measure.
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { t } from "../i18n";
 import type { IdentityMsg, Lang, ModelMsg } from "../protocol";
 import { useHud } from "../store";
 import { loadModel } from "./hologramScene";
-import { progressText, sourceTag } from "./modelText";
+import { geometryKey, progressText, sourceTag } from "./modelText";
 import { fitDistance, formatSize, type Vec3 } from "./shapeMath";
 
 const FOV = 35;
@@ -27,13 +27,15 @@ export default function Hologram({ name, level, model, lang, onRebuild }: Props)
   const canvas = useRef<HTMLCanvasElement>(null);
   const showFullscreen = useHud((s) => s.setFullscreen);
   const manifest = model?.status === "ready" ? model.manifest : null;
+  // the view reloads for new geometry only, not for „Behalten“
+  const geometry = useMemo(() => manifest, [manifest && geometryKey(manifest)]);
 
   useEffect(() => {
     const el = canvas.current;
-    if (!el || !manifest) return;
+    if (!el || !geometry) return;
     let stop = false;
     let cleanup = () => {};
-    void loadModel(manifest).then((loaded) => {
+    void loadModel(geometry).then((loaded) => {
       if (stop) return loaded.dispose();
       const renderer = new THREE.WebGLRenderer({ canvas: el, antialias: true, alpha: true });
       renderer.setPixelRatio(window.devicePixelRatio || 1);
@@ -66,7 +68,7 @@ export default function Hologram({ name, level, model, lang, onRebuild }: Props)
       stop = true;
       cleanup();
     };
-  }, [manifest]);
+  }, [geometry]);
 
   if (!model && level === "certain") return null; // no precision models here: a notice at the start says why
   const status = model?.status ?? "waiting";

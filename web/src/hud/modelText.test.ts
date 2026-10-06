@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { MeasuredPart, ModelManifest } from "../protocol";
-import { domain, kindText, progressText, sourceTag, viewText } from "./modelText";
+import { domain, geometryKey, kindText, progressText, sourceTag, viewText } from "./modelText";
 
 const manifest = (sizeSource: number | null, measured = 0): ModelManifest => ({
   model: "Apple iPhone 14", slug: "apple-iphone-14", parts: [], size_mm: [71.5, 146.7, 7.8],
@@ -50,4 +50,11 @@ test("kind texts", () => {
   expect([kindText("drawing", "de"), kindText("datasheet", "de"), kindText("estimate", "de")])
     .toEqual(["Zeichnung", "Datenblatt", "geschätzt"]);
   expect(kindText("estimate", "en")).toBe("estimated");
+});
+
+test("the 3D view reloads only for new geometry, not when the model is kept", () => {
+  const model = manifest(0);
+  expect(geometryKey({ ...model, kept: true })).toBe(geometryKey(model));
+  expect(geometryKey({ ...model, created: "2026-10-06T10:00:00" })).not.toBe(geometryKey(model));
+  expect(geometryKey({ ...model, slug: "sony-dualshock-3" })).not.toBe(geometryKey(model));
 });

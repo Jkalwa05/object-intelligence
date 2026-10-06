@@ -3,7 +3,7 @@
 // part in the list puts its numbered name tag on the model; "Alle abwählen" takes all of them away. "Behalten" keeps
 // the model, so it comes again instead of being built anew (sub-project 7). Esc or ✕ closes it.
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -12,7 +12,7 @@ import { t, type I18nKey } from "../i18n";
 import type { IdentityMsg, Lang, ModelMsg, ProfileMsg } from "../protocol";
 import { useHud } from "../store";
 import { addLabels, loadModel, type Pin } from "./hologramScene";
-import { domain, kindText, sourceTag, viewText } from "./modelText";
+import { domain, geometryKey, kindText, sourceTag, viewText } from "./modelText";
 import { fitDistance, formatSize, millimetres, partSize, spread, type Vec3 } from "./shapeMath";
 
 const FOV = 35;
@@ -32,6 +32,7 @@ interface Props {
 
 export default function HologramFullscreen({ model, lang, identity, profile, onClose, onKeep }: Props) {
   const manifest = model.manifest!;
+  const geometry = useMemo(() => manifest, [geometryKey(manifest)]); // „Behalten“ must not reload the view
   const stage = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const pins = useRef<Pin[]>([]);
@@ -54,7 +55,7 @@ export default function HologramFullscreen({ model, lang, identity, profile, onC
     if (!el || !box) return;
     let stop = false;
     let cleanup = () => {};
-    void loadModel(manifest).then((loaded) => {
+    void loadModel(geometry).then((loaded) => {
       if (stop) return loaded.dispose();
       let width = box.clientWidth, height = box.clientHeight;
       const renderer = new THREE.WebGLRenderer({ canvas: el, antialias: true, alpha: true });
@@ -76,7 +77,7 @@ export default function HologramFullscreen({ model, lang, identity, profile, onC
       };
       resize();
       window.addEventListener("resize", resize);
-      ({ pins: pins.current, measures: measures.current } = addLabels(loaded, manifest, lang));
+      ({ pins: pins.current, measures: measures.current } = addLabels(loaded, geometry, lang));
       scene.add(loaded.group);
       const controls = new OrbitControls(camera, labels.domElement);
       controls.enableDamping = true;
@@ -126,7 +127,7 @@ export default function HologramFullscreen({ model, lang, identity, profile, onC
       stop = true;
       cleanup();
     };
-  }, [manifest, lang]);
+  }, [geometry, lang]);
 
   const level = identity.level ? t(`level.${identity.level}` as I18nKey, lang) : "";
   const highlight = (part: number | null) => {

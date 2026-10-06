@@ -10,7 +10,8 @@ const PROGRESS: Record<ModelStatus | "waiting", Record<Lang, string>> = {
   queued: { de: "Wartet auf das vorherige Modell …", en: "Waiting for the previous model …" },
   researching: { de: "Recherchiere Maße …", en: "Researching dimensions …" },
   drawing: { de: "Lade Zeichnung und Fotos …", en: "Loading the drawing and photos …" },
-  measuring: { de: "Vermesse die Teile auf Zeichnung und Fotos …", en: "Measuring the parts on drawing and photos …" },
+  measuring: { de: "Vermesse die Teile auf Zeichnung und Fotos …",
+    en: "Measuring the parts on drawing and photos …" },
   modeling: { de: "Baue CAD-Modell …", en: "Building the CAD model …" },
   building: { de: "Berechne Geometrie …", en: "Computing the geometry …" },
   checking: { de: "Prüfe gegen Maße, Zeichnung und Fotos (Runde {round}/{rounds}) …",
@@ -49,8 +50,8 @@ export function domain(url: string): string {
   return labels.slice(-keep).join(".");
 }
 
-// „CAD · Maße laut apple.com“ when the overall size has a source, else „CAD · Maße geschätzt“; then how many parts
-// were measured on the drawing and the photos (sub-project 7).
+// „CAD · Maße laut apple.com“ when the overall size has a source, else „CAD · Maße geschätzt“; then how many parts were
+// measured on the drawing and the photos (sub-project 7).
 export function sourceTag(m: ModelManifest, lang: Lang): string {
   const index = m.sheet.size_source;
   const source = index === null ? undefined : m.sheet.sources[index];
@@ -64,6 +65,12 @@ export function sourceTag(m: ModelManifest, lang: Lang): string {
 
 export function progressText(status: ModelStatus | "waiting", round: number, lang: Lang): string {
   return PROGRESS[status][lang].replace("{round}", String(round)).replace("{rounds}", String(CHECK_ROUNDS));
+}
+
+// What the 3D view is built from: a finished build of one product. Keeping the model (sub-project 7) sends a new
+// manifest with the same geometry, and the view must not reload for it.
+export function geometryKey(m: ModelManifest): string {
+  return `${m.slug}@${m.created}`;
 }
 
 export function viewText(view: PhotoView, lang: Lang): string {
