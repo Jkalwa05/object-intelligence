@@ -88,3 +88,20 @@ async def test_a_link_on_a_page_the_research_saw_is_allowed_but_not_other_hosts(
     other = "https://cdn.example/iphone-14.pdf"
     with pytest.raises(DownloadError):
         await fetch(other, seen, transport=transport({other: routes[pdf]}), resolve=resolve)
+
+
+async def test_fetch_page_rules():
+    from oi.download import PAGE_LIMIT, fetch_page
+    url = "https://cdn.example/wasser.html"
+    page = "<html><body>Mineralwasser, Kohlensäure: medium</body></html>"
+    ok = {url: httpx.Response(200, headers={"content-type": "text/html; charset=utf-8"}, content=page.encode())}
+    assert await fetch_page(url, {url}, transport=transport(ok), resolve=resolve) == page
+    picture = {url: httpx.Response(200, headers={"content-type": "image/png"}, content=b"\x89PNG")}
+    big = {url: httpx.Response(200, headers={"content-type": "text/html"}, content=b"x" * (PAGE_LIMIT + 1))}
+    for routes in (picture, big):
+        with pytest.raises(DownloadError):
+            await fetch_page(url, {url}, transport=transport(routes), resolve=resolve)
+    with pytest.raises(DownloadError):
+        await fetch_page(url, set(), transport=transport(ok), resolve=resolve)  # not found by the research
+    with pytest.raises(DownloadError):  # and a page is no drawing
+        await fetch(url, {url}, transport=transport(ok), resolve=resolve)

@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import socket
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -24,6 +24,8 @@ PDF_LIMIT = 60_000_000
 IMAGE_LIMIT = 8_000_000
 LIMITS = {"application/pdf": PDF_LIMIT, "image/png": IMAGE_LIMIT, "image/jpeg": IMAGE_LIMIT,
           "image/webp": IMAGE_LIMIT, "image/svg+xml": IMAGE_LIMIT}  # SVG only to be rendered on the server
+PAGE_LIMIT = 3_000_000  # a web page, read for its product images (sub-project 8)
+PAGE_LIMITS = {"text/html": PAGE_LIMIT, "application/xhtml+xml": PAGE_LIMIT}
 MAX_REDIRECTS = 3
 
 
@@ -57,8 +59,10 @@ def _is_ip(host: str) -> bool:
 
 
 async def fetch(url: str, allowed: set[str], *, transport: httpx.AsyncBaseTransport | None = None,
-                resolve: Callable[[str], list[str]] | None = None, timeout_s: float = 30.0) -> tuple[bytes, str]:
-    """(body, media type) of an allowed PDF or image; every refusal or failure raises DownloadError."""
+                resolve: Callable[[str], list[str]] | None = None, timeout_s: float = 30.0,
+                limits: Mapping[str, int] = LIMITS) -> tuple[bytes, str]:
+    """(body, media type) of an allowed file of a type in `limits` (PDFs and images by default); every refusal or
+    failure raises DownloadError."""
     if url not in allowed and urlsplit(url).hostname not in {urlsplit(a).hostname for a in allowed}:
         raise DownloadError("Die Recherche hat diese Adresse nicht gefunden.")
     resolve = resolve or _resolve
@@ -74,9 +78,9 @@ async def fetch(url: str, allowed: set[str], *, transport: httpx.AsyncBaseTransp
                     if response.status_code != 200:
                         raise DownloadError(f"HTTP {response.status_code}")
                     media = response.headers.get("content-type", "").split(";")[0].strip().lower()
-                    if media not in LIMITS:
+                    if media not in limits:
                         raise DownloadError(f"falscher Typ: {media or 'unbekannt'}")
-                    limit = LIMITS[media]
+                    limit = limits[media]
                     declared = response.headers.get("content-length", "")
                     if declared.isdigit() and int(declared) > limit:
                         raise DownloadError("zu groß")
@@ -89,3 +93,10 @@ async def fetch(url: str, allowed: set[str], *, transport: httpx.AsyncBaseTransp
     except httpx.HTTPError as error:
         raise DownloadError(f"Download fehlgeschlagen: {error.__class__.__name__}") from error
     raise DownloadError("zu viele Weiterleitungen")
+
+
+async def fetch_page(url: str, allowed: set[str], *, transport: httpx.AsyncBaseTransport | None = None,
+                     resolve: Callable[[str], list[str]] | None = None, timeout_s: float = 30.0) -> str:
+    """The text of an allowed web page, under the same rules, to read its product images (sub-project 8)."""
+    body, _ = await fetch(url, allowed, transport=transport, resolve=resolve, timeout_s=timeout_s, limits=PAGE_LIMITS)
+    return body.decode("utf-8", errors="replace")
