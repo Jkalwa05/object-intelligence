@@ -5,7 +5,7 @@ ist aufgebaut wie dein `Road to Software Engineer`, nur für dieses eine Projekt
 lesen, darin nachschlagen und mit ihr lernen. Fachbegriffe bleiben Englisch: Beim ersten Auftauchen werden sie erklärt,
 und alle stehen noch einmal im Glossar (Abschnitt 14).
 
-Stand: 2026-10-02 · alle sieben Teilprojekte fertig · Code: https://github.com/Jkalwa05/object-intelligence
+Stand: 2026-10-06 · alle acht Teilprojekte fertig · Code: https://github.com/Jkalwa05/object-intelligence
 
 ## Inhalt
 
@@ -15,7 +15,7 @@ Stand: 2026-10-02 · alle sieben Teilprojekte fertig · Code: https://github.com
 3. Das große Bild: zwei Programme, ein Ziel
 4. Die Reise eines Kamerabilds, Schritt für Schritt
 5. Das Beweisbuch: wie aus Antworten eine ehrliche Stufe wird
-6. Die sieben Teilprojekte
+6. Die acht Teilprojekte
 7. Claude richtig einsetzen (AI Engineering)
 8. Der Browser-Teil (TypeScript und React)
 9. Datenschutz: was den Mac verlässt und was nie
@@ -152,7 +152,7 @@ WebSocket ist eine stehende Leitung in beide Richtungen, wie ein Telefonat statt
 | `oi/` | der Python-Server: Pipeline, Logik, Claude, Whisper |
 | `web/src/` | der Browser-Teil: React, Overlay, Hologramm, Stimme |
 | `tests/` | Python-Tests (pytest); die Browser-Tests liegen als `*.test.ts` neben dem Code |
-| `docs/superpowers/specs/` | die Design-Dokumente der sieben Teilprojekte (Entscheidungen und Gründe) |
+| `docs/superpowers/specs/` | die Design-Dokumente der acht Teilprojekte (Entscheidungen und Gründe) |
 | `docs/superpowers/plans/` | Bauanleitungen für die Teilprojekte 1–3 und 6 |
 | `cache/` | gespeicherte Steckbriefe und Präzisionsmodelle (`cache/models/<produkt>/`), nicht in Git |
 | `web/scad/compile.mjs` | der CAD-Compiler: OpenSCAD als WebAssembly, von Node ausgeführt |
@@ -407,9 +407,9 @@ von außen *nicht* unterscheidbar, hilft auch Einigkeit über mehrere Ansichten 
 
 ---
 
-## 6. Die sieben Teilprojekte
+## 6. Die acht Teilprojekte
 
-Das Projekt wurde in sieben Teilprojekten gebaut. Jedes hat ein eigenes Design-Dokument in `docs/superpowers/specs/`, in
+Das Projekt wurde in acht Teilprojekten gebaut. Jedes hat ein eigenes Design-Dokument in `docs/superpowers/specs/`, in
 dem deine Entscheidungen stehen.
 
 ### Teilprojekt 1: Sehen & Identifizieren
@@ -633,6 +633,45 @@ dem deine Entscheidungen stehen.
     1 Abweichung über der Toleranz.
   - Vorher (geschätzt): 21 bzw. 24 Teile, mit einem Steuerkreuz aus vier Klötzen.
 
+### Teilprojekt 8: Umriss in Scheiben und Kreuzprüfung
+
+- **Ziel:** Die Mineralwasserflasche „mineau Maria-Quelle, medium“ wurde ganz geschätzt: Logo und Schriftzug klebten
+  seitlich am Etikett. Deine Idee: die Flasche in Zehntel teilen, jedes Zehntel eine Bounding Box, dieselben Zehntel
+  auf Bildern aus dem Netz messen und die Bilder sich gegenseitig prüfen lassen.
+- **Die Ursache:** Die Recherche fand zwei Händlerseiten, aber kein Foto. Ohne Bild gab es nichts zu vermessen.
+  - Die Seiten nennen ihr Produktbild in ihren strukturierten Daten (JSON-LD). Der Web-Fetch gibt Claude die Seite
+    aber als Text, und der Bild-Link ging dabei verloren.
+  - Und das Bild zeigt einen ganzen Kasten mit blauen Deckeln, nicht deine Flasche mit grünem Deckel.
+- **Deine Entscheidung:** 20 Scheiben statt 10, damit die Schulter der Flasche genug Messpunkte bekommt.
+- **Der Ablauf** (neu):
+  1. **Bilder der Seiten** (`oi/pageimages.py`): Der Server lädt bis zu 3 gefundene Seiten (`fetch_page`, nur HTML,
+     höchstens 3 MB) und liest die Bilder aus JSON-LD, `og:image` und `twitter:image`. Das HTML wird nur gelesen,
+     nie ausgeführt.
+  2. **Dein Kamerabild misst immer mit:** Es ist das einzige Bild, das sicher genau *deinen* Gegenstand zeigt.
+  3. **Scheiben** (`oi/measure.py`): In jeder Ansicht von vorn, hinten oder der Seite teilt Claude die Box in 20
+     gleich hohe Streifen und gibt pro Streifen den linken und rechten Rand an. Ist ein Rand verdeckt (deine Hand),
+     sagt er `null`.
+  4. **Kreuzprüfung:** Pro Streifen vergleicht der Server alle Bilder.
+     - Ab 3 Bildern gilt der Median. Ein Bild, dessen Breite mehr als 8 % abweicht, zählt für diesen Streifen nicht.
+     - Bei 2 Bildern, die sich widersprechen, gewinnt das mit höherem Rang: Zeichnung vor Kamera vor Netzfoto.
+  5. **Bauen und Prüfen:** Claude baut runde Dinge mit `rotate_extrude` aus dem Profil. Der Server misst das
+     gebaute Modell in denselben Streifen nach (`outline_deviations`): aus den Ecken im Streifen und den Punkten, an
+     denen die Dreieckskanten die Streifengrenzen schneiden.
+- **Warum der Median?** Der Mittelwert lässt sich von einem einzigen Ausreißer (dem Kasten) verschieben, der Median
+  nicht. Das ist dieselbe Idee wie bei einer Jury, die die höchste und niedrigste Note streicht.
+- **Neigung herausrechnen:** Claude meldet pro Ansicht, um wie viel Grad der Gegenstand nach rechts kippt. Der
+  Server schiebt jeden Streifen und jedes Teil um seine Höhe über der Mitte mal tan(Neigung) zurück. Im Kamerabild
+  zählt eine Kante nur dort, wo der Gegenstand an den grauen Hintergrund grenzt, nicht an Hand oder Kleidung.
+- **Gemessen am 2026-10-06 (Flasche, mit Opus):**
+  - Recherche: 61 s und 0,55 $. Fotos fand sie keine: rewe.de sperrt den Server aus (HTTP 403), potyka.com nennt kein
+    Produktbild.
+  - Vermessen nur am Kamerabild: 18 s und 0,05 $. CAD: 60 s und 0,13 $. 2 Prüfrunden: 0,15 $.
+  - Zusammen: 3,2 Minuten und 0,88 $.
+  - Ergebnis: 10 Teile. Logo und Schriftzug sitzen jetzt vorn mittig auf dem Etikett. Der Umriss kam aus 18 von
+    20 Streifen.
+  - Die Flasche war im Kamerabild etwa 5° geneigt. Die oberen Streifen lagen deshalb bis zu 25 mm rechts der Mitte;
+    daraus entstand das Herausrechnen der Neigung.
+
 ---
 
 ## 7. Claude richtig einsetzen (AI Engineering)
@@ -649,7 +688,7 @@ Kostenkontrolle, Robustheit.
 | Steckbrief | nur Text (Produktname) | Zusammenfassung, Fakten, Erscheinung, Preis, Wissenswertes | ab „wahrscheinlich“, einmal pro Modell | ≈ 1,2 ct |
 | Recherche (Präzisionsmodell) | nur der Modellname | Maßblatt mit Quellen, Zeichnungs-Kandidat | ab „sicher“, einmal pro Modell | 0,18–0,36 $ |
 | CAD (Präzisionsmodell) | Maßblatt, Zeichnungsseiten, Ausschnitt | OpenSCAD-Programm, ein Block pro Teil | danach | 0,17–0,32 $ |
-| Vermessen (Präzisionsmodell) | Zeichnungsseiten und Produktfotos | Boxen um Produkt und Teile, je Ansicht | nach dem Laden, einmal | ≈ 0,10 $ |
+| Vermessen (Präzisionsmodell) | Zeichnungsseiten, Produktfotos und dein Kamerabild | Boxen um Produkt und Teile und 20 Scheiben des Umrisses, je Ansicht | nach dem Laden, einmal | ≈ 0,10 $ |
 | Prüfung (Präzisionsmodell) | vier Renders, Zeichnung, Fotos, Ausschnitt, Code, Fehler, gemessene Abweichungen | Abweichungen, korrigierte Teile | bis zu 2-mal | 0,05–0,15 $ je Runde |
 | Gleiches Produkt? | Produktname und die Namen behaltener Modelle | der passende Name oder keiner | einmal pro Name und Serverlauf | < 1 ct |
 | Gleiches Ding? | kleine Ausschnitte | ja/nein, welches | einmal pro neuem Objekt | 0,4–0,5 ct |
@@ -1068,6 +1107,24 @@ Format wie „Verstandene Fehler“ in deinem Lehrplan. Jeder dieser Fehler ist 
     - Ursache: resvg lädt keine Webadressen, aber Dateien, die ein `href` nennt.
     - Lösung: Vor dem Rendern ersetzt der Server jedes `href`, das nicht ins SVG selbst zeigt (`#…`) oder Daten
       enthält (`data:`), durch `#` (`OUTSIDE_LINK` in `oi/drawings.py`).
+26. **Die Flasche ohne Foto**
+    - Symptom: Logo und Schriftzug der Flasche klebten seitlich am Etikett; alle Maße waren geschätzt.
+    - Ursache: Die Recherche fand zwei Händlerseiten, aber kein Foto, also gab es nichts zu vermessen. Die Seiten
+      nennen ihr Bild im JSON-LD, doch im Text des Web-Fetch fehlt der Link.
+    - Lösung: Der Server liest die Bilder der Seiten selbst, und das Kamerabild wird immer mit vermessen
+      (Teilprojekt 8).
+27. **Ein kaputtes Bild hätte ein Paket installiert**
+    - Symptom: Mit der ganzen Testsuite brauchten die Builder-Tests 59 statt 7 Sekunden und schlugen fehl.
+    - Ursache: Ultralytics ersetzt `PIL.Image.open`. Kann ein Bild nicht gelesen werden, ruft es
+      `check_requirements("pi-heif")` auf, versucht also, zur Laufzeit ein Paket per pip zu installieren, und wirft
+      dann einen `ImportError`. Das hätte jeden Modellbau abgebrochen, sobald ein Bild aus dem Netz kaputt ist.
+    - Lösung: `oi/drawings.py` öffnet Bilder mit Pillows eigener Funktion, die Ultralytics als `_image_open`
+      aufbewahrt.
+28. **Die schiefe Flasche**
+    - Symptom: Im Umriss aus dem Kamerabild lag der Deckel 25 mm rechts der Mitte.
+    - Ursache: Die Flasche war etwa 5° geneigt, und rechts neben der Schulter war das Shirt nicht ausgegraut.
+    - Lösung: Claude meldet die Neigung, der Server rechnet sie heraus, und Kanten zählen nur gegen den grauen
+      Hintergrund.
 
 ---
 
@@ -1142,6 +1199,7 @@ halten fest, was gelten soll. So kann man den Code später sicher ändern, und g
 | **i18n** | Internationalisierung: Texte in mehreren Sprachen |
 | **IoU** | Intersection over Union: wie stark zwei Boxen sich überlappen, 0 bis 1 |
 | **JSON / JSON Schema** | Textformat für Daten / genaue Beschreibung, welche Felder ein JSON haben muss |
+| **Kreuzprüfung** | mehrere Bilder messen dasselbe, und der Median entscheidet; Ausreißer zählen nicht (Teilprojekt 8) |
 | **Laplace-Varianz** | Maß für Schärfe: viele harte Übergänge = scharf |
 | **Latenz** | Wartezeit zwischen Anfrage und Antwort |
 | **Lazy Loading** | Code erst laden, wenn er gebraucht wird |

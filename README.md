@@ -58,16 +58,20 @@ The project was built in six sub-projects, each with its own design document:
    - **Research:** Claude searches the manufacturer's data sheets, technical drawings and up to 4 product photos,
      each from one side. Every dimension keeps its source and kind: from a drawing, from a data sheet, or estimated.
    - **Drawing and photos:** The server downloads them itself: a PDF (it finds the right page), PNG, JPEG, WebP or
-     SVG (rendered to PNG with resvg). Claude sees them as images.
+     SVG (rendered to PNG with resvg). It also reads the product images that shop and manufacturer pages name in
+     their structured data. Claude sees them as images.
    - **Measuring:** Claude puts a box around the whole product and around every part in each straight view of the
-     drawing and the photos. One orthographic view has one scale, so the known size turns every box into
-     millimetres: the *part map*.
+     drawing, the photos and your own camera picture. One orthographic view has one scale, so the known size turns
+     every box into millimetres: the *part map*.
+   - **Outline in 20 slices:** In the same views Claude marks the left and right edge of the product in 20 bands of
+     equal height. The pictures check each other band by band, so a shop photo of a whole crate loses against your
+     camera picture and the drawing.
    - **CAD:** Claude writes an OpenSCAD program with BOSL2: rounded edges, cut-outs, turned parts, one module per part,
      each placed in its measured box.
      OpenSCAD runs as WebAssembly in Node, sealed off from the Mac's files.
    - **Check:** The server renders the model from four sides and measures every built part against the part map
-     ("triangle button: 2.8 mm too far right"). Claude compares renders, drawing and photos, fixes the deviations and
-     corrects the model, in up to two rounds.
+     ("triangle button: 2.8 mm too far right") and the model's width in every band against the outline. Claude compares
+     renders, drawing and photos, fixes the deviations and corrects the model, in up to two rounds.
    - **Keep:** A model you keep ("Behalten") comes back at once and for free, even when Claude names the product
      differently. One you do not keep is built anew the next time, until you find the one you like.
 
