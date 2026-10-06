@@ -29,6 +29,10 @@ async def fetch_png(url, allowed):
     return png(), "image/png"
 
 
+async def no_page(url, allowed):
+    return ""  # a found page without product images
+
+
 def fake_render(parts, size=512):
     assert parts and all(colour.startswith("#") for _, colour in parts)
     return [png()] * 4
@@ -42,11 +46,11 @@ class Log:
         self.records.append(record)
 
 
-def builder(calls=None, compiler=None, settings=None, store=None, log=None, budget=None):
+def builder(calls=None, compiler=None, settings=None, store=None, log=None, budget=None, fetch_page=no_page):
     events = []
     built = ModelBuilder(settings or Settings(), calls or FakeModelCalls(), compiler or FakeCompiler(),
                          store if store is not None else ModelStore(None), budget or SessionBudget(), log,
-                         fetch=fetch_png, render=fake_render)
+                         fetch=fetch_png, render=fake_render, fetch_page=fetch_page)
 
     async def listen(model, status, round_, manifest):
         events.append((model, status, round_, manifest))
@@ -306,3 +310,52 @@ def test_deviation_note_counts_in_words():
     assert deviation_note(3, "de") == "Noch 3 Abweichungen über der Toleranz."
     assert deviation_note(1, "en") == "Still 1 deviation above the tolerance."
     assert deviation_note(0, "de") == ""
+
+
+# --- sub-project 8: page images, the camera photo and the outline ---------------------------------------------------
+
+def jpeg() -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (40, 20), (90, 140, 200)).save(buffer, "JPEG")
+    return buffer.getvalue()
+
+
+SIZE_ONLY = MeasureSheet(size_mm=(160.0, 97.0, 55.0), size_source=None, measures=[], features=[], sources=[],
+                         drawing=None)
+SLICED = ViewBoxes(picture=1, view="front", object=(0.1, 0.0, 0.9, 0.97), parts=[], slices=[(0.4, 0.6)] * 20)
+
+
+async def test_camera_photo_is_measured_without_web_pictures():
+    calls = FakeModelCalls(research=SIZE_ONLY, measure=[SLICED])
+    built, events = builder(calls)
+    await built.request(PAD, "Gamecontroller", jpeg())
+    await built.wait_idle()
+    [request] = calls.measure_requests
+    assert [label for _, label in request.pictures] == [
+        "camera photo of the real object (everything else is grey; may be tilted or partly covered by a hand)"]
+    assert "measuring" in statuses(events, PAD) and events[-1][3].profile
+
+
+async def test_page_images_join_the_photos():
+    sheet = SIZE_ONLY.model_copy(update={"sources": [Source(title="Shop", url="https://www.shop.example/p.html")]})
+    pages = []
+
+    async def shop_page(url, allowed):
+        pages.append(url)
+        return '<meta property="og:image" content="https://cdn.shop.example/wasser.png">'
+    calls = FakeModelCalls(research=sheet, measure=[SLICED])
+    built, events = builder(calls, fetch_page=shop_page)
+    await build(built, PAD)
+    assert pages == ["https://www.shop.example/p.html"]
+    assert [label for _, label in calls.measure_requests[0].pictures] == ["photo, view unknown"]
+    assert [(p.url, p.view) for p in events[-1][3].sheet.photos] == [("https://cdn.shop.example/wasser.png", None)]
+
+
+async def test_profile_reaches_cad_check_and_manifest():
+    calls = FakeModelCalls(research=PHOTO_SHEET, measure=[SLICED])
+    built, events = builder(calls)
+    await build(built, PAD)
+    assert calls.cad_requests[0].outline.splitlines()[1].startswith("height 98 %")
+    assert calls.check_requests[0].outline_deviations  # a 10 mm cube against a 160 × 97 mm outline
+    assert calls.check_requests[0].outline == calls.cad_requests[0].outline
+    assert len(events[-1][3].profile) == 20

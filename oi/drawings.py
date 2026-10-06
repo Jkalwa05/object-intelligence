@@ -12,6 +12,7 @@ import io
 import logging
 import math
 import re
+import sys
 from collections.abc import Awaitable, Callable
 
 import pypdfium2 as pdfium
@@ -78,13 +79,20 @@ def render_pages(pdf: bytes, pages: list[int], dpi: int = 150, long_edge: int = 
         document.close()
 
 
+def _open(data: bytes) -> Image.Image:
+    """Pillow's own Image.open. Ultralytics replaces it with one that, when a picture cannot be read, tries to
+    pip-install a HEIF reader and then fails with ImportError; a bad picture from the web must only be skipped."""
+    patched = sys.modules.get("ultralytics.utils.patches")
+    return getattr(patched, "_image_open", Image.open)(io.BytesIO(data))
+
+
 def _svg_png(data: bytes) -> bytes:
     """An SVG drawing as PNG, its long edge LONG_EDGE. resvg runs no scripts and loads nothing from the web, but it
     would embed a picture from the Mac's disk that a link names: such links are cut first."""
     svg = OUTSIDE_LINK.sub(r"\1\2#\2", data.decode("utf-8", errors="replace"))
     try:
         png = bytes(resvg_py.svg_to_bytes(svg_string=svg, width=LONG_EDGE))
-        width, height = Image.open(io.BytesIO(png)).size
+        width, height = _open(png).size
         if height > width:
             png = bytes(resvg_py.svg_to_bytes(svg_string=svg, height=LONG_EDGE))
     except Exception as error:  # resvg reports a broken SVG in its own ways
@@ -94,13 +102,13 @@ def _svg_png(data: bytes) -> bytes:
 
 def picture_size(picture: Picture) -> tuple[int, int]:
     """Width and height of a picture in pixels."""
-    return Image.open(io.BytesIO(picture[0])).size
+    return _open(picture[0]).size
 
 
 def _scaled_image(data: bytes, media: str) -> Picture:
     if media == "image/svg+xml":
         return _svg_png(data), "image/png"
-    image = Image.open(io.BytesIO(data))
+    image = _open(data)
     if max(image.size) <= LONG_EDGE:
         return data, media
     if media == "image/jpeg":

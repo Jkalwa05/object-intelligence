@@ -21,14 +21,16 @@ import numpy as np
 from oi import download
 from oi.cache import normalize
 from oi.config import Settings
-from oi.contracts import MeasuredPart, MeasureSheet, ModelManifest, ModelPart, ModelStatus, PhotoView
-from oi.drawings import Fetch, Picture, drawing_pictures, photo_pictures, picture_size
+from oi.contracts import (MeasuredPart, MeasureSheet, ModelManifest, ModelPart, ModelStatus, PhotoRef, PhotoView,
+                          ProfileBand)
+from oi.drawings import MAX_PHOTOS, Fetch, Picture, drawing_pictures, photo_pictures, picture_size
 from oi.identify import IdentifyError
-from oi.measure import deviations, map_text, part_map
+from oi.measure import deviations, map_text, outline_deviations, part_map, profile, profile_text
 from oi.mesh import bounds, read_stl, size_hint, union
 from oi.modelcalls import (CadProgram, CadRequest, CheckRequest, MeasureRequest, ModelCalls, ResearchRequest,
                            SameProductRequest, apply_check, scad_source)
 from oi.modelstore import ModelStore, slug
+from oi.pageimages import FetchPage, page_images
 from oi.render import render_views
 from oi.scad import MAX_MODEL_TRIANGLES, CompiledPart, Compiler
 from oi.telemetry import CallLog, CallRecord, SessionBudget
@@ -38,6 +40,8 @@ log = logging.getLogger(__name__)
 Listener = Callable[[str, ModelStatus, int, ModelManifest | None], Awaitable[None]]
 # dollars a step may need: checked before it starts
 RESERVE = {"research": 0.45, "measure": 0.25, "cad": 0.45, "check": 0.35}
+CAMERA = "camera photo of the real object (everything else is grey; may be tilted or partly covered by a hand)"
+RANKS = {"drawing": 3, "camera": 2, "photo": 1}  # who wins when two pictures disagree on the outline
 BUSY = ("queued", "researching", "drawing", "measuring", "modeling", "building", "checking")
 R = TypeVar("R")
 
@@ -52,7 +56,8 @@ class _Job:
 class ModelBuilder:
     def __init__(self, settings: Settings, calls: ModelCalls, compiler: Compiler, store: ModelStore,
                  budget: SessionBudget, call_log: CallLog | Any | None, fetch: Fetch = download.fetch,
-                 render: Callable[..., list[bytes]] = render_views, now: Callable[[], datetime] = datetime.now) -> None:
+                 render: Callable[..., list[bytes]] = render_views, now: Callable[[], datetime] = datetime.now,
+                 fetch_page: FetchPage = download.fetch_page) -> None:
         self._s = settings
         self._calls = calls
         self._compiler = compiler
@@ -60,6 +65,7 @@ class ModelBuilder:
         self._budget = budget
         self._log = call_log
         self._fetch = fetch
+        self._fetch_page = fetch_page
         self._render = render
         self._now = now
         self._listeners: list[Listener] = []
@@ -212,18 +218,21 @@ class ModelBuilder:
         pictures: list[Picture] = []
         pages: list[int] = []
         photos: list[tuple[Picture, PhotoView | None]] = []
-        if sheet.drawing is not None or sheet.photos:
+        if sheet.drawing is not None or sheet.photos or sheet.sources:
             await self._set(job.model, "drawing")
+            sheet, allowed = await self._page_photos(sheet, allowed)
             pictures, pages = await drawing_pictures(sheet.drawing, allowed, fetch=self._fetch)
             photos = await photo_pictures(sheet.photos, allowed, fetch=self._fetch)
-        mapped, spent = await self._measure(job, sheet, pictures, pages, photos, spent)
+        mapped, bands, spent = await self._measure(job, sheet, pictures, pages, photos, spent)
+        outline = profile_text(bands, sheet.size_mm) if bands and sheet.size_mm else ""
         if not self._affordable(spent, "cad"):
             await self._set(job.model, "failed")
             return
         await self._set(job.model, "modeling")
         try:
             made = await self._call("cad", job, lambda: self._calls.build_cad(CadRequest(
-                job.model, job.category, sheet, pictures, job.jpeg, lang, photos=photos, part_map=map_text(mapped))),
+                job.model, job.category, sheet, pictures, job.jpeg, lang, photos=photos, part_map=map_text(mapped),
+                outline=outline)),
                 lambda r: _program(r.program))
         except IdentifyError:
             await self._set(job.model, "failed")
@@ -241,13 +250,16 @@ class ModelBuilder:
             renders = self._render([(triangles, c.color) for c, triangles in meshes]) if meshes else []
             off = deviations({c.name: bounds(triangles) for c, triangles in meshes}, mapped, sheet.size_mm) \
                 if mapped and sheet.size_mm else []
+            outline_off = outline_deviations(np.concatenate([t for _, t in meshes]), bands, sheet.size_mm) \
+                if bands and meshes and sheet.size_mm else []
             errors = {name: c.errors for name, c in compiled.items() if c.stl is None}
             hint = size_hint(_size([c for c in ok]), sheet.size_mm) if ok else None
             await self._set(job.model, "checking", round_)
             try:
                 checked = await self._call(f"check {round_}", job, lambda: self._calls.check_cad(CheckRequest(
                     job.model, sheet, pictures, job.jpeg, program, renders, errors, hint, round_,
-                    self._s.model_check_rounds, lang, photos=photos, part_map=map_text(mapped), deviations=off)),
+                    self._s.model_check_rounds, lang, photos=photos, part_map=map_text(mapped), deviations=off,
+                    outline=outline, outline_deviations=outline_off)),
                     lambda r: _answer(r.answer))
             except IdentifyError:
                 break  # the model so far stays
@@ -263,30 +275,47 @@ class ModelBuilder:
             if checked.answer.verdict == "good":
                 good = True
                 break
-        await self._finish(job, sheet, pages, program, compiled, rounds, good, spent, notes, mapped)
+        await self._finish(job, sheet, pages, program, compiled, rounds, good, spent, notes, mapped, bands)
+
+    async def _page_photos(self, sheet: MeasureSheet, allowed: set[str]) -> tuple[MeasureSheet, set[str]]:
+        """The product images on the found pages join the research's photos, up to MAX_PHOTOS (spec 8 §3.1)."""
+        if len(sheet.photos) >= MAX_PHOTOS or not sheet.sources:
+            return sheet, allowed
+        found = await page_images([s.url for s in sheet.sources], allowed, fetch_page=self._fetch_page)
+        known = {p.url for p in sheet.photos} | ({sheet.drawing.url} if sheet.drawing else set())
+        extra = [PhotoRef(url=url) for url in found if url not in known][:MAX_PHOTOS - len(sheet.photos)]
+        return sheet.model_copy(update={"photos": [*sheet.photos, *extra]}), allowed | {p.url for p in extra}
 
     async def _measure(self, job: _Job, sheet: MeasureSheet, pictures: list[Picture], pages: list[int],
                        photos: list[tuple[Picture, PhotoView | None]],
-                       spent: float) -> tuple[list[MeasuredPart], float]:
-        """The part map from the drawing and the photos (spec §5), and what has been spent so far. Without pictures,
-        without the product's size, over the budget or after a failed call, nothing is measured."""
+                       spent: float) -> tuple[list[MeasuredPart], list[ProfileBand], float]:
+        """The part map and the outline from the drawing, the photos and the camera photo (spec 7 §5, spec 8 §3), and
+        what has been spent so far. Without pictures, without the product's size, over the budget or after a
+        failed call, nothing is measured."""
         labels = ([f"technical drawing page {page}" for page in pages] if pages
                   else ["technical drawing"] * len(pictures))
-        references = [*zip(pictures, labels, strict=True), *((p, f"photo, {view}") for p, view in photos)]
+        references = [*zip(pictures, labels, strict=True),
+                      *((p, f"photo, {view or 'view unknown'}") for p, view in photos)]
+        ranks = [RANKS["drawing"]] * len(pictures) + [RANKS["photo"]] * len(photos)
+        sizes = [picture_size(picture) for picture, _ in references]
+        if job.jpeg is not None and (camera := _camera_size(job.jpeg)) is not None:
+            references.append(((job.jpeg, "image/jpeg"), CAMERA))
+            ranks.append(RANKS["camera"])
+            sizes.append(camera)
         if not references or sheet.size_mm is None or not self._affordable(spent + RESERVE["cad"], "measure"):
-            return [], spent  # a map without the CAD after it would be paid for nothing
+            return [], [], spent  # a map without the CAD after it would be paid for nothing
         await self._set(job.model, "measuring")
         try:
             result = await self._call("measure", job, lambda: self._calls.measure(MeasureRequest(
                 job.model, sheet, references, self._s.language)), lambda r: {"views": len(r.views), "notes": r.notes})
         except IdentifyError:
-            return [], spent  # built without the part map, as before sub-project 7
-        sizes = [picture_size(picture) for picture, _ in references]
-        return part_map(result.views, sizes, sheet.size_mm), spent + result.cost_usd
+            return [], [], spent  # built without part map and outline, as before sub-project 7
+        return (part_map(result.views, sizes, sheet.size_mm), profile(result.views, sizes, sheet.size_mm, ranks),
+                spent + result.cost_usd)
 
     async def _finish(self, job: _Job, sheet: MeasureSheet, pages: list[int], program: CadProgram,
                       compiled: dict[str, CompiledPart], rounds: int, good: bool, spent: float, notes: str,
-                      mapped: list[MeasuredPart]) -> None:
+                      mapped: list[MeasuredPart], bands: list[ProfileBand]) -> None:
         kept: list[tuple[CompiledPart, np.ndarray]] = []
         dropped, total = [], 0
         for part in program.parts:
@@ -310,8 +339,9 @@ class ModelBuilder:
             low, high = bounds(triangles)
             parts.append(ModelPart(name=result.name, color=result.color, file=f"part-{number:02d}.stl", min_mm=low,
                                    max_mm=high, triangles=len(triangles)))
-        if mapped and sheet.size_mm is not None:
+        if (mapped or bands) and sheet.size_mm is not None:
             off = len(deviations({p.name: (p.min_mm, p.max_mm) for p in parts}, mapped, sheet.size_mm))
+            off += len(outline_deviations(np.concatenate([t for _, t in kept]), bands, sheet.size_mm))
             notes += f" {deviation_note(off, self._s.language)}"
         low, high = union([(p.min_mm, p.max_mm) for p in parts])
         measured = (high[0] - low[0], high[1] - low[1], high[2] - low[2])
@@ -319,11 +349,20 @@ class ModelBuilder:
             model=job.model, slug=slug(job.model), parts=parts, size_mm=sheet.size_mm or measured, sheet=sheet,
             drawing_pages=pages, notes=" ".join(f"{program.notes} {notes}".split()),
             verdict="good" if good else "fix" if rounds else "unchecked", rounds=rounds, cost_usd=round(spent, 4),
-            created=self._now().isoformat(timespec="seconds"), part_map=mapped)
+            created=self._now().isoformat(timespec="seconds"), part_map=mapped,
+            profile=bands)
         final = CadProgram(shared=program.shared, parts=[p for p in program.parts if p.name not in dropped],
                            notes=program.notes)
         self._store.put(manifest, [result.stl for result, _ in kept], scad_source(final))  # type: ignore[misc]
         await self._set(job.model, "ready", rounds, manifest)
+
+
+def _camera_size(jpeg: bytes) -> tuple[int, int] | None:
+    """The size of the camera photo, or None when it cannot be read: then it is left out of the measuring."""
+    try:
+        return picture_size((jpeg, "image/jpeg"))
+    except (OSError, ValueError):
+        return None
 
 
 def deviation_note(count: int, language: str) -> str:

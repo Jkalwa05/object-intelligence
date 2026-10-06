@@ -137,3 +137,25 @@ async def test_svg_cannot_read_files_of_the_mac(tmp_path):
         return svg, "image/svg+xml"
     [(png, _)], _ = await drawing_pictures(DrawingRef(url="https://cdn.example/d.svg", find=""), set(), fetch=fetch)
     assert Image.open(io.BytesIO(png)).convert("RGBA").getpixel((1000, 1000)) != (255, 0, 0, 255)
+
+
+async def test_a_bad_picture_is_skipped_although_ultralytics_patches_pillow(monkeypatch):
+    import sys
+    import types
+
+    from PIL import Image as PILImage
+    loaded = sys.modules.get("ultralytics.utils.patches")  # other tests may have loaded the real patch already
+    original = getattr(loaded, "_image_open", PILImage.open)
+
+    def patched(fp, *args, **kwargs):  # what Ultralytics puts in its place: on failure it tries to pip-install pi-heif
+        try:
+            return original(fp, *args, **kwargs)
+        except Exception:
+            raise ModuleNotFoundError("No module named 'pi_heif'") from None
+    monkeypatch.setattr(PILImage, "open", patched)
+    monkeypatch.setitem(sys.modules, "ultralytics.utils.patches", types.SimpleNamespace(_image_open=original))
+
+    async def fetch(url, allowed):
+        return b"no picture at all", "image/png"
+    assert await photo_pictures([PhotoRef(url="https://cdn.example/bad.png", view="front")], set(), fetch=fetch) == []
+    assert picture_size((png(40, 20), "image/png")) == (40, 20)  # good pictures still open
