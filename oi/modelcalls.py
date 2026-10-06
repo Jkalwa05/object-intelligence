@@ -171,8 +171,9 @@ class CadRequest:
     drawings: list[Picture]
     jpeg: bytes | None  # the object-only crop of the identification
     language: Lang
-    photos: list[tuple[Picture, PhotoView]] = field(default_factory=list)  # reference photos (sub-project 7)
+    photos: list[tuple[Picture, PhotoView | None]] = field(default_factory=list)  # reference photos (sub-project 7)
     part_map: str = ""  # measure.map_text of the measured parts, "" when nothing was measured
+    outline: str = ""  # measure.profile_text of the outline in 20 bands (sub-project 8)
 
 
 @dataclass(frozen=True)
@@ -207,9 +208,11 @@ class CheckRequest:
     round: int
     rounds: int
     language: Lang
-    photos: list[tuple[Picture, PhotoView]] = field(default_factory=list)
+    photos: list[tuple[Picture, PhotoView | None]] = field(default_factory=list)
     part_map: str = ""
     deviations: list[str] = field(default_factory=list)  # measure.deviations of the current model
+    outline: str = ""
+    outline_deviations: list[str] = field(default_factory=list)  # measure.outline_deviations of the current model
 
 
 @dataclass(frozen=True)
@@ -236,17 +239,20 @@ def _pictures(drawings: list[Picture], jpeg: bytes | None) -> list[dict[str, Any
     return content
 
 
-def _photos(photos: list[tuple[Picture, PhotoView]]) -> list[dict[str, Any]]:
+def _photos(photos: list[tuple[Picture, PhotoView | None]]) -> list[dict[str, Any]]:
     content: list[dict[str, Any]] = []
     for (data, media), view in photos:
-        content += [{"type": "text", "text": f"Reference photo ({view}):"}, _image(data, media)]
+        content += [{"type": "text", "text": f"Reference photo ({view or 'view unknown'}):"}, _image(data, media)]
     return content
 
 
-def _measured(part_map: str, deviations: list[str] | None = None) -> list[dict[str, Any]]:
-    content = [{"type": "text", "text": part_map}] if part_map else []
+def _measured(part_map: str, deviations: list[str] | None = None, outline: str = "",
+              outline_deviations: list[str] | None = None) -> list[dict[str, Any]]:
+    content = [{"type": "text", "text": text} for text in (part_map, outline) if text]
     if deviations:
         content.append({"type": "text", "text": "Measured deviations (fix them):\n" + "\n".join(deviations)})
+    if outline_deviations:
+        content.append({"type": "text", "text": "Outline deviations (fix them):\n" + "\n".join(outline_deviations)})
     return content
 
 
@@ -260,7 +266,7 @@ def _structured(s: Settings, system: str, content: list[dict[str, Any]], schema:
 
 def build_cad_request(s: Settings, req: CadRequest) -> dict[str, Any]:
     content = [{"type": "text", "text": _sheet_text(req.sheet)}, *_pictures(req.drawings, req.jpeg),
-               *_photos(req.photos), *_measured(req.part_map),
+               *_photos(req.photos), *_measured(req.part_map, outline=req.outline),
                {"type": "text", "text": f"Product: {req.model}\nCategory: {req.category}\n"
                                         "Write the OpenSCAD program for this product."}]
     system = CAD_PROMPT.format(language=_language(req.language)) + "\n\n" + BOSL2_GUIDE
@@ -280,14 +286,14 @@ def build_check_request(s: Settings, req: CheckRequest) -> dict[str, Any]:
         content += [{"type": "text", "text": f"Render „{view}“:"}, _image(png, "image/png")]
     content += [*_pictures(req.drawings, req.jpeg), *_photos(req.photos)]
     content.append({"type": "text", "text": _sheet_text(req.sheet)})
-    content += _measured(req.part_map)
+    content += _measured(req.part_map, outline=req.outline)
     content.append({"type": "text", "text": "Current OpenSCAD program:\n" + scad_source(req.program)})
     if req.errors:
         lines = [f"{name}: {' | '.join(errors)}" for name, errors in req.errors.items()]
         content.append({"type": "text", "text": "Compile errors per part:\n" + "\n".join(lines)})
     if req.size_hint:
         content.append({"type": "text", "text": req.size_hint})
-    content += _measured("", req.deviations)
+    content += _measured("", req.deviations, outline_deviations=req.outline_deviations)
     content.append({"type": "text", "text": f"Product: {req.model}. Check the model and correct it."})
     return _structured(s, CHECK_PROMPT.format(language=_language(req.language)), content, CHECK_SCHEMA)
 

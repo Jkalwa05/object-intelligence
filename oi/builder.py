@@ -211,7 +211,7 @@ class ModelBuilder:
             pass  # no research: every dimension is Claude's estimate
         pictures: list[Picture] = []
         pages: list[int] = []
-        photos: list[tuple[Picture, PhotoView]] = []
+        photos: list[tuple[Picture, PhotoView | None]] = []
         if sheet.drawing is not None or sheet.photos:
             await self._set(job.model, "drawing")
             pictures, pages = await drawing_pictures(sheet.drawing, allowed, fetch=self._fetch)
@@ -266,7 +266,8 @@ class ModelBuilder:
         await self._finish(job, sheet, pages, program, compiled, rounds, good, spent, notes, mapped)
 
     async def _measure(self, job: _Job, sheet: MeasureSheet, pictures: list[Picture], pages: list[int],
-                       photos: list[tuple[Picture, PhotoView]], spent: float) -> tuple[list[MeasuredPart], float]:
+                       photos: list[tuple[Picture, PhotoView | None]],
+                       spent: float) -> tuple[list[MeasuredPart], float]:
         """The part map from the drawing and the photos (spec §5), and what has been spent so far. Without pictures,
         without the product's size, over the budget or after a failed call, nothing is measured."""
         labels = ([f"technical drawing page {page}" for page in pages] if pages

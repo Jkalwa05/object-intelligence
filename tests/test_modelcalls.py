@@ -390,3 +390,24 @@ async def test_fake_measure_and_same_product_follow_the_script():
         await failing.measure(measure_request())
     with pytest.raises(IdentifyError):
         await failing.same_product(SameProductRequest("x", ["y"], "de"))
+
+
+# --- sub-project 8: the outline ----------------------------------------------------------------------------------
+
+def test_outline_reaches_cad_and_check():
+    outline = "Measured outline in 20 bands …\nheight 98 % (y 43.6…48.5 mm): x -20.0…20.0 mm (2 pictures)"
+    cad = build_cad_request(OPUS, cad_request(outline=outline, photos=[((PNG, "image/png"), None)]))
+    assert outline in texts(cad) and "Reference photo (view unknown):" in texts(cad)
+    off = "height 98 % (y 43.6…48.5 mm): x model -80.0…80.0, measured -20.0…20.0 mm (off by 60.0 mm)"
+    check = build_check_request(OPUS, check_request(outline=outline, outline_deviations=[off]))
+    assert outline in texts(check) and f"Outline deviations (fix them):\n{off}" in texts(check)
+    plain = texts(build_check_request(OPUS, check_request())) + texts(build_cad_request(OPUS, cad_request()))
+    assert not any("outline" in t.lower() for t in plain)
+
+
+def test_measure_schema_and_prompt_ask_for_slices():
+    from oi.modelprompts import CAD_PROMPT, CHECK_PROMPT, MEASURE_PROMPT, MEASURE_SCHEMA
+    view = MEASURE_SCHEMA["properties"]["views"]["items"]
+    assert "slices" in view["properties"] and "slices" in view["required"]
+    assert "20" in MEASURE_PROMPT and "null" in MEASURE_PROMPT and "camera" in MEASURE_PROMPT
+    assert "rotate_extrude" in CAD_PROMPT and "outline deviations" in CHECK_PROMPT.lower()

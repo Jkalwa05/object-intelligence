@@ -21,6 +21,7 @@ CAD_PROMPT = """You write an OpenSCAD program (OpenSCAD 2025 with the BOSL2 libr
 - One part per visible component (body, display, camera bump, lenses, buttons, ports, grips, sticks, shade, base …), each with its real colour as "#rrggbb" and a name in {language}.
 - "shared" holds variables for the main dimensions and helper modules used by several parts; every part is compiled on its own as: include <BOSL2/std.scad>; $fn = 48; shared; part.
 - When a part map is given, it was measured on the technical drawing and the reference photos: build every part listed there with exactly that name and inside its measured ranges (millimetres from the centre of the product's box, everything that sticks out included). The reference photos show the real product, one side each.
+- When an outline is given (20 bands with the width x and the depth z in millimetres), the product's silhouette must follow it band by band. Build round products (bottles, cans, cups, lamps) with rotate_extrude from these radii.
 - Use BOSL2 for rounded edges, chamfers and cut-outs instead of plain cubes: a product should look like the real thing, not like blocks. Holes and recesses are made with difference().
 - Never use import(), surface(), include or use statements: the header already includes BOSL2. Keep each part below about 100 000 triangles (no needless high $fn).
 - At most 40 parts."""
@@ -45,6 +46,7 @@ CHECK_PROMPT = """You check a CAD model of a product against its technical drawi
 - List concrete deviations in "issues" (wrong proportions, missing or misplaced components, wrong colours, parts that failed to compile), at most 10, in {language}.
 - Return only parts that must change or are new (same name replaces a part), "remove" for parts to delete, and "shared" only if the shared code must change (else null).
 - The measured deviations compare your parts with the part map: fix every one (move or resize the part, or add a missing part with exactly that name), unless the part map is clearly wrong; then say so in "issues".
+- The outline deviations compare your model's width in each height band with the outline measured on the pictures: fix them by reshaping the body, unless the measured outline is clearly wrong; then say so in "issues".
 - Fix every compile error. Keep the conventions: millimetres, origin in the centre, y up, front towards +z, BOSL2 is already included, no import(), surface(), include or use.
 - Answer "verdict": "good" when nothing important is off any more; then return no parts."""
 
@@ -79,6 +81,8 @@ MEASURE_PROMPT = """You measure the visible parts of one product on technical dr
 - Give every view that shows the whole product straight on (orthographic or nearly so) with "picture", "view" and the boxes. "view" is "front" (looking at the front), "back", "side-front-left" (seen from the side, the front faces left in the picture), "side-front-right" or "top" (seen from above, the front edge at the bottom of the picture).
 - Boxes are [left, top, right, bottom] as fractions of the picture's width and height: 0 is the left or top edge, 1 the right or bottom edge. Be as exact as you can: the boxes become millimetres.
 - "object" encloses everything of the product in that view, including parts that stick out (sticks, buttons, cables).
+- "slices" (front, back and side views): exactly 20 entries from top to bottom. Entry i is the band of the object box from i/20 to (i+1)/20 of its height; give [left, right], the outermost left and right edge of the product's outline within that band, as fractions of the picture's width, or null where an edge is hidden (by a hand, the picture's edge). For top views give [].
+- The last picture can be a camera photo of the real object (everything else is grey; it may be tilted or partly covered by a hand). Measure it like the others where it is straight on: it is the only picture that surely shows this very object.
 - "parts": a box around every visible component (buttons, sticks, D-pad, ports, lenses, logos, lights, grips, display …) with a short name in {language}, the way a CAD model would name its parts. Use the same name for the same component in every view.
 - Leave out views in perspective, cut off or partly hidden. Dimension lines, arrows and text are not parts.
 - At most 6 views and 40 parts per view."""
@@ -93,11 +97,12 @@ MEASURE_SCHEMA = {
                 "picture": {"type": "integer"},
                 "view": {"type": "string", "enum": ["front", "back", "side-front-left", "side-front-right", "top"]},
                 "object": _BOX,
+                "slices": {"type": "array", "items": {"anyOf": [{"type": "null"}, _BOX]}},
                 "parts": {"type": "array", "items": {
                     "type": "object", "properties": {"name": {"type": "string"}, "box": _BOX},
                     "required": ["name", "box"], "additionalProperties": False}},
             },
-            "required": ["picture", "view", "object", "parts"],
+            "required": ["picture", "view", "object", "parts", "slices"],
             "additionalProperties": False}},
         "notes": {"type": "string"},
     },

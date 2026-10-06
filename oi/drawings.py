@@ -129,9 +129,9 @@ async def drawing_pictures(ref: DrawingRef | None, allowed: set[str], fetch: Fet
 
 
 async def photo_pictures(photos: list[PhotoRef], allowed: set[str], fetch: Fetch = download.fetch
-                         ) -> list[tuple[Picture, PhotoView]]:
+                         ) -> list[tuple[Picture, PhotoView | None]]:
     """The product photos as images for Claude, in order; one that cannot be loaded is skipped (sub-project 7)."""
-    pictures: list[tuple[Picture, PhotoView]] = []
+    pictures: list[tuple[Picture, PhotoView | None]] = []
     for photo in photos[:MAX_PHOTOS]:
         try:
             data, media = await fetch(photo.url, allowed)
