@@ -224,7 +224,8 @@
       "cost_usd": 0.92,
       "created": "2026-10-01T22:00:00",
       "kept": false,
-      "part_map": []
+      "part_map": [],
+      "profile": []
     }
   },
   {

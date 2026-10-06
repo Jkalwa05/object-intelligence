@@ -268,7 +268,9 @@ PhotoView = Literal["front", "back", "side-front-left", "side-front-right", "top
 
 class PhotoRef(_Model):
     url: str  # a product photo the research found (sub-project 7)
-    view: PhotoView  # "side-front-left": seen from the side, the front faces left; "top": the front edge at the bottom
+    # "side-front-left": seen from the side, the front faces left; "top": the front edge at the bottom. None: found on a
+    # page by the server (sub-project 8), the measuring decides the view
+    view: PhotoView | None = None
 
 
 class MeasureSheet(_Model):
@@ -301,6 +303,15 @@ class MeasuredPart(_Model):
     views: int  # how many views measured it
 
 
+class ProfileBand(_Model):
+    """One of the 20 height bands of the product's outline, cross-checked over the pictures (sub-project 8)."""
+
+    y: Range  # bottom and top of the band, in mm from the centre
+    x: Range | None  # left and right edge of the outline in this band
+    z: Range | None  # back and front edge
+    sources: int  # how many pictures agree on it
+
+
 class ModelPart(_Model):
     name: str
     color: str  # "#rrggbb"
@@ -326,6 +337,7 @@ class ModelManifest(_Model):
     created: str
     kept: bool = False  # Jonas keeps it: shown again instead of being built anew (sub-project 7)
     part_map: list[MeasuredPart] = []  # the parts measured on the reference images
+    profile: list[ProfileBand] = []  # the outline in 20 bands (sub-project 8)
 
 
 ModelStatus = Literal["queued", "researching", "drawing", "measuring", "modeling", "building", "checking",

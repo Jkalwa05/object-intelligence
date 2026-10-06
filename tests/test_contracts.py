@@ -105,6 +105,12 @@ def test_old_manifest_still_loads():
            "drawing_pages": [], "notes": "", "verdict": "good", "rounds": 1, "cost_usd": 0.9, "created": ""}
     manifest = ModelManifest.model_validate(old)  # written before sub-project 7
     assert (manifest.kept, manifest.part_map, manifest.sheet.photos) == (False, [], [])
+    assert manifest.profile == []  # written before sub-project 8
+
+
+def test_photo_without_view():
+    from oi.contracts import PhotoRef
+    assert PhotoRef(url="https://cdn.example/b.jpg").view is None  # found on a page: the measuring decides
 
 
 def test_keep_is_a_client_message():
