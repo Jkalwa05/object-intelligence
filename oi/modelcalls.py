@@ -35,6 +35,7 @@ KINDS = ("drawing", "datasheet", "estimate")
 MAX_PARTS, MAX_SHARED, MAX_PART_CODE, MAX_ISSUES = 40, 20_000, 12_000, 10
 CAD_MAX_TOKENS = 32000
 MEASURE_MAX_TOKENS = 16000
+MEASURE_TIMEOUT_S = 180.0  # one picture is measured in well under a minute; all of them in one call hung 17 minutes
 CAD_EFFORT = "high"
 DEFAULT_COLOR = "#9aa0a6"
 
@@ -480,7 +481,8 @@ class ClaudeModelCalls:
 
 
     async def measure(self, req: MeasureRequest) -> MeasureResult:
-        response, latency = await self._streamed(build_measure_request(self._s, req))
+        response, latency = await self._identifier.create(build_measure_request(self._s, req), MEASURE_TIMEOUT_S,
+                                                          stream=True)
         views, notes = parse_measure(_text(response), len(req.pictures))
         usage = response.usage
         return MeasureResult(views=views, notes=notes, input_tokens=usage.input_tokens,

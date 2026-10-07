@@ -241,6 +241,12 @@ class AskResult:
     model: str
 
 
+def _forget(task: asyncio.Future[Any]) -> None:
+    """A call given up at its deadline ends on its own; its outcome is read so asyncio does not complain."""
+    if not task.cancelled():
+        task.exception()
+
+
 class IdentifyError(Exception):
     def __init__(self, reason: Literal["refusal", "schema", "timeout", "api", "connection"]) -> None:
         super().__init__(reason)
@@ -522,7 +528,15 @@ class ClaudeIdentifier:
                     async with messages.stream(**request) as running:
                         return await running.get_final_message()
 
-                response = await asyncio.wait_for(final(), timeout_s or self._s.model_timeout_s)
+                # not asyncio.wait_for: after the deadline it still waits until the stream is closed, and a stuck
+                # connection made a 10-minute deadline last 17 minutes
+                task = asyncio.ensure_future(final())
+                done, _ = await asyncio.wait({task}, timeout=timeout_s or self._s.model_timeout_s)
+                if not done:
+                    task.cancel()
+                    task.add_done_callback(_forget)
+                    raise TimeoutError
+                response = task.result()
             else:
                 client = self._client.with_options(timeout=timeout_s or self._s.claude_timeout_s)
                 if "betas" in request:

@@ -12,7 +12,7 @@ import asyncio
 import logging
 from collections import deque
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, TypeVar
 
@@ -42,6 +42,9 @@ Listener = Callable[[str, ModelStatus, int, ModelManifest | None], Awaitable[Non
 RESERVE = {"research": 0.45, "measure": 0.25, "cad": 0.45, "check": 0.35}
 CAMERA = "camera photo of the real object (everything else is grey; may be tilted or partly covered by a hand)"
 RANKS = {"drawing": 3, "camera": 2, "photo": 1}  # who wins when two pictures disagree on the outline
+MEASURE_AT_ONCE = 3  # pictures measured at the same time, each in its own call
+NOT_MEASURED = {"de": "Nicht vermessen: Das Vermessen der Bilder ist fehlgeschlagen, die Maße sind geschätzt.",
+                "en": "Not measured: measuring the pictures failed, the dimensions are estimated."}
 BUSY = ("queued", "researching", "drawing", "measuring", "modeling", "building", "checking")
 R = TypeVar("R")
 
@@ -223,7 +226,8 @@ class ModelBuilder:
             sheet, allowed = await self._page_photos(sheet, allowed)
             pictures, pages = await drawing_pictures(sheet.drawing, allowed, fetch=self._fetch)
             photos = await photo_pictures(sheet.photos, allowed, fetch=self._fetch)
-        mapped, bands, spent = await self._measure(job, sheet, pictures, pages, photos, spent)
+        mapped, bands, spent, measured_note = await self._measure(job, sheet, pictures, pages, photos, spent)
+        notes += f" {measured_note}"
         outline = profile_text(bands, sheet.size_mm) if bands and sheet.size_mm else ""
         if not self._affordable(spent, "cad"):
             await self._set(job.model, "failed")
@@ -288,10 +292,11 @@ class ModelBuilder:
 
     async def _measure(self, job: _Job, sheet: MeasureSheet, pictures: list[Picture], pages: list[int],
                        photos: list[tuple[Picture, PhotoView | None]],
-                       spent: float) -> tuple[list[MeasuredPart], list[ProfileBand], float]:
-        """The part map and the outline from the drawing, the photos and the camera photo (spec 7 §5, spec 8 §3), and
-        what has been spent so far. Without pictures, without the product's size, over the budget or after a
-        failed call, nothing is measured."""
+                       spent: float) -> tuple[list[MeasuredPart], list[ProfileBand], float, str]:
+        """The part map and the outline from the drawing, the photos and the camera photo (spec 7 §5, spec 8 §3), what
+        has been spent so far, and a note when measuring failed. Without pictures, without the product's size or
+        over the budget, nothing is measured. Each picture is measured in its own short call, a few at a time: one
+        call for all of them hung 17 minutes, and a picture that fails no longer takes the others with it."""
         labels = ([f"technical drawing page {page}" for page in pages] if pages
                   else ["technical drawing"] * len(pictures))
         references = [*zip(pictures, labels, strict=True),
@@ -303,15 +308,26 @@ class ModelBuilder:
             ranks.append(RANKS["camera"])
             sizes.append(camera)
         if not references or sheet.size_mm is None or not self._affordable(spent + RESERVE["cad"], "measure"):
-            return [], [], spent  # a map without the CAD after it would be paid for nothing
+            return [], [], spent, ""  # a map without the CAD after it would be paid for nothing
         await self._set(job.model, "measuring")
-        try:
-            result = await self._call("measure", job, lambda: self._calls.measure(MeasureRequest(
-                job.model, sheet, references, self._s.language)), lambda r: {"views": len(r.views), "notes": r.notes})
-        except IdentifyError:
-            return [], [], spent  # built without part map and outline, as before sub-project 7
-        return (part_map(result.views, sizes, sheet.size_mm), profile(result.views, sizes, sheet.size_mm, ranks),
-                spent + result.cost_usd)
+        at_once = asyncio.Semaphore(MEASURE_AT_ONCE)
+
+        async def one(reference: tuple[Picture, str]) -> Any:
+            async with at_once:
+                try:
+                    return await self._call("measure", job, lambda: self._calls.measure(MeasureRequest(
+                        job.model, sheet, [reference], self._s.language)),
+                        lambda r: {"views": len(r.views), "notes": r.notes})
+                except IdentifyError:
+                    return None  # this picture is left out; the others still count
+
+        results = await asyncio.gather(*(one(reference) for reference in references))
+        answered = [(number, result) for number, result in enumerate(results, start=1) if result is not None]
+        if not answered:
+            return [], [], spent, NOT_MEASURED.get(self._s.language, NOT_MEASURED["en"])
+        views = [replace(view, picture=number) for number, result in answered for view in result.views]
+        spent += sum(result.cost_usd for _, result in answered)
+        return part_map(views, sizes, sheet.size_mm), profile(views, sizes, sheet.size_mm, ranks), spent, ""
 
     async def _finish(self, job: _Job, sheet: MeasureSheet, pages: list[int], program: CadProgram,
                       compiled: dict[str, CompiledPart], rounds: int, good: bool, spent: float, notes: str,

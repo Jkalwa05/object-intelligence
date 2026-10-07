@@ -232,9 +232,9 @@ async def test_measuring_step_feeds_cad_and_checks():
     await build(built, PAD)
     assert statuses(events, PAD) == ["queued", "researching", "drawing", "measuring", "modeling", "building",
                                      ("checking", 1), "ready"]
-    assert [label for _, label in calls.measure_requests[0].pictures] == ["photo, front", "photo, top"]
+    assert [[label for _, label in r.pictures] for r in calls.measure_requests] == [["photo, front"], ["photo, top"]]
     cad = calls.cad_requests[0]
-    assert "Dreieck-Taste: x 40.0…50.0, y 18.5…28.5 mm (1 view)" in cad.part_map
+    assert "Dreieck-Taste: x 40.0…50.0, y 18.5…28.5 mm (2 views)" in cad.part_map  # one answer per photo
     assert [view for _, view in cad.photos] == ["front", "top"]
     off = calls.check_requests[0].deviations  # the fake CAD is one 10 mm cube
     assert off[0].startswith("Dreieck-Taste: missing") and off[1].startswith("Gehäuse: x model -5.0…5.0")
@@ -359,3 +359,38 @@ async def test_profile_reaches_cad_check_and_manifest():
     assert calls.check_requests[0].outline_deviations  # a 10 mm cube against a 160 × 97 mm outline
     assert calls.check_requests[0].outline == calls.cad_requests[0].outline
     assert len(events[-1][3].profile) == 20
+
+
+# --- 2026-10-07: the measuring hung 17 minutes in one big call ---------------------------------------------------
+
+async def test_each_picture_is_measured_on_its_own():
+    from oi.builder import CAMERA
+    calls = FakeModelCalls(research=PHOTO_SHEET, measure=[SLICED])
+    built, events = builder(calls)
+    await built.request(PAD, "Gamecontroller", jpeg())
+    await built.wait_idle()
+    assert [[label for _, label in r.pictures] for r in calls.measure_requests] == [
+        ["photo, front"], ["photo, top"], [CAMERA]]
+    assert events[-1][3].profile[0].sources == 3  # three answers, three pictures that agree
+
+
+async def test_one_picture_failing_does_not_stop_the_others():
+    class Flaky(FakeModelCalls):
+        async def measure(self, req):
+            if len(self.measure_requests) == 1:  # the second picture runs out of time
+                self.measure_requests.append(req)
+                raise IdentifyError("timeout")
+            return await super().measure(req)
+    calls = Flaky(research=PHOTO_SHEET, measure=[SLICED])
+    built, events = builder(calls)
+    await built.request(PAD, "Gamecontroller", jpeg())
+    await built.wait_idle()
+    assert len(calls.measure_requests) == 3 and events[-1][3].profile[0].sources == 2
+    assert "Nicht vermessen" not in events[-1][3].notes
+
+
+async def test_nothing_measured_says_so():
+    calls = FakeModelCalls(research=PHOTO_SHEET, measure=IdentifyError("timeout"))
+    built, events = builder(calls)
+    await build(built, PAD)
+    assert events[-1][1] == "ready" and "Nicht vermessen" in events[-1][3].notes

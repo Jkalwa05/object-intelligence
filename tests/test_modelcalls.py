@@ -208,9 +208,10 @@ def test_scad_source_has_header_shared_and_every_part():
 class StreamClient:
     """Stands in for the Anthropic client's streaming calls: answers `final` after `delay` seconds."""
 
-    def __init__(self, final, delay: float = 0.0) -> None:
+    def __init__(self, final, delay: float = 0.0, close_delay: float = 0.0) -> None:
         from types import SimpleNamespace
         self.final, self.delay, self.options, self.calls = final, delay, {}, []
+        self.close_delay = close_delay  # a connection that hangs while it is closed
         self.messages = SimpleNamespace(stream=self._stream)
         self.beta = SimpleNamespace(messages=SimpleNamespace(stream=self._stream))
 
@@ -226,6 +227,8 @@ class StreamClient:
         return self
 
     async def __aexit__(self, *exc):
+        import asyncio
+        await asyncio.sleep(self.close_delay)
         return False
 
     async def get_final_message(self):
@@ -282,6 +285,19 @@ async def test_a_model_call_that_runs_past_its_deadline_is_a_timeout():
     with pytest.raises(IdentifyError) as error:
         await ClaudeModelCalls(ClaudeIdentifier(settings, client), settings).build_cad(cad_request())
     assert error.value.reason == "timeout" and time.perf_counter() - started < 2
+
+
+async def test_the_deadline_holds_when_closing_the_stream_hangs():
+    import time
+
+    from oi.identify import ClaudeIdentifier
+    from tests.test_identify import response
+    settings = Settings(model_timeout_s=0.2)
+    client = StreamClient(response(json.dumps(CAD)), delay=5.0, close_delay=5.0)
+    started = time.perf_counter()
+    with pytest.raises(IdentifyError) as error:
+        await ClaudeModelCalls(ClaudeIdentifier(settings, client), settings).build_cad(cad_request())
+    assert error.value.reason == "timeout" and time.perf_counter() - started < 2  # not 0.2 s + 5 s of closing
 
 
 async def test_fake_model_calls_follow_the_script():
@@ -412,3 +428,17 @@ def test_measure_schema_and_prompt_ask_for_slices():
     assert "tilt" in view["properties"] and "tilt" in view["required"] and "grey background" in MEASURE_PROMPT
     assert "20" in MEASURE_PROMPT and "null" in MEASURE_PROMPT and "camera" in MEASURE_PROMPT
     assert "rotate_extrude" in CAD_PROMPT and "outline deviations" in CHECK_PROMPT.lower()
+
+
+async def test_measuring_one_picture_has_its_own_short_deadline(monkeypatch):
+    import time
+
+    from oi import modelcalls
+    from oi.identify import ClaudeIdentifier
+    from tests.test_identify import response
+    monkeypatch.setattr(modelcalls, "MEASURE_TIMEOUT_S", 0.2)  # 3 minutes in the program
+    client = StreamClient(response(json.dumps({"views": [], "notes": ""})), delay=5.0)
+    started = time.perf_counter()
+    with pytest.raises(IdentifyError) as error:
+        await ClaudeModelCalls(ClaudeIdentifier(OPUS, client), OPUS).measure(measure_request())
+    assert error.value.reason == "timeout" and time.perf_counter() - started < 2
